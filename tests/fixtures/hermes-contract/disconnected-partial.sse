@@ -1,0 +1,1 @@
+data: {"event":"message.delta","delta":"{\n  \"action\": \"create\",\n  \"title\": \"未完成的流\""}

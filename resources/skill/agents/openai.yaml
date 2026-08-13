@@ -1,0 +1,4 @@
+interface:
+  display_name: "VM Report DSL"
+  short_description: "检索 VM Catalog 并生成经过执行契约校验的前端 DSL"
+  default_prompt: "使用 $vm-report-dsl 检索当前 VM Catalog，审查模块、子模块和字段边界，并生成通过执行白名单、Schema 和运行时校验的报表 DSL。"

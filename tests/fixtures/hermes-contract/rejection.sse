@@ -1,0 +1,4 @@
+data: {"event":"message.delta","delta":"暂不支持通过对话直接删除图表，请使用图表卡片右上角的删除按钮。"}
+
+data: {"event":"run.completed","output":"暂不支持通过对话直接删除图表，请使用图表卡片右上角的删除按钮。","usage":{"prompt_tokens":75,"completion_tokens":35,"total_tokens":110}}
+

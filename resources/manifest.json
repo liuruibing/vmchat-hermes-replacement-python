@@ -1,0 +1,215 @@
+{
+  "schemaVersion": "http://json-schema.org/draft-07/schema",
+  "catalogVersion": "1.0.0",
+  "moduleCount": 36,
+  "files": [
+    {
+      "path": "catalog/execution-contract.json",
+      "sha256": "15f9517a114863dd16b43b47779e79a5a259faed221dc9406a4db7b9776fe1a3"
+    },
+    {
+      "path": "catalog/index.md",
+      "sha256": "906e2debe23a30bb9e29221cbc36c3805fd9b9aa4dfcb98fce6f2ffae4e265cd"
+    },
+    {
+      "path": "catalog/metrics.md",
+      "sha256": "fc257c12710a3c44a8cd8ad3e4b6968064460582fdd027d7d1aa6f1f1f9e9315"
+    },
+    {
+      "path": "catalog/modules/assetContribute.md",
+      "sha256": "c7ceb37efbde77f4e045f6b06d8285856f717eee1b254471f7b34f5ad95932bf"
+    },
+    {
+      "path": "catalog/modules/averagePePb.md",
+      "sha256": "d18b84fd3c72158d045911c44a91583e781e143f09e4cac492e5e861238109e9"
+    },
+    {
+      "path": "catalog/modules/bondConcentrate.md",
+      "sha256": "6b0666f44f5389d18ce791e24e5131edcbbbf993b02b296094196c969abc42fe"
+    },
+    {
+      "path": "catalog/modules/bondDurationTiming.md",
+      "sha256": "1c462493c0131a10377c5daed026c3834414e0b49230b59e7745d469aa69d894"
+    },
+    {
+      "path": "catalog/modules/campisiBondAnal.md",
+      "sha256": "2971dfb74597a13fef63e5a88f2a5c263eb31d2e21ce4de8b256b7dafab1c73f"
+    },
+    {
+      "path": "catalog/modules/cashPositionTiming.md",
+      "sha256": "1c20696d51f72b9a0bc1ed836f02ab8518b29ed654bc93ca57a307d576a16475"
+    },
+    {
+      "path": "catalog/modules/commodityFutures.md",
+      "sha256": "e731cbcd17a83968e80454e2cff028f149ca6310fe6f29b9a86b318a1d964bed"
+    },
+    {
+      "path": "catalog/modules/commodityFuturesExposureTiming.md",
+      "sha256": "9b5d976cff0c2b172b5abba097493ca8ce580f9b42ff87e1524adaee5c52f71b"
+    },
+    {
+      "path": "catalog/modules/commodityProfitLoss.md",
+      "sha256": "5df041aa006a2e936621de84f907b86c4bdc532d4133d1e26a5c050f9624d47a"
+    },
+    {
+      "path": "catalog/modules/creditRiskRateDistribution.md",
+      "sha256": "fbe0855b653c1862086cc3a6008a9880a51bc7703de6c70674ade228e511ffb6"
+    },
+    {
+      "path": "catalog/modules/fixedPositionTiming.md",
+      "sha256": "9b3f964e4ce54048fc864580d44e9bd678b1bdb6d2bbf98c3fb7eaed0d0e37f5"
+    },
+    {
+      "path": "catalog/modules/fundDurationTiming.md",
+      "sha256": "4a27c11b55dee853bd1b961898ac00bfb17e21885703b6c585b02a5379d29a91"
+    },
+    {
+      "path": "catalog/modules/hldStockNumTime.md",
+      "sha256": "2192dc47eebd644106d5cd32c47c7c4c6fb3d322c45a5385805f274c0353fc4c"
+    },
+    {
+      "path": "catalog/modules/holdPlate.md",
+      "sha256": "dd2188e109c26e48585e9211e17eafaa1be532cfe65f36934bee9597fe42fa30"
+    },
+    {
+      "path": "catalog/modules/hsInduStockAlloca.md",
+      "sha256": "8111a61f7c480c66b87b9907ce4647d59dff962944f557feb61f153db91036c5"
+    },
+    {
+      "path": "catalog/modules/hsInduStockAnal.md",
+      "sha256": "7adb17cb7e8b052591c4aedeb3e6948600097f057e60e3293192443e4296ca97"
+    },
+    {
+      "path": "catalog/modules/hsInduStockVala.md",
+      "sha256": "7bf3806d3ad76ea3868c22546ab73bf2b1764331981d5770a66906ba3b607525"
+    },
+    {
+      "path": "catalog/modules/industryMonitor.md",
+      "sha256": "075d4706144dc837d11747b5d59c0dd7981f8e40392bb11c83af574123727caf"
+    },
+    {
+      "path": "catalog/modules/maxDrawdownFQ.md",
+      "sha256": "0608386554ab808121ccf16cb6f1d2dcdb448bf5f72cf05752f3de7ab0967e8e"
+    },
+    {
+      "path": "catalog/modules/netValMonitor.md",
+      "sha256": "9945e82e152396367ea03ba43399cdef1bec79fa543763d42f0c417b00a95cae"
+    },
+    {
+      "path": "catalog/modules/netValue.md",
+      "sha256": "09ce06c2b24dfb34131bca72ce5a7cab2f1c60082a8d4da8efa85f1ca59a48eb"
+    },
+    {
+      "path": "catalog/modules/overallFutures.md",
+      "sha256": "856690d61f4f240671179868637d402caa88b2c3bd37029ee54b6a5018e46488"
+    },
+    {
+      "path": "catalog/modules/positionIndustry.md",
+      "sha256": "ed12bbbf5efbe1c13b7727fa72bc888a09370bec1679a9af3d2101bb9cf471af"
+    },
+    {
+      "path": "catalog/modules/productInfo.md",
+      "sha256": "6adc6192fb5e4785412fcc34b1503da3c99000401655bf55bcc5ebb67f3375bb"
+    },
+    {
+      "path": "catalog/modules/rewardRisk.md",
+      "sha256": "a56bc42132280525224edf4b4292a3b3869fcc31eb502d82dfe3e1b3ed9af6b0"
+    },
+    {
+      "path": "catalog/modules/riskValue.md",
+      "sha256": "473a5ff1628a4602de1a58d30911aee66379f5a97cb8a0fca275d56cac10bda6"
+    },
+    {
+      "path": "catalog/modules/stockExposureTiming.md",
+      "sha256": "03ad5c9ba149e46b6bbc6810498a471fe8d31f012fc80114e603f8f89395aaf7"
+    },
+    {
+      "path": "catalog/modules/swInduStockAlloca.md",
+      "sha256": "5abbf52238f19f328390e86e37974518ba314d7380c474edee4482e2927ef366"
+    },
+    {
+      "path": "catalog/modules/swInduStockAnal.md",
+      "sha256": "06af662e7d7b381ad4818570b9dfbacda3cdac5f2100c465d8bdc310f2e0e0cc"
+    },
+    {
+      "path": "catalog/modules/swInduStockVala.md",
+      "sha256": "6dfa4e37b376bde6375b1b13f66e7af21bec86768cac6895941544ff22ef3cec"
+    },
+    {
+      "path": "catalog/modules/tenLossIndustry.md",
+      "sha256": "5732dc05025000c0e43f46ddef7932a4b02b5b36bbff4dd837a41dd29cfe52ea"
+    },
+    {
+      "path": "catalog/modules/tenProfitIndustry.md",
+      "sha256": "6a8b7a698ba64eeba37f243d89f9ac9ad503b4c64f3d07a9cbb1c0b4fc65d759"
+    },
+    {
+      "path": "catalog/modules/topFiveIndustryTime.md",
+      "sha256": "5855c80d66aacfd03afb888b3f3433fc28f12001b7c4b1c0ea03e3208139f0d3"
+    },
+    {
+      "path": "catalog/modules/topTenOrTopFiveStockPositionTime.md",
+      "sha256": "0d7c7962fee9c60a776fdaa70e0d2181bac77655db176e94676b02dedd56f11d"
+    },
+    {
+      "path": "catalog/modules/tradeBehavior.md",
+      "sha256": "9d29220340ab330c96c8145d6947023e3a254efee4d612cb5f40723ff8168cf3"
+    },
+    {
+      "path": "catalog/modules/tradeDuring.md",
+      "sha256": "5abea20b198807ebb0057d92cea88f1662db90b914a1341e159f8894de142d2e"
+    },
+    {
+      "path": "catalog/submodules.json",
+      "sha256": "57ac1579852d2fad48a0869cef135b994d100271a6516bdf6e59fe8b6f42ea4e"
+    },
+    {
+      "path": "schemas/dsl.schema.json",
+      "sha256": "89ece378db77519c67644e680c99cac4d443d02b1a2a4f94ef447c790d0d81ff"
+    },
+    {
+      "path": "skill/agents/openai.yaml",
+      "sha256": "78d1fa7a9d047c8ad77b02d96c8468cab517e923d8a137867691bc84d70e6451"
+    },
+    {
+      "path": "skill/references/dsl-echarts.md",
+      "sha256": "1f44ea51aca3f2110d1c21e336ee8c1e285788cfcf4ad0e24a64f0ae2d312b58"
+    },
+    {
+      "path": "skill/references/dsl-spec.md",
+      "sha256": "202645fc8ebb7b948fe7216b0ae79f96cd5fdeff443f157eafbb1346a9c8550d"
+    },
+    {
+      "path": "skill/references/dsl-table.md",
+      "sha256": "359491b85b9774065f3824924380cb621f398f95f1b87e1396c80d32a8594964"
+    },
+    {
+      "path": "skill/references/dsl.schema.json",
+      "sha256": "89ece378db77519c67644e680c99cac4d443d02b1a2a4f94ef447c790d0d81ff"
+    },
+    {
+      "path": "skill/references/merge-rules.md",
+      "sha256": "2c29552390299dfbb65e7eb8d44f5f460e9acec0856c47444d49208b22c764f1"
+    },
+    {
+      "path": "skill/scripts/gen-uuid.js",
+      "sha256": "c660bd7f32cb8afe4432d6d94b2134c15ef968f37460082c5bd25df55da03aa6"
+    },
+    {
+      "path": "skill/scripts/run-transform.mjs",
+      "sha256": "fed6e4fcade62e334acda7049f204b16d15e897c83966cc8925e5bdb7f131e88"
+    },
+    {
+      "path": "skill/scripts/validate-dsl.mjs",
+      "sha256": "4ef764efc18c235d4bcc91ae2df623d4611115f5aa86474c94166296205a2e1d"
+    },
+    {
+      "path": "skill/scripts/validate-schema.py",
+      "sha256": "57ef4e7cf2fdc8e86db86fda9e1aa3a2ed3e9b424f5ae4e4b69d0dfc3db0f2b7"
+    },
+    {
+      "path": "skill/SKILL.md",
+      "sha256": "fc0318c02e291bbb4264fb2714971709dcd911cdfe25d17c435f589a009640d8"
+    }
+  ]
+}

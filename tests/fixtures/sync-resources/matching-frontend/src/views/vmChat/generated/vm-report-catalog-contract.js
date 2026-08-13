@@ -1,0 +1,11 @@
+// Generated contract file
+export default {
+  "schemaVersion": "1.0.0",
+  "purpose": "Test catalog contract",
+  "modules": {
+    "modA": {
+      "sqlCode": "uuid-mod-a-1234",
+      "submoduleIds": ["subA1"]
+    }
+  }
+}

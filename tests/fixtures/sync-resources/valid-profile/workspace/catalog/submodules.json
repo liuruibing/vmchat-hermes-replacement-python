@@ -1,0 +1,7 @@
+[
+  {
+    "submoduleId": "subA1",
+    "parentModuleId": "modA",
+    "name": "Submodule A1"
+  }
+]

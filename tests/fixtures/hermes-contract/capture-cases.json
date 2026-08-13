@@ -1,0 +1,19 @@
+[
+  {
+    "id": "case-01-stock-net-exposure",
+    "description": "Stock net exposure creation request",
+    "request": {
+      "model": "deepseek-v4-flash",
+      "input": [
+        {
+          "role": "user",
+          "content": "浏览器端到端：股票净敞口时序"
+        }
+      ],
+      "instructions": "Help generate VM Report DSL",
+      "session_id": "capture-session-001",
+      "skills": ["vm-report-dsl"],
+      "tools": []
+    }
+  }
+]

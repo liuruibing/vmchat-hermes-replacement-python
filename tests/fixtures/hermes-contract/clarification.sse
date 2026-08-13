@@ -1,0 +1,4 @@
+data: {"event":"message.delta","delta":"请问您希望查看“期货十大盈利品种”还是“期货十大亏损品种”？"}
+
+data: {"event":"run.completed","output":"请问您希望查看“期货十大盈利品种”还是“期货十大亏损品种”？","usage":{"prompt_tokens":80,"completion_tokens":30,"total_tokens":110}}
+

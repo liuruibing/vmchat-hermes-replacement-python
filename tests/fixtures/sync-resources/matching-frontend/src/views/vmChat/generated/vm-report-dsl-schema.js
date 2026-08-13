@@ -1,0 +1,9 @@
+// Generated schema file
+export default {
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "definitions": {
+    "dsl": {
+      "type": "object"
+    }
+  }
+}

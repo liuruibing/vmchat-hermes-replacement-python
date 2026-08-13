@@ -1,0 +1,13 @@
+{
+  "model": "deepseek-v4-flash",
+  "input": [
+    {
+      "role": "user",
+      "content": "浏览器端到端：股票净敞口时序"
+    }
+  ],
+  "instructions": "Help generate VM Report DSL",
+  "session_id": "session-test-001",
+  "skills": ["vm-report-dsl"],
+  "tools": []
+}

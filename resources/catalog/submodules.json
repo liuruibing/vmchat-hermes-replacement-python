@@ -1,0 +1,183 @@
+{
+  "schemaVersion": "2.0.0",
+  "submodules": [
+    {
+      "id": "topProfitCommodities",
+      "moduleId": "commodityProfitLoss",
+      "title": "期货十大盈利品种",
+      "dataPaths": [
+        "body.YLData"
+      ],
+      "fieldPaths": [
+        "body.YLData[].VC_FUT_DETAIL_NAME",
+        "body.YLData[].VC_DIRECTION",
+        "body.YLData[].F_INCOME",
+        "body.YLData[].F_GXD",
+        "body.YLData[].F_JZZB"
+      ],
+      "dynamicFieldBindings": [],
+      "sourceEvidence": {
+        "type": "vm",
+        "symbols": [
+          "initTopTenFutProfitTableData",
+          "initTopTenFutProfitEchartData"
+        ]
+      },
+      "defaultView": "table",
+      "labels": [
+        "十大盈利品种",
+        "多空方向",
+        "收益额",
+        "贡献度",
+        "期间平均风险暴露占净值比"
+      ],
+      "units": [
+        "未明确",
+        "未明确",
+        "万元",
+        "%",
+        "%"
+      ],
+      "fields": [
+        "VC_FUT_DETAIL_NAME",
+        "VC_DIRECTION",
+        "F_INCOME",
+        "F_GXD",
+        "F_JZZB"
+      ]
+    },
+    {
+      "id": "topLossCommodities",
+      "moduleId": "commodityProfitLoss",
+      "title": "期货十大亏损品种",
+      "dataPaths": [
+        "body.KSData"
+      ],
+      "fieldPaths": [
+        "body.KSData[].VC_FUT_DETAIL_NAME",
+        "body.KSData[].VC_DIRECTION",
+        "body.KSData[].F_INCOME",
+        "body.KSData[].F_GXD",
+        "body.KSData[].F_JZZB"
+      ],
+      "dynamicFieldBindings": [],
+      "sourceEvidence": {
+        "type": "vm",
+        "symbols": [
+          "initTopTenFutLossTableData",
+          "initTopTenFutLossEchartData"
+        ]
+      },
+      "defaultView": "table",
+      "labels": [
+        "十大亏损品种",
+        "多空方向",
+        "收益额",
+        "贡献度",
+        "期间平均风险暴露占净值比"
+      ],
+      "units": [
+        "未明确",
+        "未明确",
+        "万元",
+        "%",
+        "%"
+      ],
+      "fields": [
+        "VC_FUT_DETAIL_NAME",
+        "VC_DIRECTION",
+        "F_INCOME",
+        "F_GXD",
+        "F_JZZB"
+      ]
+    },
+    {
+      "id": "latestNetValue",
+      "moduleId": "netValue",
+      "title": "最新净值信息",
+      "dataPaths": [
+        "body.lastData"
+      ],
+      "fieldPaths": [
+        "body.lastData[].VC_FUNDNAME",
+        "body.lastData[].FUNDCREATEDATE",
+        "body.lastData[].GZDATE",
+        "body.lastData[].F_701A",
+        "body.lastData[].F_702A",
+        "body.lastData[].F_905"
+      ],
+      "dynamicFieldBindings": [],
+      "sourceEvidence": {
+        "type": "vm",
+        "symbols": [
+          "initTableData"
+        ]
+      },
+      "defaultView": "table",
+      "labels": [
+        "产品名称",
+        "成立日期",
+        "估值日期",
+        "资产净值",
+        "产品单位净值",
+        "累计单位净值"
+      ],
+      "units": [
+        "未明确",
+        "未明确",
+        "未明确",
+        "元",
+        "元",
+        "元"
+      ],
+      "fields": [
+        "VC_FUNDNAME",
+        "FUNDCREATEDATE",
+        "GZDATE",
+        "F_701A",
+        "F_702A",
+        "F_905"
+      ]
+    },
+    {
+      "id": "netValueTrend",
+      "moduleId": "netValue",
+      "title": "净值走势(成立以来)",
+      "dataPaths": [
+        "body.hisData"
+      ],
+      "fieldPaths": [
+        "body.hisData[].TDATE",
+        "body.hisData[].F_701A",
+        "body.hisData[].F_702A",
+        "body.hisData[].F_905"
+      ],
+      "dynamicFieldBindings": [],
+      "sourceEvidence": {
+        "type": "vm",
+        "symbols": [
+          "initEchartData"
+        ]
+      },
+      "defaultView": "echarts",
+      "labels": [
+        "日期",
+        "资产净值(左)",
+        "单位净值(右)",
+        "累计单位净值(右)"
+      ],
+      "units": [
+        "未明确",
+        "未明确",
+        "未明确",
+        "未明确"
+      ],
+      "fields": [
+        "TDATE",
+        "F_701A",
+        "F_702A",
+        "F_905"
+      ]
+    }
+  ]
+}
