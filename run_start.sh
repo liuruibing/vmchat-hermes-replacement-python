@@ -12,6 +12,13 @@ port="${2:?missing service port}"
 # 无论从哪个目录调用脚本，都切换到本脚本所在的项目目录。
 cd "$(dirname "$0")"
 
+# restart.sh 会将本脚本的标准输出和错误输出重定向到 /dev/null；在这里重新定向，
+# 以便保留首次安装依赖或启动失败的实际原因。
+log_file="$PWD/startup.log"
+exec >>"$log_file" 2>&1
+echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') starting vmchat on port $port"
+echo "[INFO] Python: $($python_bin --version 2>&1)"
+
 # uv 是 Python 依赖管理工具。容器首次部署时若没有它，则通过当前 Python 安装到当前用户目录。
 if ! command -v uv >/dev/null 2>&1; then
   "$python_bin" -m pip install --user uv
