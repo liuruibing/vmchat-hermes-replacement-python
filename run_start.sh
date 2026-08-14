@@ -4,8 +4,10 @@
 # 它只负责启动 vmchat 服务；Jenkins 的打包、上传和目录切换在 Jenkins 配置中完成。
 set -euo pipefail
 
-# 未提供第一个参数时，默认使用系统的 python3。
-python_bin="${1:-python3}"
+# restart.sh 传入的 python3 会受 Docker 容器 PATH 影响，当前会解析到共享的
+# Python 3.12 环境；该环境的软件源不提供 uv。固定使用已验证的系统 Python，
+# 以创建 vmchat 自己的独立虚拟环境。
+python_bin="/usr/bin/python3"
 # 第二个参数必须存在；缺失时立即报错，避免服务意外跑在错误端口。
 port="${2:?missing service port}"
 
