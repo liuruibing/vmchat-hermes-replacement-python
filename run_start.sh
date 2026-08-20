@@ -28,8 +28,20 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# 根据 uv.lock 精确创建/同步本项目自己的 .venv；--no-dev 不安装 pytest 等开发依赖。
-# 这样不会污染容器中其他项目的 Python 环境。
-uv sync --locked --no-dev
-# 用本项目虚拟环境启动 FastAPI/Uvicorn。exec 让该进程直接成为脚本进程，便于重启脚本管理。
-exec .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$port"
+# 虚拟环境放在 wars/7310 之外：Jenkins 每次发布都会替换 wars/7310，
+# 但 /datadriver/upload/venvs/vmchat 会保留。因此通常不需要每次构建都从公网下载依赖。
+# 可通过 VMCHAT_VENV_PATH 覆盖该路径，方便其他环境使用不同目录。
+runtime_venv="${VMCHAT_VENV_PATH:-/datadriver/upload/venvs/vmchat}"
+lock_marker="$runtime_venv/.vmchat-uv-lock.sha256"
+lock_hash="$(sha256sum uv.lock | awk '{print $1}')"
+
+# 只有首次部署没有运行环境，或 uv.lock 发生变化时，才重新安装/同步依赖。
+# --no-dev 不安装 pytest 等开发依赖；UV_PROJECT_ENVIRONMENT 让 uv 使用稳定目录。
+if [ ! -x "$runtime_venv/bin/python" ] || [ ! -f "$lock_marker" ] || [ "$(cat "$lock_marker")" != "$lock_hash" ]; then
+  mkdir -p "$(dirname "$runtime_venv")"
+  UV_PROJECT_ENVIRONMENT="$runtime_venv" uv sync --locked --no-dev
+  printf '%s\n' "$lock_hash" > "$lock_marker"
+fi
+
+# 用稳定虚拟环境启动当前发布目录里的 FastAPI 代码。exec 便于重启脚本管理进程。
+exec "$runtime_venv/bin/python" -m uvicorn app.main:app --host 0.0.0.0 --port "$port"

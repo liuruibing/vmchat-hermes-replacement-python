@@ -59,10 +59,20 @@ sudo docker exec -itd team-jinan-python nohup sh /datadriver/upload/restart.sh 7
 
 ## 3. 容器内 `run_start.sh`
 
-该脚本会切换到项目目录、确保存在 `uv`、根据 `uv.lock` 生成项目专属 `.venv`，最后使用：
+该脚本会切换到项目目录、确保存在 `uv`，并使用稳定的 Linux 虚拟环境目录
+`/datadriver/upload/venvs/vmchat`。这个目录不在 Jenkins 每次替换的 `wars/7310` 中，
+因此不会因为发版丢失依赖。
+
+脚本会记录当前 `uv.lock` 的 SHA-256 指纹：
+
+- 首次部署没有稳定虚拟环境时，才运行 `uv sync --locked --no-dev`；
+- `uv.lock` 未改变时，直接启动，完全不访问公网包源；
+- 只有锁文件改变时，才重新同步依赖。
+
+最后使用：
 
 ```bash
-.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 7310
+/datadriver/upload/venvs/vmchat/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 7310
 ```
 
 启动 FastAPI 服务。每个项目的依赖隔离在自己的 `.venv` 中，不会影响容器里已有的其他 Python 服务。
