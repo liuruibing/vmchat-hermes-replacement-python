@@ -27,6 +27,7 @@ class AppConfig(BaseModel):
     request_body_limit_bytes: int = 1048576
     sse_chunk_chars: int = 256
     vmchat_frontend_root: str = ""
+    templates_file: str = ".runtime/vmchat-templates.json"
 
     # JS camelCase property aliases
     @property
@@ -93,6 +94,10 @@ class AppConfig(BaseModel):
     def vmchatFrontendRoot(self) -> str:
         return self.vmchat_frontend_root
 
+    @property
+    def templatesFile(self) -> str:
+        return self.templates_file
+
 
 def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
     if env is None:
@@ -134,6 +139,7 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
     fixed_provider_fixture = raw_env.get("FIXED_PROVIDER_FIXTURE", "")
     request_body_limit_bytes = int(raw_env.get("REQUEST_BODY_LIMIT_BYTES", "1048576"))
     sse_chunk_chars = int(raw_env.get("SSE_CHUNK_CHARS", "256"))
+    templates_file = raw_env.get("VMCHAT_TEMPLATES_FILE", ".runtime/vmchat-templates.json")
 
     return AppConfig(
         host=host,
@@ -154,6 +160,7 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
         request_body_limit_bytes=request_body_limit_bytes,
         sse_chunk_chars=sse_chunk_chars,
         vmchat_frontend_root=vmchat_frontend_root,
+        templates_file=templates_file,
     )
 
 

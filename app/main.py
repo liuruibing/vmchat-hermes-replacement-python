@@ -22,6 +22,7 @@ from app.resources.resource_loader import ResourceLoader
 from app.runs.run_limiter import RunLimiter
 from app.runs.run_store import RunStore
 from app.runs.run_types import AbortController
+from app.template_store import TemplateStore
 
 from app.provider.fixed_provider import FixedVmChatProvider, VmChatModelProvider
 from app.provider.langchain_provider import LangChainVmChatProvider
@@ -71,6 +72,7 @@ class AppDependencies:
     run_limiter: Any
     provider: Any
     active_registry: Optional[ActiveRunRegistry] = None
+    template_store: Any = None
 
     @property
     def resourceLoader(self):
@@ -119,6 +121,11 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
     run_store = deps_override.get("run_store") or deps_override.get("runStore") or RunStore(max_stored_runs=config.max_stored_runs)
     run_limiter = deps_override.get("run_limiter") or deps_override.get("runLimiter") or RunLimiter()
     active_registry = deps_override.get("active_registry") or deps_override.get("activeRegistry") or ActiveRunRegistry()
+    template_store = (
+        deps_override.get("template_store")
+        or deps_override.get("templateStore")
+        or TemplateStore(config.templates_file)
+    )
 
     if deps_override.get("provider"):
         provider = deps_override["provider"]
@@ -154,23 +161,22 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
     )
 
     @app.middleware("http")
     async def auth_and_degraded_middleware(request: Request, call_next):
-        if request.url.path.startswith("/v1/runs") or request.url.path.startswith("/v1/wiki"):
+        is_run_or_wiki = request.url.path.startswith("/v1/runs") or request.url.path.startswith("/v1/wiki")
+        is_template = request.url.path.startswith("/v1/templates")
+        if is_run_or_wiki or is_template:
             if not verify_bearer_auth(request, config.service_api_key):
                 return JSONResponse(
                     status_code=403,
                     content={"error": "FORBIDDEN: Invalid or missing bearer token"}
                 )
-            if not resource_loader.is_ready():
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "SERVICE_DEGRADED: Resources not loaded"}
-                )
+            if is_run_or_wiki and not resource_loader.is_ready():
+                return JSONResponse(status_code=503, content={"error": "SERVICE_DEGRADED: Resources not loaded"})
         return await call_next(request)
 
     @app.get("/health")
@@ -216,6 +222,64 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 content={"error": "WIKI_DOCUMENT_NOT_FOUND"}
             )
         return JSONResponse(status_code=200, content=doc)
+
+    @app.get("/v1/templates")
+    async def list_templates():
+        return JSONResponse(status_code=200, content={"ok": True, "templates": template_store.list()})
+
+    @app.get("/v1/templates/{templateId}")
+    async def get_template(templateId: str):
+        template = template_store.get(templateId)
+        if template is None:
+            return JSONResponse(status_code=404, content={"error": "TEMPLATE_NOT_FOUND"})
+        return JSONResponse(status_code=200, content={"ok": True, "template": template})
+
+    @app.put("/v1/templates")
+    async def replace_templates(request: Request):
+        try:
+            body = await request.json()
+            source = body.get("templates") if isinstance(body, dict) else body
+            if not isinstance(source, list):
+                raise ValueError("templates must be an array")
+            templates = template_store.replace_all(source)
+            return JSONResponse(status_code=200, content={"ok": True, "templates": templates})
+        except ValueError as err:
+            return JSONResponse(status_code=400, content={"error": f"INVALID_TEMPLATES: {err}"})
+        except Exception as err:
+            logger.exception("[templates] replace failed")
+            return JSONResponse(status_code=500, content={"error": f"SERVER_ERROR: {err}"})
+
+    @app.post("/v1/templates")
+    async def upsert_template(request: Request):
+        try:
+            body = await request.json()
+            template = body.get("template") if isinstance(body, dict) and isinstance(body.get("template"), dict) else body
+            saved = template_store.upsert(template)
+            return JSONResponse(status_code=200, content={"ok": True, "template": saved})
+        except ValueError as err:
+            return JSONResponse(status_code=400, content={"error": f"INVALID_TEMPLATE: {err}"})
+        except Exception as err:
+            logger.exception("[templates] upsert failed")
+            return JSONResponse(status_code=500, content={"error": f"SERVER_ERROR: {err}"})
+
+    @app.put("/v1/templates/{templateId}")
+    async def update_template(templateId: str, request: Request):
+        try:
+            body = await request.json()
+            template = body.get("template") if isinstance(body, dict) and isinstance(body.get("template"), dict) else body
+            saved = template_store.upsert(template, templateId)
+            return JSONResponse(status_code=200, content={"ok": True, "template": saved})
+        except ValueError as err:
+            return JSONResponse(status_code=400, content={"error": f"INVALID_TEMPLATE: {err}"})
+        except Exception as err:
+            logger.exception("[templates] update failed")
+            return JSONResponse(status_code=500, content={"error": f"SERVER_ERROR: {err}"})
+
+    @app.delete("/v1/templates/{templateId}")
+    async def delete_template(templateId: str):
+        if not template_store.delete(templateId):
+            return JSONResponse(status_code=404, content={"error": "TEMPLATE_NOT_FOUND"})
+        return JSONResponse(status_code=200, content={"ok": True, "deleted": templateId})
 
     @app.post("/v1/runs")
     async def create_run(request: Request):
