@@ -23,6 +23,10 @@ def test_builds_generation_prompt_without_js_preselected_candidates():
     })
 
     assert "# Hermes Skill" in prompt.system_prompt
+    assert "catalog/profile-index.json" in prompt.system_prompt
+    assert "catalog/profiles/<moduleId>.json" in prompt.system_prompt
+    assert "merge-guidance-v2.md" in prompt.system_prompt
+    assert "单位不同不是拒绝合并的理由" in prompt.system_prompt
     assert "意图:" not in prompt.system_prompt
     assert "候选 Catalog" not in prompt.system_prompt
 
