@@ -9,9 +9,13 @@ from app.resources import (
     SkillResourceReaderOptions,
 )
 
-RESOURCES_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../vmchat-hermes-replacement/resources")
-)
+_RESOURCE_CANDIDATES = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../resources")),
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../vmchat-hermes-replacement/resources")
+    ),
+]
+RESOURCES_DIR = next(path for path in _RESOURCE_CANDIDATES if os.path.isdir(path))
 
 
 def test_resource_loader_sync():
