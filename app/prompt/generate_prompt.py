@@ -96,6 +96,7 @@ def build_generate_prompt(
         "- 用户说“放在一起/一起看/同表/对比/合并展示”时，默认按公共业务键做横向关联；除非用户明确要求纵向拼接，否则不要反问横向还是纵向。",
         "- TDATE、D_DATE、XAXISDATA 等字段只要 profile 映射到同一个 canonical key=date，就视为同一日期维度。",
         "- profile.structuralOnlyFields 允许仅在 transform 中作为 join key 使用，但不能作为最终展示字段。",
+        "- profile.quality.warnings 非空或 sqlTrust=low 时，不得把 SQL 摘要当作强证据；优先使用字段映射和样例 JSON 的稳定结构，并避免基于可疑 SQL 推断新的业务口径。",
         "- 单位不同不是拒绝合并的理由；table 保留独立单位，ECharts 使用最多两个 Y 轴。超过两个不兼容量纲且用户未强制图表时优先 table。",
         "- 跨模块时先在内部形成 merge plan：entity、shape、canonical join key、taxonomy、view，再生成 DSL；不要输出该内部计划。",
     ])
