@@ -379,6 +379,7 @@ class LangChainVmChatProvider(VmChatModelProvider):
 
         turn_count = 0
         read_count = 0
+        max_resource_reads = int(os.getenv("MAX_SKILL_RESOURCE_READS", "24"))
         total_prompt_tokens = 0
         total_completion_tokens = 0
         total_tokens = 0
@@ -478,8 +479,10 @@ class LangChainVmChatProvider(VmChatModelProvider):
                         continue
 
                     read_count += 1
-                    if read_count > 16:
-                        raise RuntimeError("SKILL_RESOURCE_READ_LIMIT_EXCEEDED: Exceeded 16 resource reads")
+                    if read_count > max_resource_reads:
+                        raise RuntimeError(
+                            f"SKILL_RESOURCE_READ_LIMIT_EXCEEDED: Exceeded {max_resource_reads} resource reads"
+                        )
 
                     read_fn = getattr(input, "readResource", None) or getattr(input, "read_resource", None)
                     tool_result_text = read_fn(path_arg) if callable(read_fn) else ""
