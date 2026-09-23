@@ -23,6 +23,10 @@ def test_builds_generation_prompt_without_js_preselected_candidates():
     })
 
     assert "# Hermes Skill" in prompt.system_prompt
+    assert "catalog/profile-index.json" in prompt.system_prompt
+    assert "catalog/profiles/<moduleId>.json" in prompt.system_prompt
+    assert "merge-guidance-v2.md" in prompt.system_prompt
+    assert "单位不同不是拒绝合并的理由" in prompt.system_prompt
     assert "意图:" not in prompt.system_prompt
     assert "候选 Catalog" not in prompt.system_prompt
 
@@ -48,10 +52,10 @@ def test_truncates_oldest_history_first_when_user_prompt_exceeds_max_prompt_char
             "historyMessages": history_messages,
         },
         "skillMd": "Skill",
-        "maxPromptChars": 2000,
+        "maxPromptChars": 5000,
     })
 
-    assert len(prompt.user_prompt) <= 2000
+    assert len(prompt.system_prompt) + len(prompt.user_prompt) <= 5000
     assert "最新请求" in prompt.user_prompt
 
 

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import tempfile
 import pytest
@@ -8,9 +9,13 @@ from app.resources import (
     SkillResourceReaderOptions,
 )
 
-RESOURCES_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../vmchat-hermes-replacement/resources")
-)
+_RESOURCE_CANDIDATES = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "../resources")),
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../vmchat-hermes-replacement/resources")
+    ),
+]
+RESOURCES_DIR = next(path for path in _RESOURCE_CANDIDATES if os.path.isdir(path))
 
 
 def test_resource_loader_sync():
@@ -25,6 +30,9 @@ def test_resource_loader_sync():
     assert "catalog/index.md" in resources.toolResourceTextByPath
     assert "catalog/metrics.md" in resources.toolResourceTextByPath
     assert "catalog/execution-contract.json" in resources.toolResourceTextByPath
+    assert "catalog/profile-index.json" in resources.toolResourceTextByPath
+    assert "catalog/profiles/averagePePb.json" in resources.toolResourceTextByPath
+    assert "skill/references/merge-guidance-v2.md" in resources.toolResourceTextByPath
 
 
 def test_skill_requires_business_info_protocol_for_knowledge_queries():
@@ -73,6 +81,16 @@ def test_skill_resource_reader_valid():
     contract = reader.read("catalog/execution-contract.json")
     assert "modules" in contract
 
+    profile_index = json.loads(reader.read("catalog/profile-index.json"))
+    assert "averagePePb" in profile_index["modules"]
+
+    average_profile = json.loads(reader.read("catalog/profiles/averagePePb.json"))
+    assert average_profile["shape"] == "time_series"
+    assert any(key["canonical"] == "date" for key in average_profile["joinKeys"])
+
+    merge_guidance = reader.read("skill/references/merge-guidance-v2.md")
+    assert "单位不同不是“不能合并数据”的理由" in merge_guidance
+
     read_map = reader.get_read_resources()
     assert "catalog/index.md" in read_map
     assert "catalog/metrics.md" in read_map
@@ -93,6 +111,7 @@ def test_skill_resource_reader_restrictions():
     assert reader.read("../catalog/index.md") == "RESOURCE_NOT_ALLOWED"
     assert reader.read("catalog\\index.md") == "RESOURCE_NOT_ALLOWED"
     assert reader.read("catalog/modules/unknownModule.md") == "RESOURCE_NOT_ALLOWED"
+    assert reader.read("delivery/02_vm_modules_sql_statements.md") == "RESOURCE_NOT_ALLOWED"
 
     assert len(reader.get_read_resources()) == 0
 

@@ -4,6 +4,11 @@ import json
 import os
 from typing import Any, Optional
 from app.resources.resource_types import LoadedResources, Manifest
+from app.resources.module_profile_builder import (
+    MERGE_GUIDANCE_V2,
+    build_module_profiles,
+    build_profile_index,
+)
 
 
 def _get_all_relative_files(dir_path: str, base_dir: Optional[str] = None) -> list[str]:
@@ -168,6 +173,32 @@ class ResourceLoader:
                 raise RuntimeError(f"MISSING_MODULE_MARKDOWN: {rel_path} is missing or empty")
             module_markdown_map[module_id] = mod_buf.decode("utf-8")
 
+        # Build runtime semantic profiles from existing catalog markdowns.
+        # The optional delivery SQL document is outside the signed resources tree:
+        # it is used only as additional evidence and is never exposed raw to the model.
+        repo_root = os.path.abspath(os.path.join(self._resources_dir, os.pardir))
+        sql_document = ""
+        sql_candidates = [
+            os.getenv("VMCHAT_SQL_KNOWLEDGE_PATH", "").strip(),
+            os.path.join(repo_root, "delivery", "02_vm_modules_sql_statements.md"),
+            os.path.join(repo_root, "docs", "vm-modules-sql-statements.md"),
+        ]
+        for sql_document_path in sql_candidates:
+            if not sql_document_path or not os.path.isfile(sql_document_path):
+                continue
+            try:
+                with open(sql_document_path, "r", encoding="utf-8") as f:
+                    sql_document = f.read()
+                break
+            except Exception:
+                continue
+
+        module_profiles = build_module_profiles(
+            module_markdown_map=module_markdown_map,
+            sql_document=sql_document,
+        )
+        profile_index = build_profile_index(module_profiles)
+
         skill_buf = file_content_map["skill/SKILL.md"]
         catalog_index_buf = file_content_map["catalog/index.md"]
         catalog_metrics_buf = file_content_map["catalog/metrics.md"]
@@ -204,6 +235,21 @@ class ResourceLoader:
 
         for mod_id, content in module_markdown_map.items():
             tool_resource_map[f"catalog/modules/{mod_id}.md"] = content
+
+        # Generated semantic resources are virtual resources: they are derived from
+        # already verified catalog files, so they do not need manifest entries.
+        tool_resource_map["catalog/profile-index.json"] = json.dumps(
+            profile_index,
+            ensure_ascii=False,
+            indent=2,
+        )
+        for mod_id, profile in module_profiles.items():
+            tool_resource_map[f"catalog/profiles/{mod_id}.json"] = json.dumps(
+                profile,
+                ensure_ascii=False,
+                indent=2,
+            )
+        tool_resource_map["skill/references/merge-guidance-v2.md"] = MERGE_GUIDANCE_V2
 
         allowed_references = [
             "skill/references/dsl-spec.md",
