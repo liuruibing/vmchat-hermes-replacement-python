@@ -372,7 +372,6 @@ def build_profile_index(profiles: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             ],
             "taxonomy": profile.get("taxonomy"),
             "defaultView": (profile.get("render") or {}).get("defaultView"),
-            "metrics": [item.get("name") for item in (profile.get("render") or {}).get("metrics", [])],
             "sqlEvidenceAvailable": bool((profile.get("sqlEvidence") or {}).get("available")),
         }
     return {
