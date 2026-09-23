@@ -5,7 +5,13 @@ from app.resources.module_profile_builder import build_module_profile
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-RESOURCES_DIR = os.path.join(REPO_ROOT, "resources")
+_RESOURCE_CANDIDATES = [
+    os.path.join(REPO_ROOT, "resources"),
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../vmchat-hermes-replacement/resources")
+    ),
+]
+RESOURCES_DIR = next(path for path in _RESOURCE_CANDIDATES if os.path.isdir(path))
 
 
 def _read_module(module_id: str) -> str:
