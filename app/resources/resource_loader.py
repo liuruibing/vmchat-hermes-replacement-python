@@ -177,16 +177,21 @@ class ResourceLoader:
         # The optional delivery SQL document is outside the signed resources tree:
         # it is used only as additional evidence and is never exposed raw to the model.
         repo_root = os.path.abspath(os.path.join(self._resources_dir, os.pardir))
-        sql_document_path = os.path.join(
-            repo_root, "delivery", "02_vm_modules_sql_statements.md"
-        )
         sql_document = ""
-        if os.path.isfile(sql_document_path):
+        sql_candidates = [
+            os.getenv("VMCHAT_SQL_KNOWLEDGE_PATH", "").strip(),
+            os.path.join(repo_root, "delivery", "02_vm_modules_sql_statements.md"),
+            os.path.join(repo_root, "docs", "vm-modules-sql-statements.md"),
+        ]
+        for sql_document_path in sql_candidates:
+            if not sql_document_path or not os.path.isfile(sql_document_path):
+                continue
             try:
                 with open(sql_document_path, "r", encoding="utf-8") as f:
                     sql_document = f.read()
+                break
             except Exception:
-                sql_document = ""
+                continue
 
         module_profiles = build_module_profiles(
             module_markdown_map=module_markdown_map,
