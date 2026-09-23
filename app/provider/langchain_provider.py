@@ -4,6 +4,10 @@ import re
 from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 from langchain_deepseek import ChatDeepSeek
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None
 from langchain_core.tools import tool
 from langchain_core.messages import ToolMessage, AIMessageChunk
 
@@ -201,7 +205,7 @@ class LangChainVmChatProvider(VmChatModelProvider):
             or "structured"
         )
 
-    def build_model(self) -> ChatDeepSeek:
+    def build_model(self) -> Any:
         kwargs: Dict[str, Any] = {
             "model": self.model_name,
             "temperature": 0,
@@ -212,6 +216,10 @@ class LangChainVmChatProvider(VmChatModelProvider):
             kwargs["base_url"] = self.base_url
         if self.api_key:
             kwargs["api_key"] = self.api_key
+
+        is_deepseek = "deepseek" in (self.model_name or "").lower()
+        if (not is_deepseek or "googleapis" in (self.base_url or "")) and ChatOpenAI is not None:
+            return ChatOpenAI(**kwargs)
         return ChatDeepSeek(**kwargs)
 
     async def generate(self, input: ModelGenerateInput) -> ModelGenerateOutput:
