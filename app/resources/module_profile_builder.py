@@ -335,6 +335,19 @@ def build_module_profile(module_id: str, markdown: str, sql_section: str = "") -
     )
 
     default_match = re.search(r"-\s*默认视图：\s*([^\n]+)", render)
+    sql_evidence = _sql_evidence(sql_section)
+    quality_warnings: List[str] = []
+    if sql_evidence.get("available"):
+        flags = sql_evidence.get("flags") or {}
+        if not sql_evidence.get("tables"):
+            quality_warnings.append("SQL_NO_BASE_TABLES")
+        if shape == "time_series" and not flags.get("mentionsDate"):
+            quality_warnings.append("SQL_MISSING_DATE_EVIDENCE")
+        if "industry" in join_keys and not flags.get("mentionsIndustry"):
+            quality_warnings.append("SQL_MISSING_INDUSTRY_EVIDENCE")
+        if entity == "fund" and not flags.get("mentionsFund"):
+            quality_warnings.append("SQL_MISSING_FUND_EVIDENCE")
+
     return {
         "schemaVersion": "2.0",
         "moduleId": module_id,
@@ -356,7 +369,11 @@ def build_module_profile(module_id: str, markdown: str, sql_section: str = "") -
         "fields": fields,
         "structuralOnlyFields": structural_only,
         "sample": {"rowCount": len(rows), "rowKeys": row_keys, "head": head},
-        "sqlEvidence": _sql_evidence(sql_section),
+        "sqlEvidence": sql_evidence,
+        "quality": {
+            "warnings": quality_warnings,
+            "sqlTrust": "normal" if sql_evidence.get("available") and not quality_warnings else "low",
+        },
     }
 
 
