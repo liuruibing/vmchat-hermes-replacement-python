@@ -52,10 +52,10 @@ def test_truncates_oldest_history_first_when_user_prompt_exceeds_max_prompt_char
             "historyMessages": history_messages,
         },
         "skillMd": "Skill",
-        "maxPromptChars": 2000,
+        "maxPromptChars": 5000,
     })
 
-    assert len(prompt.user_prompt) <= 2000
+    assert len(prompt.system_prompt) + len(prompt.user_prompt) <= 5000
     assert "最新请求" in prompt.user_prompt
 
 
