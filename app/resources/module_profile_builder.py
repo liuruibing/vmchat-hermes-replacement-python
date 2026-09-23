@@ -236,10 +236,24 @@ def _sql_evidence(section: str) -> Dict[str, Any]:
         for m in re.finditer(r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_.$]*)", sql, re.I)
         if m.group(1).lower() != "dual"
     )
+    normalized = re.sub(r"\s+", " ", sql)
+    group_by_fields: List[str] = []
+    for group_match in re.finditer(
+        r"\bgroup\s+by\s+(.{1,500}?)(?=\border\s+by\b|\bhaving\b|\bunion\b|$)",
+        normalized,
+        re.I,
+    ):
+        group_by_fields.extend(
+            re.findall(
+                r"(?:[A-Za-z_][A-Za-z0-9_]*\.)?([A-Za-z_][A-Za-z0-9_]*)",
+                group_match.group(1),
+            )
+        )
     return {
         "available": True,
         "tables": tables[:30],
         "params": _unique(re.findall(r"#\{([A-Za-z0-9_]+)\}", sql)),
+        "groupByFields": _unique(group_by_fields)[:30],
         "flags": {
             "mentionsFund": bool(re.search(r"fundcode|#\{fundCode\}", sql, re.I)),
             "mentionsDate": bool(re.search(r"d_date|tdate|#\{beginDate\}|#\{endDate\}", sql, re.I)),
