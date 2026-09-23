@@ -654,19 +654,21 @@ async def stream_vm_chat(
             "EMPTY_MODEL_OUTPUT", "AI 助手未生成有效内容，请重试"
         )
 
-    starts_with_json_container = bool(re.search(r"^[\[{]", trimmed))
     has_dsl_key = bool(
-        re.search(r'"(?:action|requests|transform|view)"\s*:', trimmed)
+        re.search(r'"(?:action|requests|views|transform|moduleId|sqlCode)"\s*:', trimmed)
     )
     has_dsl_fence = bool(
         re.search(
-            r'```(?:json)?[\s\S]*"(?:action|requests|transform|view)"\s*:',
+            r'```(?:json)?[\s\S]*"(?:action|requests|views|transform|moduleId|sqlCode)"\s*:',
             trimmed,
             re.IGNORECASE,
         )
     )
+    starts_with_json_container = bool(re.search(r"^[\[{]", trimmed))
 
-    is_dsl_like = starts_with_json_container or has_dsl_key or has_dsl_fence
+    is_dsl_like = has_dsl_fence or (
+        starts_with_json_container and has_dsl_key
+    )
 
     final_text = ""
     final_usage: Optional[Dict[str, Any]] = None

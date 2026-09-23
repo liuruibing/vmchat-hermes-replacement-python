@@ -304,6 +304,21 @@ class LangChainVmChatProvider(VmChatModelProvider):
                         result={"type": "dsl", "dsl": parsed_json},
                         usage=usage,
                     )
+                if isinstance(parsed_json, dict):
+                    text_val = (
+                        parsed_json.get("text")
+                        or parsed_json.get("reply")
+                        or parsed_json.get("content")
+                        or parsed_json.get("message")
+                    )
+                    if text_val and isinstance(text_val, str):
+                        cat = parsed_json.get("category")
+                        if cat not in ("clarify", "reject"):
+                            cat = "clarify"
+                        return ModelGenerateOutput(
+                            result={"type": "text", "category": cat, "text": text_val},
+                            usage=usage,
+                        )
                 raise RuntimeError(str(val_err))
         except Exception as err:
             msg = str(err)
