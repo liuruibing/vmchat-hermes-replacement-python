@@ -1,0 +1,205 @@
+[
+  {
+    "id": "vm-template-msfpvfmb-86e4f0",
+    "title": "债券持仓明细111",
+    "entityType": "vm-block-template",
+    "payload": {
+      "block": {
+        "blockId": "3f09ab5e-1095-48b6-abba-d23b869a6764",
+        "title": "债券持仓明细111",
+        "type": "table",
+        "viewType": "table",
+        "moduleKey": "bondConcentrate",
+        "dsl": {
+          "action": "update",
+          "id": "3f09ab5e-1095-48b6-abba-d23b869a6764",
+          "requests": [
+            {
+              "id": "bondConcentrate",
+              "moduleId": "bondConcentrate",
+              "sqlCode": "ec66b44b-5e8b-4057-8046-79dd6798eee7"
+            }
+          ],
+          "transform": {
+            "language": "javascript",
+            "function": "function transform(responses) { var response = responses && responses.bondConcentrate; var rows = response && response.body && Array.isArray(response.body.tabData) ? response.body.tabData : []; var result = []; for (var i = 0; i < rows.length; i++) { var row = rows[i]; result.push({ VC_SYMBOL: row.VC_SYMBOL, VC_NAME: row.VC_NAME, F_CCZB: row.F_CCZB != null ? row.F_CCZB * 100 : null, F_LTZB: row.F_LTZB != null ? row.F_LTZB * 100 : null }); } return result; }"
+          },
+          "view": {
+            "type": "table",
+            "title": "债券持仓明细111",
+            "columns": [
+              {
+                "field": "VC_SYMBOL",
+                "label": "VC_SYMBOL",
+                "format": {
+                  "type": "text",
+                  "nullValue": "-"
+                }
+              },
+              {
+                "field": "VC_NAME",
+                "label": "VC_NAME",
+                "format": {
+                  "type": "text",
+                  "nullValue": "-"
+                }
+              },
+              {
+                "field": "F_CCZB",
+                "label": "F_CCZB",
+                "format": {
+                  "type": "percentage",
+                  "digits": 4,
+                  "suffix": "%",
+                  "nullValue": "-"
+                }
+              },
+              {
+                "field": "F_LTZB",
+                "label": "F_LTZB",
+                "format": {
+                  "type": "percentage",
+                  "digits": 4,
+                  "suffix": "%",
+                  "nullValue": "-"
+                }
+              }
+            ]
+          }
+        },
+        "queryContext": {
+          "fundCode": "",
+          "productCode": "",
+          "beginDate": "",
+          "endDate": "",
+          "dateRange": [],
+          "benchmarkA": "",
+          "benchmarkB": "",
+          "benchmarks": "0",
+          "dataFreq": "日频"
+        }
+      },
+      "height": 8
+    },
+    "createdAt": "2026-08-05T06:39:25.139Z",
+    "updatedAt": "2026-08-06T07:03:49.316Z",
+    "updatedBy": "系统管理员"
+  },
+  {
+    "id": "vm-template-mseb0jk1-dba8d1",
+    "title": "SM0513 股票期末持仓行业占比与沪深300对比",
+    "entityType": "vm-block-template",
+    "payload": {
+      "block": {
+        "blockId": "0a98df91-621a-4bfd-953e-a6a46a3aff2c",
+        "title": "SM0513 股票期末持仓行业占比与沪深300对比",
+        "type": "echarts",
+        "viewType": "echarts",
+        "moduleKey": "positionIndustry",
+        "dsl": {
+          "action": "create",
+          "id": "0a98df91-621a-4bfd-953e-a6a46a3aff2c",
+          "params": {
+            "fundCode": "SM0513",
+            "beginDate": "20220101",
+            "endDate": "20220331",
+            "dataFreqOpen": "true",
+            "benchmarks": "1",
+            "benchmarkA": "沪深300",
+            "dataFreq": "日频"
+          },
+          "requests": [
+            {
+              "id": "positionIndustry",
+              "moduleId": "positionIndustry",
+              "sqlCode": "d8ac50c1-b41c-498e-8c8a-bd6a577177a6"
+            }
+          ],
+          "transform": {
+            "language": "javascript",
+            "function": "function transform(responses) { var response = responses && responses.positionIndustry; var rows = response && Array.isArray(response.body) ? response.body : []; var maxDate = ''; var i; for (i = 0; i < rows.length; i++) { if (rows[i].TDATE && rows[i].TDATE > maxDate) { maxDate = rows[i].TDATE; } } var prod = {}; var bench = {}; var keys = []; var seen = {}; for (i = 0; i < rows.length; i++) { var row = rows[i]; if (maxDate && row.TDATE !== maxDate) { continue; } var name = row.industryName; if (name === undefined || name === null || name === '') { continue; } if (!seen[name]) { seen[name] = true; keys.push(name); } if (row.FCODE === 'SM0513') { prod[name] = row.industryRatio * 100; } else { bench[name] = row.industryRatio * 100; } } keys.sort(); var result = []; for (i = 0; i < keys.length; i++) { var n = keys[i]; result.push({ industryName: n, productRatio: prod[n] !== undefined ? prod[n] : null, benchmarkRatio: bench[n] !== undefined ? bench[n] : null }); } return result; }"
+          },
+          "view": {
+            "type": "echarts",
+            "title": "SM0513 股票期末持仓行业占比与沪深300对比",
+            "legend": {
+              "show": true,
+              "data": [
+                "SM0513行业持仓占比",
+                "沪深300行业持仓占比"
+              ]
+            },
+            "dataset": {
+              "source": "$transform",
+              "dimensions": [
+                "industryName",
+                "productRatio",
+                "benchmarkRatio"
+              ]
+            },
+            "xAxis": {
+              "type": "category",
+              "name": "行业"
+            },
+            "yAxis": [
+              {
+                "type": "value",
+                "name": "行业持仓占比"
+              }
+            ],
+            "series": [
+              {
+                "type": "bar",
+                "name": "SM0513行业持仓占比",
+                "encode": {
+                  "x": "industryName",
+                  "y": "productRatio"
+                },
+                "yAxisIndex": 0,
+                "format": {
+                  "type": "percentage",
+                  "digits": 4,
+                  "suffix": "%",
+                  "nullValue": "-"
+                }
+              },
+              {
+                "type": "bar",
+                "name": "沪深300行业持仓占比",
+                "encode": {
+                  "x": "industryName",
+                  "y": "benchmarkRatio"
+                },
+                "yAxisIndex": 0,
+                "format": {
+                  "type": "percentage",
+                  "digits": 4,
+                  "suffix": "%",
+                  "nullValue": "-"
+                }
+              }
+            ]
+          }
+        },
+        "queryContext": {
+          "fundCode": "SM0513",
+          "productCode": "SM0513",
+          "beginDate": "20220101",
+          "endDate": "20220331",
+          "dateRange": [
+            "20220101",
+            "20220331"
+          ],
+          "benchmarkA": "沪深300",
+          "benchmarkB": "",
+          "benchmarks": "1",
+          "dataFreq": "日频"
+        }
+      },
+      "height": 10
+    },
+    "createdAt": "2026-08-04T06:55:43.105Z",
+    "updatedAt": "2026-08-04T06:55:43.106Z",
+    "updatedBy": "系统管理员"
+  }
+]

@@ -1,0 +1,26 @@
+// base color
+$blue:#324157;
+$light-blue:#3A71A8;
+$red:#C03639;
+$pink: #E65D6E;
+$green: #30B08F;
+$tiffany: #4AB7BD;
+$yellow:#FEC171;
+$panGreen: #30B08F;
+
+//sidebar
+$menuBg:#f2f2f2;
+$subMenuBg:#f2f2f2; //左侧子菜单底色
+$menuHover:#d5e2ef;  //左侧鼠标浮动颜色
+$sideBarWidth: 180px;//左侧菜单最小宽度
+$menuTopHover:#3598dc;  //顶部鼠标浮动颜色
+$menuTopTextHover:#FBDE81;  //顶部鼠标浮动文字颜色
+$sideBarTopWidth: 900px;//顶部菜单最小宽度
+
+//page
+$reportVM-bg: #d6572c;
+$reportVM-bg-alpha: 0.3;
+
+$reportVM-bg-color: rgba($reportVM-bg, $reportVM-bg-alpha);
+$reportVM-model-bg: #2a2a2a;
+

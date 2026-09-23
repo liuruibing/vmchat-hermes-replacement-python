@@ -1,0 +1,214 @@
+{
+  "main": {
+    "id": "856431e654608be0",
+    "type": "split",
+    "children": [
+      {
+        "id": "d50811c4250cad1f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "32200408d63e9b40",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "08-Learning/职年计划投资业绩-核心数据链.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "职年计划投资业绩-核心数据链"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "5ebe3bbf16cee223",
+    "type": "split",
+    "children": [
+      {
+        "id": "5ad00442b03936e7",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "3fc157c77d85547c",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "9cb261e4cee686cf",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "f0be71bcef180296",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "79f297d1389326ca",
+    "type": "split",
+    "children": [
+      {
+        "id": "3c51904b6fa2a65c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2ea98e8ef2b52c59",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "08-Learning/职年计划投资业绩-核心数据链.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "职年计划投资业绩-核心数据链 的反向链接列表"
+            }
+          },
+          {
+            "id": "25f10a25658efcac",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "08-Learning/职年计划投资业绩-核心数据链.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "职年计划投资业绩-核心数据链 的出链列表"
+            }
+          },
+          {
+            "id": "b8fa26a07f14c50f",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "e6da29200b296c1d",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "6d5a136aee8b00c4",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "08-Learning/职年计划投资业绩-核心数据链.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "大纲"
+            }
+          },
+          {
+            "id": "fdd62455530d2d4c",
+            "type": "leaf",
+            "state": {
+              "type": "oh-my-claudian-view",
+              "state": {},
+              "icon": "bot",
+              "title": "Oh My Claudian"
+            }
+          }
+        ],
+        "currentTab": 5
+      }
+    ],
+    "direction": "horizontal",
+    "width": 764.69140625
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false,
+      "oh-my-claudian:Open Oh My Claudian": false
+    }
+  },
+  "active": "32200408d63e9b40",
+  "lastOpenFiles": [
+    "08-Learning/职年计划投资业绩-10分钟理解.md",
+    "08-Learning/职年计划投资业绩-Quiz.md",
+    "06-SQL/职年计划投资业绩-种子分析.md",
+    "02-Objects/风险指标.md",
+    "02-Objects/计划类型.md",
+    "01-Domains/职年计划投资业绩.md",
+    "00-Overview/学习路线.md",
+    "00-Overview/数据库业务学习首页.md",
+    "00-Overview/增量维护流程.md",
+    "00-Overview/证据索引.md",
+    "00-Overview/知识库规范.md",
+    "00-Overview/Schema地图.md"
+  ]
+}

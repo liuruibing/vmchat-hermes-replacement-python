@@ -1,0 +1,121 @@
+/*
+ *  STYLE 1
+ */
+*{
+  margin: 0px;
+  padding: 0px;
+}
+html,body{
+  font-family: "Microsoft Yahei","Open Sans",sans-serif;
+  background-color: rgba(0,0,0,0)!important;
+}
+body, h1, h2, h3, h4, h5, h6, hr, p, blockquote, dl, dt, dd, ul, ol, li, pre, form, fieldset, legend, button, input, textarea, th, td { margin:0; padding:0; }
+ul, ol { list-style:none; }
+a { text-decoration:none; }
+a:hover { text-decoration:underline; }
+table{
+  border-collapse: collapse!important;
+  border-spacing: 0px!important;
+  border: 0px solid #f2f2f2!important;
+  overflow: auto;
+  /*white-space:nowrap;   !*强制在一行显示*!*/
+  /*overflow:hidden;     !*溢出的内容切割隐藏*!*/
+  /*text-overflow:ellipsis;  !*当内联溢出块容器时，将溢出部分替换为…*!*/
+  /*word-break:keep-all;  !*允许在单词内换行*!*/
+  word-break:break-all;
+  table-layout:fixed;
+}
+table tr td {
+  word-wrap:break-word;
+  border: 1px solid #f2f2f2;
+}
+
+
+.pointer_box{
+  cursor: pointer;
+}
+/*::-webkit-scrollbar {*/
+/*width: 10px;*/
+/*height: 10px;*/
+/*!*background-color: #ddd;*!*/
+/*}*/
+
+
+/*!*滑块*!*/
+/*::-webkit-scrollbar-thumb {*/
+/*background-color: #f2f2f2;*/
+/*border-radius: 10px;*/
+/*}*/
+
+/*::-webkit-scrollbar-thumb:hover {*/
+/*background-color: #f6f6f6;*/
+/*}*/
+
+
+/*!*滑道*!*/
+/*::-webkit-scrollbar-track {*/
+/*box-shadow: inset 0 0 6px #fff;*/
+/*border-radius: 10px;*/
+/*}*/
+
+
+::-webkit-scrollbar-track {
+  /*-webkit-box-shadow:inset 0 0 6px #f2f2f2;*/
+  border-radius:4px;
+  background-color:#f2f2f2;
+}
+::-webkit-scrollbar {
+  width:8px;
+  height:8px;
+  background-color:#f2f2f2;
+  cursor: pointer;
+}
+::-webkit-scrollbar-thumb {
+  border-radius:4px;
+  /*-webkit-box-shadow:inset 0 0 6px #f2f2f2;*/
+  background-color:#d8d8d8;
+}
+::-webkit-scrollbar-thumb:hover {
+background-color: #d9d9d9;
+}
+
+.J_iframe::-webkit-scrollbar-track {
+  /*-webkit-box-shadow:inset 0 0 6px #f2f2f2;*/
+  border-radius:4px;
+  background-color:#f2f2f2;
+}
+.J_iframe::-webkit-scrollbar {
+  width:8px;
+  height:8px;
+  background-color:#f2f2f2;
+  cursor: pointer;
+}
+.J_iframe::-webkit-scrollbar-thumb {
+  border-radius:4px;
+  /*-webkit-box-shadow:inset 0 0 6px #f2f2f2;*/
+  background-color:#d8d8d8;
+}
+.J_iframe::-webkit-scrollbar-thumb:hover {
+  background-color: #d9d9d9;
+}
+
+.statement_box::-webkit-scrollbar {
+  width:8px;
+  height:8px;
+  background-color:#f2f2f2;
+  cursor: pointer;
+}
+.statement_box::-webkit-scrollbar-thumb {
+  border-radius:4px;
+  /*-webkit-box-shadow:inset 0 0 6px #f2f2f2;*/
+  background-color:#d8d8d8;
+}
+.statement_box::-webkit-scrollbar-thumb:hover {
+  background-color: #d9d9d9;
+}
+.flow_box::-webkit-scrollbar {
+  width:0px;
+
+}
+
+

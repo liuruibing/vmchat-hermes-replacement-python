@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0003: DW 层业务知识与金融指标 4 步学习法</title>
+  <style>
+    :root {
+      --bg: #fffff8;
+      --text: #111111;
+      --border: #e0e0e0;
+      --accent: #859900;
+      --panel: #fdf6e3;
+      --correct: #2aa198;
+      --incorrect: #dc322f;
+      --font-mono: 'JetBrains Mono', Consolas, monospace;
+    }
+    body {
+      max-width: 820px;
+      margin: 40px auto;
+      padding: 0 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "EtBm", "Palatino", "Georgia", "Songti SC", serif;
+      line-height: 1.7;
+    }
+    h1 {
+      font-size: 28px;
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 8px;
+      margin-bottom: 24px;
+      color: var(--accent);
+    }
+    h2 {
+      font-size: 20px;
+      margin-top: 32px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .meta-bar {
+      font-size: 14px;
+      color: #657b83;
+      margin-bottom: 32px;
+      background: var(--panel);
+      padding: 12px 16px;
+      border-radius: 4px;
+      border-left: 4px solid var(--accent);
+    }
+    .citation {
+      font-size: 13px;
+      color: #586e75;
+      background: #eee8d5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-decoration: none;
+    }
+    .citation:hover { text-decoration: underline; }
+
+    .step-card {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 18px 20px;
+      margin: 20px 0;
+      border-radius: 6px;
+      border-left: 5px solid var(--accent);
+    }
+    .step-card h3 {
+      margin-top: 0;
+      color: #b58900;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .formula-box {
+      background: #eee8d5;
+      border: 1px solid #93a1a1;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+
+    /* Quiz Area */
+    .quiz-container {
+      background: #eee8d5;
+      border: 1px solid #859900;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-top: 40px;
+    }
+    .quiz-title {
+      font-weight: bold;
+      color: #859900;
+      margin-bottom: 16px;
+      font-size: 16px;
+    }
+    .quiz-option {
+      display: block;
+      background: #fdf6e3;
+      border: 1px solid #cb4b16;
+      padding: 10px 14px;
+      margin: 8px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .quiz-option:hover { background: #eee8d5; }
+    .feedback {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 4px;
+      font-weight: bold;
+      display: none;
+    }
+    .feedback.success { background: #d1edda; color: #155724; border: 1px solid #c3e6cb; }
+    .feedback.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+    .nav-footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+    .nav-footer a { color: #268bd2; text-decoration: none; }
+    .nav-footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="meta-bar">
+    <strong>Lesson 0003</strong> | 目标：掌握 DW 层业务知识与金融指标的 4 步入手路线<br>
+    上一课: <a href="0002-plan-db-layers-comparison.html">Lesson 0002</a> | 关联 Mission: <a href="../MISSION.md">MISSION.md</a> | 速查手册: <a href="../reference/card-plan-db-schema.html" target="_blank">速查卡</a>
+  </div>
+
+  <h1>单元 3：DW 层业务知识与指标 4 步入手指南</h1>
+
+  <p>在面对庞大的金融 DW 表（如 <code>MPRF_F_PLAN_DAYNETVALUE</code>）和复杂的指标公式时，容易陷入“看代码看不懂业务，看业务对不上字段”的困境。高效的学习路径是遵循以下 <strong>4 步入手模型</strong>。</p>
+
+  <a class="citation" href="/Users/liuruibing/Downloads/职年计划查询SQL_字段计算逻辑分析.md" target="_blank">来源：职年计划查询SQL_字段计算逻辑分析.md</a>
+  <a class="citation" href="/Users/liuruibing/Downloads/MPRF_F_PLAN_DAYNETVALUE_字段清洗调用梳理.md" target="_blank">来源：字段清洗调用梳理.md</a>
+
+  <!-- Step 1 -->
+  <div class="step-card">
+    <h3>第 1 步：抓核心实体与基础基准指标 (Foundation Metrics)</h3>
+    <p>不要一上来就看夏普比率或总体加权，先搞懂 DW 表中最基础的 3 个底层事实字段：</p>
+    <ul>
+      <li><code>F_NETVALUE</code>：资产净值（当日组合资产总规模，来自于估值表 701A）。</li>
+      <li><code>F_CAPITAL_IN</code> / <code>F_CAPITAL_OUT</code>：投资分配流入与提取流出。</li>
+    </ul>
+    <div class="formula-box">
+      标准现金流日收益率公式 (r_t):<br>
+      r_t = (F_NETVALUE_t - F_NETVALUE_{t-1} - F_CAPITAL_IN_t + F_CAPITAL_OUT_t) / F_NETVALUE_{t-1}
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step-card">
+    <h3>第 2 步：区分收益率的两种聚合方式 (Time vs Portfolio)</h3>
+    <p>搞清楚“单个计划随时间的复利”与“多个计划跨组合的加权”在算法上的根本区别：</p>
+    <ul>
+      <li><strong>时间维度复利 (单计划连乘)</strong>：单个计划在 N 天内的累计收益率等于每日日收益率的几何连乘：<code>R = ∏(1 + r_t) - 1</code>。</li>
+      <li><strong>组合维度加权 (总体加权函数)</strong>：多个计划汇总时，不能直接相加连乘结果。必须先用前一自然日规模 <code>701A</code> 计算每日总体加权收益率 <code>r̄_t</code>，再进行几何连乘：<code>R_total = ∏(1 + r̄_t) - 1</code>（调用 <code>GET_OVERALL_WEIGHTED_RETURN_R/W</code>）。</li>
+    </ul>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step-card">
+    <h3>第 3 步：识别特例口径与业务避坑 (Business Caveats)</h3>
+    <p>重点识别代码中的业务命名惯例与监管特殊规则：</p>
+    <div class="formula-box">
+      【TCZ 真实含义】: TCZ 沿用历史命名“剔除支付”，源码实际逻辑为 VC_NAME_GLR LIKE '太平养老保险%'（剔除太平养老管理组合）。<br><br>
+      【14号文回撤口径 F_MAXDRAW_DAY】: 非常规净值曲线峰谷 drop，而是“日收益率前高后低差”公式：Max ( (r_g - r_k) / (r_g + 1) )，其中 g < k。
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="step-card">
+    <h3>第 4 步：从逐日加权序列推导风险指标 (Risk Derivation)</h3>
+    <p>搞清风险指标（波动率 <code>F_VIX</code>、夏普 <code>F_SHARP</code>）在 SQL 合计行的推导逻辑：</p>
+    <p>SQL 合计行不会对单个计划的波动率直接取平均，而是先生成每日总体加权日收益率序列 <code>r̄_t</code>，再计算该收益率序列的标准差并年化（乘以 <code>√250</code>），得到符合监管合规要求的组合总体风险指标。</p>
+  </div>
+
+  <!-- 检索练习 -->
+  <div class="quiz-container">
+    <div class="quiz-title">🎯 检索练习：测试你的长效记忆 (Storage Strength)</div>
+    <p><strong>问题：</strong> 在 SQL 中计算监管“14号文口径”的日回撤指标 <code>F_MAXDRAW_DAY</code> 时，它的核心公式逻辑是什么？</p>
+    
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：这是常规累计净值曲线的高点到低点回撤公式。')">A. 区间内累计净值最高点到最低点的下降百分比</div>
+    <div class="quiz-option" onclick="checkAnswer(true, '正确！14号文口径使用日收益率前高后低差公式 Max((r_g - r_k)/(r_g + 1))。')">B. 日收益率序列中前高后低差 (r_g - r_k)/(r_g + 1) 的最大值</div>
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：这是年化波动率 F_VIX 的标准差计算公式。')">C. 每日收益率与无风险利率差值的年化标准差</div>
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：这是业绩报酬转 BP 值的换算逻辑。')">D. 投管报酬与受托报酬占期末资产净值的基点比例</div>
+
+    <div id="feedback" class="feedback"></div>
+  </div>
+
+  <div class="nav-footer">
+    <a href="0002-plan-db-layers-comparison.html">← 上一课: Lesson 0002</a>
+    <span>当前进度: Lesson 0003 / 0004</span>
+    <span>提问教学 Agent: 随时在对话框中向我提问！</span>
+  </div>
+
+  <script>
+    function checkAnswer(isCorrect, msg) {
+      const fb = document.getElementById('feedback');
+      fb.style.display = 'block';
+      if (isCorrect) {
+        fb.className = 'feedback success';
+        fb.innerHTML = '🎉 ' + msg;
+      } else {
+        fb.className = 'feedback error';
+        fb.innerHTML = '❌ ' + msg + ' 请再试一次！';
+      }
+    }
+  </script>
+</body>
+</html>

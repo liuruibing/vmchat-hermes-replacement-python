@@ -1,0 +1,116 @@
+/** 样式覆盖 */
+.el-card__header {
+  padding: 10px 20px !important;
+}
+
+/** card头部样式覆盖 */
+.card-header {
+  height: 30px;
+  overflow-y: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  .title-name {
+    color: #0F65DD;
+    font-weight: bold;
+    font-size: 18px;
+  }
+  .link-more {
+    margin-left: 10px;
+    color: #206bc4;
+    cursor: pointer;
+  }
+}
+
+/** 表格单元格颜色 - 需跳转 */
+.fund_cell {
+  display: flex;
+  align-items: center;
+  color: #206bc4;
+  cursor: pointer;
+  .fund_name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 5px;
+  }
+}
+
+/** 内容区域高度 */
+.content {
+  height: 290px;
+}
+
+.content-item {
+  height: 140px;
+  overflow: auto;
+  .content-title {
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .content-subtitle {
+    font-size: 12px;
+    color: #cccccc;
+  }
+  .content-main {
+    font-size: 14px;
+  }
+}
+
+/** 无数据背景图 */
+.noDataStyle {
+  text-align: center;
+  height: 350px;
+}
+.noDataStyle img {
+  position: relative;
+  top: 45px;
+}
+
+/** echarts高度 */
+.echarts_box {
+  height: 284px;
+  width: 100%;
+}
+
+/** card头部副标题 */
+.title_left_ {
+  .titletitle {
+    color: #a5a5a5;
+    font-size: 14px;
+    margin-right: 37px;
+  }
+}
+
+/** card头部tab切换 */
+.toogle-tab {
+  font-size: 14px;
+  height: 29px;
+  display: inline-block;
+  .tab-item {
+    display: inline-block;
+    background-color: #fff;
+    color: #a5a5a5;
+    border: 1px solid #a5a5a5;
+    margin-left: 10px;
+    border-radius: 20px;
+    height: 29px;
+    width: 80px;
+    line-height: 29px;
+    text-align: center;
+    cursor: pointer;
+  }
+  .tab-item-active {
+    cursor: pointer;
+    background-color: #0F65DD;
+    color: #fff;
+    border: 1px solid #0F65DD;
+  }
+}
+
+.over-flow-nowarp {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  -o-text-overflow: ellipsis;
+}

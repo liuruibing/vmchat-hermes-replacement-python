@@ -1,0 +1,81 @@
+.vxe_custom_style {
+  .vxetable-style {
+
+    /*修改表头背景色*/
+    .vxe-table--header-wrapper,
+    .vxe-header--row,
+    .vxe-table--header {
+      // border-bottom: 2px solid #f2f3f5
+    }
+
+    /*调整表格 单元格背景颜色*/
+    .vxe-table .vxe-table--body-wrapper,
+    .vxe-table .vxe-table--footer-wrapper {}
+
+
+
+
+
+    /*调整表格文字及位置*/
+    .vxe-table .vxe-body--column,
+    .vxe-table .vxe-footer--column,
+    .vxe-table .vxe-header--column {
+      color: #060606 !important;
+      font-weight: 700 !important;
+    }
+
+    /*调整表头首行  line 的颜色*/
+    .vxe-table .vxe-table--header-wrapper .vxe-table--header-border-line {
+      color: #060606 !important;
+      font-weight: 700 !important;
+      border-bottom: 1px solid #000000 !important;
+      border-left: 1px solid #000000 !important;
+      border-right: 1px solid #000000 !important;
+    }
+
+    .vxe-body--row:hover {
+      background-color: #d8eaec !important;
+    }
+
+    .vxe-body--row.row-green {
+      background-color: #187;
+      color: #fff;
+    }
+
+    .vxe-body--row.row-red {
+      background-color: red;
+      color: #fff;
+    }
+
+  }
+
+  .vxe-cell-class-name {
+    border-bottom: 1px solid #c0bfc0 !important;
+    border-right: 1px solid #c0bfc0 !important;
+  }
+
+  .vxe-header-cell-class-name {
+    border-top: 1px solid #000000 !important;
+    border-bottom: 1px solid #000000 !important;
+    border-right: 1px solid #000000 !important;
+  }
+
+
+  @import 'vxe-table/styles/variable.scss';
+  $vxe-table-row-striped-background-color: #eeeeee !important;
+  $vxe-table-row-hover-striped-background-color: #d8eaec !important;
+  $vxe-table-row-hover-background-color: #d8eaec !important;
+  $vxe-table-border-width: 1px;
+  $vxe-table-border-color: #000000 !important;
+
+  @import 'vxe-table/styles/modules.scss';
+
+}
+
+.vxe-table--header-wrapper.body--wrapper {
+  border-bottom: 2px solid #f2f3f5
+}
+
+.vxe-loading .vxe-loading--spinner {
+  stroke: #e19c5d;
+}

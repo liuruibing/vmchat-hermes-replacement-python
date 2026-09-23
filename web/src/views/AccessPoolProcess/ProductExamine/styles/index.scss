@@ -1,0 +1,13 @@
+.title-style {
+  color: #0F65DD;
+  vertical-align: middle;
+  height: 35px;
+  line-height: 35px;
+  font-size: 16px;
+  margin-left: 5px;
+}
+
+.search_button_com::after{
+  content:"";
+  clear: both;
+}

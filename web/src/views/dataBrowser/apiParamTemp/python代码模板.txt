@@ -1,0 +1,124 @@
+import requests
+import json
+from typing import Dict, Any
+
+class ApiCaller:
+    
+    @staticmethod
+    def build_json_body() -> str:
+        """构建请求的JSON Body"""
+        json_body = {
+            "fundInfos": [{
+                "isPack": False,
+                "fundCodeTitle": "度量3期大消费基金",
+                "fundCodeKey": "SM0513",
+                "funds": [{"fundCode": "SM0513", "dataSource": ""}]
+            }],
+            "beginDate": "2022-01-01",
+            "endDate": "2022-01-31",
+            "singleBenchmark": "000300",
+            "dateType": "workDate",
+            "dateStep": "1",
+            "paramMap": {
+                "templateCode": "a6a4c1b0-513b-49a5-91b2-66eed40acf60",
+                "beginDate": "2022-01-01",
+                "endDate": "2022-01-31",
+                "benchmarks": "1",
+                "benchmarkA": "000300",
+                "benchmarkB": "000300",
+                "benchmarkAValue": "0.0000",
+                "benchmarkBValue": "0.0000",
+                "kpiCode": "",
+                "contrasCode": "",
+                "industryType": "SWSR",
+                "desensitizationFlag": "",
+                "desensitizationFun": "ALL",
+                "dataFreqOpen": "true",
+                "dataFreq": "1"
+            },
+            "colList": [
+                {
+                    "vcInfoDefineId": "DCPJX_SYFXFX_SYFXBR_RP_AXS",
+                    "vcIndexCode": "DCPJX_SYFXFX_SYFXBR_RP_AXS",
+                    "vcColCode": "DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate",
+                    "vcColName": "α系数(报告期间)",
+                    "vcUnitType": "original",
+                    "vcUnitDefineId": "DCPJX_SYFXFX_SYFXBR_RP_AXS_original_id",
+                    "vcScale": "4:2",
+                    "vcFormat": "0.00",
+                    "vcModelValue": "",
+                    "vcItemDefineId": "",
+                    "vcTimeDefineId": "DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate_id",
+                    "fColOrder": 1
+                },
+                {
+                    "vcInfoDefineId": "DCPJX_SYFXFX_SYFXBR_RP_AXS",
+                    "vcIndexCode": "DCPJX_SYFXFX_SYFXBR_RP_AXS",
+                    "vcColCode": "DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate",
+                    "vcColName": "α系数(报告期间)",
+                    "vcUnitType": "original",
+                    "vcUnitDefineId": "DCPJX_SYFXFX_SYFXBR_RP_AXS_original_id",
+                    "vcScale": "4:2",
+                    "vcFormat": "0.00",
+                    "vcModelValue": "",
+                    "vcItemDefineId": "",
+                    "vcTimeDefineId": "DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate_id",
+                    "fColOrder": 2
+                }
+            ]
+        }
+        return json.dumps(json_body, ensure_ascii=False)
+    
+    @staticmethod
+    def send_post_request(url: str, token: str, json_body: str) -> str:
+        """发送POST请求"""
+        headers = {
+            "Content-Type": "application/json; charset=UTF-8",
+            "Accept": "application/json",
+            "token": token
+        }
+        
+        try:
+            # 发送POST请求
+            response = requests.post(url, data=json_body.encode('utf-8'), headers=headers)
+            
+            # 获取响应码
+            print(f"响应码: {response.status_code}")
+            
+            # 判断状态码
+            if 200 <= response.status_code < 300:
+                # 成功响应
+                return response.text
+            else:
+                raise Exception(f"HTTP请求失败，状态码: {response.status_code}")
+                
+        except requests.exceptions.RequestException as e:
+            print(f"请求异常: {e}")
+            # 尝试获取错误响应
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    return f"错误响应: {e.response.text}"
+                except:
+                    return f"请求失败: {str(e)}"
+            return f"请求失败: {str(e)}"
+    
+    @staticmethod
+    def main():
+        # 用户TOKEN
+        token = "替换用户TOKEN"
+        
+        # URL接口地址
+        host = "http://localhost:8888/pflfofrest"
+        intf = "/api/browser/index_token"
+        url = host + intf
+        
+        # 构建JSON Body
+        json_body = ApiCaller.build_json_body()
+        
+        # 发送请求并获取响应
+        response = ApiCaller.send_post_request(url, token, json_body)
+        print(f"响应结果: {response}")
+
+
+if __name__ == "__main__":
+    ApiCaller.main()

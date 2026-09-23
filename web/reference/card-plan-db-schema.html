@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>职年/企年计划数据库速查手册 (Schema & Reference)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --accent-emerald: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-rose: #fb7185;
+      --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.6;
+    }
+    .header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+      color: var(--primary);
+    }
+    .header p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge-emerald { color: var(--accent-emerald); }
+    .badge-amber { color: var(--accent-amber); }
+    .badge-rose { color: var(--accent-rose); }
+    .badge-sky { color: var(--primary); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+    }
+    th {
+      background: #090d16;
+      color: var(--text-muted);
+    }
+    code {
+      font-family: var(--font-mono);
+      color: var(--primary);
+      background: #090d16;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .formula {
+      background: #090d16;
+      border-left: 3px solid var(--primary);
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      margin: 8px 0;
+      border-radius: 0 4px 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>职年/企年计划数据库与 SQL 洗算速查手册</h1>
+    <p>底层数据表架构 · 核心清洗包与函数 · SQL 合计行四种汇总口径 · 待核实疑点</p>
+  </div>
+
+  <div class="grid">
+    <!-- 1. 核心表结构 -->
+    <div class="card">
+      <h2><span class="badge-sky">1.</span> 核心数据库表 (Physical Tables)</h2>
+      <table>
+        <thead>
+          <tr><th>表名</th><th>层级 / 作用</th><th>核心字段与关联</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>MFACTGZ_FUND_HLDTOTAL</code></td>
+            <td>源头估值流水表</td>
+            <td><code>VC_SUBCODE='701A'</code> (组合资产净值/规模权重)<br><code>VC_SUBCODE='702A'</code> (组合单位净值)</td>
+          </tr>
+          <tr>
+            <td><code>MFACTGZ_FUND_ASSETINOUT</code></td>
+            <td>资金流流水表</td>
+            <td><code>F_CAPITAL_IN</code> (分配流入), <code>F_CAPITAL_OUT</code> (提取流出)</td>
+          </tr>
+          <tr>
+            <td><code>MFACTGZ_FUND_HLDDETAIL</code></td>
+            <td>持仓明细表</td>
+            <td><code>VC_SUBCODE='221002'</code> (受托报酬 STBC)<br><code>VC_SUBCODE='220602'</code> (投管报酬 TGBC)</td>
+          </tr>
+          <tr>
+            <td><code>MDIM_PLAN_INFO</code></td>
+            <td>计划维度表</td>
+            <td><code>VC_PLAN_LIC_ID</code> (许可编号), <code>D_CREATE_DATE</code>, <code>D_END_DATE</code></td>
+          </tr>
+          <tr>
+            <td><code>MPRF_F_PLAN_DAYNETVALUE</code></td>
+            <td>核心 DW 日汇总表</td>
+            <td>包含日净值、现金流、标准/不标准日收益率、受托与投管业绩报酬等</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 2. 四大清洗与计算函数 -->
+    <div class="card">
+      <h2><span class="badge-emerald">2.</span> 核心清洗过程与业务函数</h2>
+      <table>
+        <thead>
+          <tr><th>包 / 过程 / 函数</th><th>归属层</th><th>输入 / 逻辑与计算输出</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>DW_ZNST_INDEX_NEW</code></td>
+            <td>DW 清洗过程</td>
+            <td>清洗资产净值、资金流流入/流出及标准现金流日收益率 <code>F_DP_YIELD_BZ</code></td>
+          </tr>
+          <tr>
+            <td><code>DW_ZNST_INDEX_ADD</code></td>
+            <td>DW 累加过程</td>
+            <td>计算交易日区间累计收益率与各阶段收益率</td>
+          </tr>
+          <tr>
+            <td><code>F_YIELD_GROUP</code></td>
+            <td>PKG_DW_OPERATION</td>
+            <td>计算单计划日收益率，下钻至 <code>MFACTGZ_FUND_DAYYIELD</code> 净值增量</td>
+          </tr>
+          <tr>
+            <td><code>GET_OVERALL_WEIGHTED_RETURN_R/W</code></td>
+            <td>总体加权函数</td>
+            <td>以前一自然日 701A 为规模权重，对 702A 增长率加权并逐日几何连乘</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3. SQL 合计行四种汇总口径 -->
+    <div class="card">
+      <h2><span class="badge-amber">3.</span> SQL 合计行四种汇总口径对比</h2>
+      <table>
+        <thead>
+          <tr><th>汇总口径分类</th><th>对应输出指标</th><th>具体计算与加权逻辑</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. 期末净值加权</strong></td>
+            <td><code>RYIELDG</code>, <code>F_PYEILD_QJ_TCTP</code></td>
+            <td>按区间结束日 <code>F_NETVALUE</code> 资产净值比例加权汇总各计划收益率</td>
+          </tr>
+          <tr>
+            <td><strong>2. 总体加权收益函数</strong></td>
+            <td><code>MYIELDG</code>, <code>YYIELDG</code>, <code>CYIELDG</code></td>
+            <td>调用 <code>GET_OVERALL_WEIGHTED_RETURN_R/W</code>，前一自然日 701A 加权 702A 增长率几何连乘</td>
+          </tr>
+          <tr>
+            <td><strong>3. 逐日净值加权序列</strong></td>
+            <td><code>F_VIX</code>, <code>F_MAXDRAW_DAY</code>, <code>F_SHARP</code></td>
+            <td>先按每日净值加权生成总体日收益率序列，再计算波动率、14号文回撤与夏普</td>
+          </tr>
+          <tr>
+            <td><strong>4. 历史指标直接读取</strong></td>
+            <td>本年/成立以来风险指标</td>
+            <td>SQL 现场不计算，直接输出 <code>MMON_F_RISK_INDICATORS</code> 的历史存量值</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 4. 关键疑点与业务口径 -->
+    <div class="card">
+      <h2><span class="badge-rose">4.</span> 关键疑点与口径避坑指南</h2>
+      <div class="formula">TCZ 口径: TCZ 实际为“剔除太平养老管理组合” (VC_NAME_GLR LIKE '太平养老保险%')，非字面“剔除支付组合”。</div>
+      <div class="formula">企年错调: 企年 F_DP_YIELD_BZ_TCZ 源码误调用了未剔除 TCZ 的 F_PLAN_DYIELD_BZ，属于复制错误。</div>
+      <div class="formula">1105 硬编码: 职年计划 1105 在 2019-08-02/03 两天存在 0 与 0.000007967 的硬编码强制覆盖。</div>
+      <div class="formula">14号文回撤: F_MAXDRAW_DAY 为日收益率前高后低差 (G-K)/(G+1) 的最大值，非常规净值曲线回撤。</div>
+    </div>
+  </div>
+</body>
+</html>

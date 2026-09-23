@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0004: 以“职年计划综合查询页面”为核心的垂直切片学习法</title>
+  <style>
+    :root {
+      --bg: #fffff8;
+      --text: #111111;
+      --border: #e0e0e0;
+      --accent: #d33682;
+      --panel: #fdf6e3;
+      --correct: #2aa198;
+      --incorrect: #dc322f;
+      --font-mono: 'JetBrains Mono', Consolas, monospace;
+    }
+    body {
+      max-width: 820px;
+      margin: 40px auto;
+      padding: 0 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "EtBm", "Palatino", "Georgia", "Songti SC", serif;
+      line-height: 1.7;
+    }
+    h1 {
+      font-size: 28px;
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 8px;
+      margin-bottom: 24px;
+      color: var(--accent);
+    }
+    h2 {
+      font-size: 20px;
+      margin-top: 32px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .meta-bar {
+      font-size: 14px;
+      color: #657b83;
+      margin-bottom: 32px;
+      background: var(--panel);
+      padding: 12px 16px;
+      border-radius: 4px;
+      border-left: 4px solid var(--accent);
+    }
+    .citation {
+      font-size: 13px;
+      color: #586e75;
+      background: #eee8d5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-decoration: none;
+    }
+    .citation:hover { text-decoration: underline; }
+
+    .slice-container {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 18px 20px;
+      margin: 20px 0;
+      border-radius: 6px;
+    }
+    .slice-header {
+      font-weight: bold;
+      font-size: 16px;
+      color: #b58900;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      margin: 12px 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+    }
+    th { background: #eee8d5; }
+    code {
+      font-family: var(--font-mono);
+      color: #268bd2;
+      background: #073642;
+      color: #fdf6e3;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    /* Quiz Area */
+    .quiz-container {
+      background: #eee8d5;
+      border: 1px solid #d33682;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-top: 40px;
+    }
+    .quiz-title {
+      font-weight: bold;
+      color: #d33682;
+      margin-bottom: 16px;
+      font-size: 16px;
+    }
+    .quiz-option {
+      display: block;
+      background: #fdf6e3;
+      border: 1px solid #cb4b16;
+      padding: 10px 14px;
+      margin: 8px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .quiz-option:hover { background: #eee8d5; }
+    .feedback {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 4px;
+      font-weight: bold;
+      display: none;
+    }
+    .feedback.success { background: #d1edda; color: #155724; border: 1px solid #c3e6cb; }
+    .feedback.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+    .nav-footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+    .nav-footer a { color: #268bd2; text-decoration: none; }
+    .nav-footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="meta-bar">
+    <strong>Lesson 0004</strong> | 目标：学会以“页面为核心”的垂直切片学习法 (Vertical Slice)<br>
+    上一课: <a href="0003-dw-layer-business-learning-path.html">Lesson 0003</a> | 关联 Mission: <a href="../MISSION.md">MISSION.md</a> | 速查手册: <a href="../reference/card-plan-db-schema.html" target="_blank">速查卡</a>
+  </div>
+
+  <h1>单元 4：以“职年计划查询页面”为核心的垂直切片学习法</h1>
+
+  <p>非常赞同你的学习思路！<strong>“以具体页面为核心，找一个页面吃透它背后的 SQL 和业务逻辑”</strong>是金融与企业级系统开发中最实用的垂直切片学习法 (Vertical Slice Learning)。</p>
+
+  <a class="citation" href="/Users/liuruibing/Downloads/职年计划查询SQL_字段计算逻辑分析.md" target="_blank">来源：职年计划查询SQL_字段计算逻辑分析.md</a>
+
+  <h2>页面 ↔ SQL ↔ DW 垂直切片 4 层映射模型</h2>
+
+  <!-- Layer 1 -->
+  <div class="slice-container">
+    <div class="slice-header">📌 1. 页面前端筛选条件 ➔ SQL WHERE 过滤映射</div>
+    <table>
+      <thead>
+        <tr><th>前端页面控件</th><th>传递参数</th><th>对应查询 SQL 的 WHERE 过滤逻辑</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>开始日期 / 结束日期</strong></td>
+          <td><code>beginDate</code> / <code>endDate</code></td>
+          <td><code>D_CREATE_DATE <= endDate AND D_END_DATE >= beginDate</code><br>区间开始日 <code>D_SDATE = beginDate</code>，区间结束日 <code>D_EDATE = endDate</code></td>
+        </tr>
+        <tr>
+          <td><strong>计划类型下拉框</strong></td>
+          <td><code>VC_PTYPE</code></td>
+          <td><code>VC_TYPE_DETAIL='ZYNJ'</code> (固定职年)<br>若传入 <code>VC_PTYPE</code>，增加 <code>AND VC_PLAN_TYPE = :VC_PTYPE</code> 过滤</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Layer 2 -->
+  <div class="slice-container">
+    <div class="slice-header">📌 2. 页面表格行结构 ➔ SQL UNION ALL 结构映射</div>
+    <table>
+      <thead>
+        <tr><th>页面表格展现</th><th>SQL 实现逻辑</th><th>RK 排名列与固定列处理</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>顶部：单计划明细行</strong><br>(每个计划单独一行)</td>
+          <td>SQL 上半段：以计划为维度 GROUP BY，按期末资产净值 <code>F_PNETVALUE</code> 降序排列</td>
+          <td><code>RK</code> 列取 <code>ROW_NUMBER() OVER(ORDER BY F_PNETVALUE DESC)</code>；<br><code>PLANCODE</code> 取 <code>VC_PLAN_LIC_ID</code>，<code>PLANNAME</code> 取计划全称。</td>
+        </tr>
+        <tr>
+          <td><strong>底部：固定“合计”行</strong><br>(符合条件计划汇总为一行)</td>
+          <td>SQL 下半段：<code>UNION ALL</code>，所有计划汇总成单行</td>
+          <td><code>RK</code> 内部赋值 <code>999</code>，最外层 <code>DECODE(999,999,NULL,999)</code> 渲染为空；<br><code>PLANCODE='ZYNJ'</code>，<code>PLANNAME='合计'</code>。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Layer 3 -->
+  <div class="slice-container">
+    <div class="slice-header">📌 3. 页面表格列指标 ➔ 四种计算口径与 DW 函数映射</div>
+    <table>
+      <thead>
+        <tr><th>页面表格列名</th><th>单计划明细行计算逻辑</th><th>合计行计算逻辑 (4种汇总口径)</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>资产净值 F_NETVALUE</strong></td>
+          <td>取结束日科目 <code>701A</code> 的有效组合净值</td>
+          <td>所有符合条件计划期末资产净值的直接求和 <code>SUM(F_PNETVALUE)</code></td>
+        </tr>
+        <tr>
+          <td><strong>区间收益率 RYIELDG</strong></td>
+          <td>DW 表日收益率在区间内的几何连乘 <code>∏(1+r_t)-1</code></td>
+          <td><strong>口径1 (期末加权)</strong>: 按各计划期末资产净值 <code>F_PNETVALUE</code> 比例加权汇总</td>
+        </tr>
+        <tr>
+          <td><strong>月度收益率 MYIELDG</strong></td>
+          <td>月初 <code>TRUNC(endDate,'MM')</code> 至结束日的几何连乘</td>
+          <td><strong>口径2 (总体加权函数)</strong>: 调用 <code>GET_OVERALL_WEIGHTED_RETURN_W</code> 规模加权连乘</td>
+        </tr>
+        <tr>
+          <td><strong>日波动率 F_VIX</strong></td>
+          <td>直接调用单计划收益率序列计算年化标准差</td>
+          <td><strong>口径3 (逐日加权序列)</strong>: 先按每日净值生成总体加权序列 <code>r̄_t</code>，再计算标准差</td>
+        </tr>
+        <tr>
+          <td><strong>本年/成立风险指标</strong></td>
+          <td>从 <code>MMON_F_RISK_INDICATORS</code> 直读</td>
+          <td><strong>口径4 (历史直读)</strong>: SQL 现场不计算，直接读取存量表 <code>MMON</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Layer 4 -->
+  <div class="slice-container">
+    <div class="slice-header">📌 4. 页面吃透法实战 3 步建议</div>
+    <ol>
+      <li><strong>看渲染取数</strong>：打开“职年计划综合查询”页面，按 F12 抓取请求参数（<code>beginDate</code>, <code>endDate</code>, <code>VC_PTYPE</code>）。</li>
+      <li><strong>看表头对 SQL 列</strong>：将表格的 `RK` / `PLANNAME` / `RYIELDG` / `STBC` / `F_VIX` 与 SQL 查询列名一一比对。</li>
+      <li><strong>看合计行排查疑点</strong>：检查页面合计行的收益率与波动率，确认其调用的总体加权函数与逐日加权序列，并高亮 TCZ 剔除太平养老口径与 1105 硬编码等特例。</li>
+    </ol>
+  </div>
+
+  <!-- 检索练习 -->
+  <div class="quiz-container">
+    <div class="quiz-title">🎯 检索练习：测试你的长效记忆 (Storage Strength)</div>
+    <p><strong>问题：</strong> 在“职年计划综合查询”页面中，前端表格底部的“合计”行在查询 SQL 中是如何处理排名列 <code>RK</code> 的？</p>
+    
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：合计行在最外层渲染为空，并非显示为 0。')">A. 合计行内部直接将 RK 赋值为 0 并显示为 0</div>
+    <div class="quiz-option" onclick="checkAnswer(true, '正确！SQL 内部给合计行 RK 赋值 999，最外层通过 DECODE(RK,999,NULL,RK) 渲染为空。')">B. 内部赋值 999 最外层 DECODE 转换为 NULL 显示为空</div>
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：ROW_NUMBER() 只用于单计划明细行。')">C. 对所有符合条件的计划重新执行 ROW_NUMBER 排名</div>
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：合计行并非通过前端写死，而是 SQL UNION ALL 返回。')">D. 前端 UI 控件在渲染表格时强行覆盖为“合计”</div>
+
+    <div id="feedback" class="feedback"></div>
+  </div>
+
+  <div class="nav-footer">
+    <a href="0003-dw-layer-business-learning-path.html">← 上一课: Lesson 0003</a>
+    <span>当前进度: Lesson 0004 / 0004</span>
+    <span>提问教学 Agent: 随时在对话框中向我提问！</span>
+  </div>
+
+  <script>
+    function checkAnswer(isCorrect, msg) {
+      const fb = document.getElementById('feedback');
+      fb.style.display = 'block';
+      if (isCorrect) {
+        fb.className = 'feedback success';
+        fb.innerHTML = '🎉 ' + msg;
+      } else {
+        fb.className = 'feedback error';
+        fb.innerHTML = '❌ ' + msg + ' 请再试一次！';
+      }
+    }
+  </script>
+</body>
+</html>

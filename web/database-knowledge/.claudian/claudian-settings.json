@@ -1,0 +1,319 @@
+{
+  "userName": "",
+  "permissionMode": "normal",
+  "model": "haiku",
+  "thinkingBudget": "off",
+  "effortLevel": "high",
+  "serviceTier": "default",
+  "enableAutoTitleGeneration": true,
+  "titleGenerationLocale": "",
+  "titleGenerationModel": "",
+  "excludedTags": [],
+  "mediaFolder": "",
+  "systemPrompt": "",
+  "persistentExternalContextPaths": [],
+  "sharedEnvironmentVariables": "",
+  "envSnippets": [],
+  "customContextLimits": {},
+  "customModelAliases": {},
+  "keyboardNavigation": {
+    "scrollUpKey": "w",
+    "scrollDownKey": "s",
+    "focusInputKey": "i"
+  },
+  "requireCommandOrControlEnterToSend": false,
+  "locale": "en",
+  "providerConfigs": {
+    "claude": {
+      "enabled": true,
+      "safeMode": "acceptEdits",
+      "cliPath": "",
+      "cliPathsByHost": {},
+      "loadUserSettings": true,
+      "enableChrome": false,
+      "enableBangBash": false,
+      "customModels": "",
+      "defaultModel": "opus",
+      "lastModel": "haiku",
+      "modelEnvironmentType": "",
+      "titleModelEnvironmentType": "",
+      "environmentVariables": "",
+      "environmentHash": ""
+    },
+    "codex": {
+      "enabled": false,
+      "safeMode": "workspace-write",
+      "cliPath": "",
+      "cliPathsByHost": {},
+      "customModels": "",
+      "discoveredModels": [],
+      "modelAliases": {},
+      "visibleModels": null,
+      "enableUltraEffort": false,
+      "reasoningSummary": "detailed",
+      "environmentVariables": "",
+      "environmentHash": "",
+      "catalogTimestamp": 0,
+      "catalogFingerprint": "",
+      "installationMethodsByHost": {},
+      "wslDistroOverridesByHost": {}
+    },
+    "grok": {
+      "catalogsByHost": {},
+      "cliPath": "",
+      "cliPathsByHost": {},
+      "enabled": false,
+      "environmentHash": "",
+      "environmentVariables": "",
+      "modelAliases": {},
+      "planBasePermissionMode": "normal",
+      "preferredReasoningByModel": {},
+      "visibleModels": null
+    },
+    "opencode": {
+      "catalogTimestamp": 0,
+      "cliPath": "",
+      "cliPathsByHost": {},
+      "enabled": false,
+      "environmentHash": "",
+      "environmentVariables": "OPENCODE_ENABLE_EXA=1",
+      "modelAliases": {},
+      "preferredThinkingByModel": {},
+      "selectedMode": "",
+      "thinkingOptionsByModel": {},
+      "visibleModels": []
+    },
+    "pi": {
+      "cliPath": "",
+      "cliPathsByHost": {},
+      "discoveredModels": [],
+      "enabled": false,
+      "environmentHash": "",
+      "environmentVariables": "",
+      "modelAliases": {},
+      "preferredThinkingByModel": {},
+      "toolMode": "all",
+      "visibleModels": []
+    },
+    "omp": {
+      "cliPath": "",
+      "cliPathsByHost": {},
+      "enabled": true,
+      "environmentHash": "",
+      "environmentVariables": "",
+      "thinking": {
+        "configId": "thinking",
+        "currentValue": "high",
+        "options": [
+          {
+            "id": "off",
+            "name": "Off"
+          },
+          {
+            "description": "Auto-detect per prompt",
+            "id": "auto",
+            "name": "Auto"
+          },
+          {
+            "id": "minimal",
+            "name": "minimal"
+          },
+          {
+            "id": "low",
+            "name": "low"
+          },
+          {
+            "id": "medium",
+            "name": "medium"
+          },
+          {
+            "id": "high",
+            "name": "high"
+          }
+        ]
+      },
+      "discoveredModels": [
+        {
+          "description": "google-antigravity/claude-opus-4-5",
+          "label": "Claude Opus 4.5",
+          "rawId": "google-antigravity/claude-opus-4-5"
+        },
+        {
+          "description": "google-antigravity/claude-opus-4-6",
+          "label": "Claude Opus 4.6",
+          "rawId": "google-antigravity/claude-opus-4-6"
+        },
+        {
+          "description": "google-antigravity/claude-sonnet-4-5",
+          "label": "Claude Sonnet 4.5",
+          "rawId": "google-antigravity/claude-sonnet-4-5"
+        },
+        {
+          "description": "google-antigravity/claude-sonnet-4-6",
+          "label": "Claude Sonnet 4.6",
+          "rawId": "google-antigravity/claude-sonnet-4-6"
+        },
+        {
+          "description": "google-antigravity/gemini-2.5-flash",
+          "label": "Gemini 2.5 Flash",
+          "rawId": "google-antigravity/gemini-2.5-flash"
+        },
+        {
+          "description": "google-antigravity/gemini-2.5-flash-lite",
+          "label": "Gemini 3.1 Flash Lite",
+          "rawId": "google-antigravity/gemini-2.5-flash-lite"
+        },
+        {
+          "description": "google-antigravity/gemini-2.5-pro",
+          "label": "Gemini 2.5 Pro",
+          "rawId": "google-antigravity/gemini-2.5-pro"
+        },
+        {
+          "description": "google-antigravity/gemini-3-flash",
+          "label": "Gemini 3 Flash",
+          "rawId": "google-antigravity/gemini-3-flash"
+        },
+        {
+          "description": "google-antigravity/gemini-3-pro",
+          "label": "Gemini 3 Pro",
+          "rawId": "google-antigravity/gemini-3-pro"
+        },
+        {
+          "description": "google-antigravity/gemini-3.1-flash-image",
+          "label": "Gemini 3.1 Flash Image",
+          "rawId": "google-antigravity/gemini-3.1-flash-image"
+        },
+        {
+          "description": "google-antigravity/gemini-3.1-flash-lite",
+          "label": "Gemini 3.1 Flash Lite",
+          "rawId": "google-antigravity/gemini-3.1-flash-lite"
+        },
+        {
+          "description": "google-antigravity/gemini-3.1-pro",
+          "label": "Gemini 3.1 Pro",
+          "rawId": "google-antigravity/gemini-3.1-pro"
+        },
+        {
+          "description": "google-antigravity/gemini-3.5-flash",
+          "label": "Gemini 3.5 Flash",
+          "rawId": "google-antigravity/gemini-3.5-flash"
+        },
+        {
+          "description": "google-antigravity/gemini-3.6-flash",
+          "label": "Gemini 3.6 Flash",
+          "rawId": "google-antigravity/gemini-3.6-flash"
+        },
+        {
+          "description": "google-antigravity/gemini-3.7-flash",
+          "label": "Gemini 3.7 Flash",
+          "rawId": "google-antigravity/gemini-3.7-flash"
+        },
+        {
+          "description": "google-antigravity/gemini-3.7-flash-tiered",
+          "label": "gemini-3.7-flash-tiered",
+          "rawId": "google-antigravity/gemini-3.7-flash-tiered"
+        },
+        {
+          "description": "google-antigravity/gpt-oss-120b",
+          "label": "GPT-OSS 120B",
+          "rawId": "google-antigravity/gpt-oss-120b"
+        },
+        {
+          "description": "google-antigravity/tab_flash_lite_preview",
+          "label": "tab_flash_lite_preview",
+          "rawId": "google-antigravity/tab_flash_lite_preview"
+        },
+        {
+          "description": "google-antigravity/tab_jump_flash_lite_preview",
+          "label": "tab_jump_flash_lite_preview",
+          "rawId": "google-antigravity/tab_jump_flash_lite_preview"
+        },
+        {
+          "description": "ollama/awenleven/bge-reranker-v2-m3:latest",
+          "label": "awenleven/bge-reranker-v2-m3:latest",
+          "rawId": "ollama/awenleven/bge-reranker-v2-m3:latest"
+        },
+        {
+          "description": "ollama/bge-m3:latest",
+          "label": "bge-m3:latest",
+          "rawId": "ollama/bge-m3:latest"
+        },
+        {
+          "description": "openai-codex/gpt-5.4",
+          "label": "GPT-5.4",
+          "rawId": "openai-codex/gpt-5.4"
+        },
+        {
+          "description": "openai-codex/gpt-5.4-mini",
+          "label": "GPT-5.4-Mini",
+          "rawId": "openai-codex/gpt-5.4-mini"
+        },
+        {
+          "description": "openai-codex/gpt-5.5",
+          "label": "GPT-5.5",
+          "rawId": "openai-codex/gpt-5.5"
+        },
+        {
+          "description": "openai-codex/gpt-5.6-luna",
+          "label": "GPT-5.6-Luna",
+          "rawId": "openai-codex/gpt-5.6-luna"
+        },
+        {
+          "description": "openai-codex/gpt-5.6-sol",
+          "label": "GPT-5.6-Sol",
+          "rawId": "openai-codex/gpt-5.6-sol"
+        },
+        {
+          "description": "openai-codex/gpt-5.6-terra",
+          "label": "GPT-5.6-Terra",
+          "rawId": "openai-codex/gpt-5.6-terra"
+        }
+      ],
+      "catalogTimestamp": 1787809020011,
+      "visibleModels": [
+        "google-antigravity/gemini-3.7-flash"
+      ]
+    },
+    "cursor": {
+      "cliPath": "",
+      "cliPathsByHost": {},
+      "enabled": false,
+      "environmentHash": "",
+      "environmentVariables": "",
+      "discoveredModels": [],
+      "catalogTimestamp": 0,
+      "visibleModels": []
+    }
+  },
+  "settingsProvider": "claude",
+  "lastSelectedChatModel": {
+    "providerId": "omp",
+    "model": "omp:google-antigravity/gemini-3.7-flash"
+  },
+  "savedProviderModel": {
+    "claude": "haiku"
+  },
+  "savedProviderEffort": {
+    "claude": "high"
+  },
+  "savedProviderServiceTier": {},
+  "savedProviderThinkingBudget": {},
+  "savedProviderPermissionMode": {
+    "claude": "normal"
+  },
+  "pendingProviderSessionInvalidations": {},
+  "lastCustomModel": "",
+  "maxWarmAgentProcesses": 5,
+  "enableAutoScroll": true,
+  "showTabTitlesByDefault": false,
+  "deferMathRenderingDuringStreaming": true,
+  "expandFileEditsByDefault": false,
+  "chatViewPlacement": "right-sidebar",
+  "enableDualPane": true,
+  "enableFilePane": true,
+  "dualPaneSide": "right",
+  "sessionManagerOrganization": "list",
+  "sessionManagerSort": "last-updated",
+  "pinnedLinkedNotePaths": [],
+  "hiddenProviderCommands": {}
+}

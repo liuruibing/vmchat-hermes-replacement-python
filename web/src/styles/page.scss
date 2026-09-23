@@ -1,0 +1,319 @@
+#moreQuery {
+  .el-form-item__label,
+  .el-radio,
+  .el-checkbox,
+  .el-input__inner {
+    color: #333 !important;
+    font-size: 14px !important;
+  }
+  .el-tag {
+    font-size: 14px !important;
+  }
+  .el-radio__input.is-checked+.el-radio__label {
+    color: #612d10 !important;
+  }
+  .el-checkbox__input.is-checked+.el-checkbox__label {
+    color: #612d10 !important;
+  }
+  .el-radio__label, .el-select-dropdown__item {
+    font-size: 14px !important;
+  }
+}
+$inputWidth: 190px;
+$inputWidthXl: 280px;
+#app-body {
+  .el-table th.el-table__cell{
+    font-size: 14px!important;
+    background-color: #FAFAFA !important;
+    color: #20212B !important;
+    height: 52px !important;
+  }
+  .el-table--striped .el-table__body tr.el-table__row--striped td {
+    background-color: #fafafa !important;
+  }
+  .el-descriptions--mini,
+  .el-descriptions--small {
+    font-size: 14px;
+  }
+  .el-tag {
+    font-size: 14px;
+    margin-bottom: 0px;
+  }
+  .el-dialog__footer {
+    .el-button.el-button--primary {
+      color: #612d10 !important;
+    }
+  }
+  font-size: 14px !important;
+  .el-button.el-button--info {
+    // background-color: #ffffff !important;
+  }
+  .title-style {
+    color: #333333;
+    vertical-align: middle;
+    height: 35px;
+    line-height: 35px;
+    font-size: 16px;
+    margin-left: 5px;
+    display: inline-block;
+  }
+  .color-box {
+    //background-color: #A15008;
+    width: 4px;
+    height: 12px;
+    background-image: linear-gradient(-45deg,#e19c5d,#f4cea9)
+  }
+  .el-tabs__item {
+    color: #612d10;
+    font-size: 14px !important;
+
+  }
+
+  .el-form-item__label,
+  .el-input__inner,
+  //.el-tabs__item,
+  .el-textarea__inner {
+    color: #333;
+    font-size: 14px !important;
+  }
+ .analyse-page .el-form-item__label
+ {
+    color: #666666 !important;
+  }
+  .el-input__inner {
+    // border: 1px solid #e8e8e8 !important;;
+    color: #333;
+    font-size: 14px !important;
+  }
+  .el-dialog__wrapper .el-dialog__header span {
+    font-weight: normal !important;
+    color: #333 !important;
+  }
+  .el-button.el-button--info {
+    // color: #666 !important;
+    font-weight: normal !important;
+    font-family: 'Microsoft YaHei' !important;
+    font-size: 14px !important;
+  }
+  .el-table {
+    font-size: 14px !important;
+    color: #333 !important;
+  }
+  .el-dialog__wrapper .el-button--medium {
+    color: #666 !important;
+    font-size: 14px !important;
+  }
+  .el-button--small {
+    font-weight: normal !important;
+    font-family: 'Microsoft YaHei' !important;
+    font-size: 14px !important;
+  }
+  .el-button--danger.is-plain {
+    // background-color: #ffffff;
+    color: #612d10 !important;
+    border-color: #804f2b;
+  }
+
+  .el-button--danger.is-plain:focus,
+  .el-button--danger.is-plain:hover,
+  {
+    // background-color: #ffffff;
+    color: #612d10 !important;
+    border-color: #804f2b;
+  }
+
+  .forms_table_title {
+    color: #333333;
+    font-size: 16px;
+  }
+  .refactor-dashboard {
+    /**首页 - 系统消息, 我的关注 **/
+    .sys-message,
+    .my-focus,
+    .early-warning,
+    .hotspot-fund,
+    .hotspot-manager {
+      .el-card__body {
+        padding: 20px 0px;
+      }
+    }
+    .simulation-group {
+      .el-card__body {
+        padding: 0px 20px;
+        padding-bottom: 40px;
+      }
+    }
+    .vxe-table--header-wrapper.body--wrapper {
+      color: #000000;
+      border-bottom: none;
+    }
+  }
+
+  /** 行业动态/分析评论 */
+  .analyseDiscuss {
+    .el-select.ntype {
+      width: $inputWidth !important;
+    }
+  }
+  /**  产品热点/榜单 */
+  .select-index-list {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 全市场私募筛选 */
+  .productorFilterSingle {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 私募管理人筛选 */
+  .manager-selection {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 尽调申请 */
+  .publicRequest {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 管理人详情策略文本框 */
+  .manager-detail {
+    .manager-show {
+      .el-select.dimensionality {
+        width: $inputWidth !important;
+        .el-input {
+          width: $inputWidth !important;
+        }
+      }
+    }
+  }
+  /** 模拟组合列表 */
+  .anglog-comb {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 准入审批 */
+  .product-examine {
+    .search-content {
+      .el-input {
+        width: $inputWidth !important;
+      }
+    }
+  }
+  /** 文件管理 */
+  .file-manage {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 准入池 */
+  .access-pool {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 个券变动流水 */
+  .changeFlow {
+    .el-select.jyfx {
+      width: $inputWidthXl !important;
+      .el-input {
+        width: $inputWidthXl !important;
+      }
+    }
+  }
+  /** 个股持仓查询 */
+  .stockPosition {
+    .el-select.hy {
+      width: $inputWidth !important;
+      .el-input {
+        width: $inputWidth !important;
+      }
+    }
+  }
+  /** 债券持仓查询 */
+  .bondHoldings {
+    .fxrmc.el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 子基金持仓查询 */
+  .subfundPosition {
+    .el-select.clll {
+      width: $inputWidth !important;
+      .el-input {
+        width: $inputWidth !important;
+      }
+    }
+    .el-select.cllxchild {
+      width: $inputWidth !important;
+      .el-input {
+        width: $inputWidth !important;
+      }
+    }
+  }
+  /** 产品信息维护列表 */
+  .private-product {
+    .el-input {
+      width: $inputWidth !important;
+    }
+    .el-date-editor .el-range-separator {
+      width: 7%;
+    }
+  }
+  /** 产品信息维护新增/编辑*/
+  .edit-product {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  /** 基准信息维护 */
+  .benchmarkInfoList {
+    .el-input {
+      width: $inputWidth !important;
+    }
+  }
+  .el-pagination {
+    .el-input {
+      width: 100px !important;
+    }
+  }
+}
+.vxe-table--render-default {
+  font-family: 'Microsoft YaHei' !important;
+}
+
+.ddportal-ui{
+  padding:12px 20px 8px 16px !important;
+  background-color: #fff !important;
+  height: 100%;
+}
+
+.vxe-table .vxe-sort--asc-btn.sort--active, .vxe-table .vxe-sort--desc-btn.sort--active {
+  color: #e19c5d;
+}
+
+.vxe-button.type--button:not(.is--disabled):hover {
+  color: #e19c5d
+}
+
+.vxe-button.type--button:not(.is--disabled):hover .vxe-button--icon.vxe-icon--zoomin {
+  border-color: #e19c5d
+}
+
+.vxe-button.type--button:not(.is--disabled):focus {
+  border-color: #e19c5d;
+  -webkit-box-shadow: 0 0 .25em 0 #e19c5d;
+  box-shadow: 0 0 .25em 0 #e19c5d
+}
+
+.vxe-button.type--button:not(.is--disabled):active {
+  color: #e19c5d;
+  border-color: #e19c5d;
+  background-color: #e9c5a5
+}
+
+

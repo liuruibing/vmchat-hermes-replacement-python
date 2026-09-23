@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0002: 职年/企年计划数据库各层核心区别与职责对比</title>
+  <style>
+    :root {
+      --bg: #fffff8;
+      --text: #111111;
+      --border: #e0e0e0;
+      --accent: #268bd2;
+      --panel: #fdf6e3;
+      --correct: #2aa198;
+      --incorrect: #dc322f;
+      --font-mono: 'JetBrains Mono', Consolas, monospace;
+    }
+    body {
+      max-width: 820px;
+      margin: 40px auto;
+      padding: 0 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "EtBm", "Palatino", "Georgia", "Songti SC", serif;
+      line-height: 1.7;
+    }
+    h1 {
+      font-size: 28px;
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 8px;
+      margin-bottom: 24px;
+      color: var(--accent);
+    }
+    h2 {
+      font-size: 20px;
+      margin-top: 32px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .meta-bar {
+      font-size: 14px;
+      color: #657b83;
+      margin-bottom: 32px;
+      background: var(--panel);
+      padding: 12px 16px;
+      border-radius: 4px;
+      border-left: 4px solid var(--accent);
+    }
+    .citation {
+      font-size: 13px;
+      color: #586e75;
+      background: #eee8d5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      text-decoration: none;
+    }
+    .citation:hover { text-decoration: underline; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+    }
+    th {
+      background: #eee8d5;
+      color: #073642;
+    }
+
+    .diff-card {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 16px;
+      margin: 16px 0;
+      border-radius: 6px;
+    }
+    .diff-card h3 {
+      margin-top: 0;
+      color: #cb4b16;
+      font-size: 16px;
+    }
+
+    /* Quiz Area */
+    .quiz-container {
+      background: #eee8d5;
+      border: 1px solid #268bd2;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-top: 40px;
+    }
+    .quiz-title {
+      font-weight: bold;
+      color: #268bd2;
+      margin-bottom: 16px;
+      font-size: 16px;
+    }
+    .quiz-option {
+      display: block;
+      background: #fdf6e3;
+      border: 1px solid #859900;
+      padding: 10px 14px;
+      margin: 8px 0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    .quiz-option:hover { background: #eee8d5; }
+    .feedback {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 4px;
+      font-weight: bold;
+      display: none;
+    }
+    .feedback.success { background: #d1edda; color: #155724; border: 1px solid #c3e6cb; }
+    .feedback.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+    .nav-footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+    .nav-footer a { color: #268bd2; text-decoration: none; }
+    .nav-footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="meta-bar">
+    <strong>Lesson 0002</strong> | 目标：对比 5 层数据结构的颗粒度、持久化方式与核心职责<br>
+    上一课: <a href="0001-plan-db-architecture-overview.html">Lesson 0001</a> | 关联 Mission: <a href="../MISSION.md">MISSION.md</a> | 速查手册: <a href="../reference/card-plan-db-schema.html" target="_blank">速查卡</a>
+  </div>
+
+  <h1>单元 2：各层数据库/数据表的核心区别</h1>
+
+  <p>掌握全链路血缘后，业务与研发最常问的问题是：“**既然已经有了估值流水表和核心日净值表，为什么还要分 5 层？它们在数据颗粒度、存储与计算逻辑上有何区别？**” 本课将从 4 个维度对比这 5 层结构。</p>
+
+  <h2>1. 五层数据结构多维对比总览</h2>
+  <a class="citation" href="/Users/liuruibing/Downloads/职年计划查询SQL_字段级清洗逻辑总表.md" target="_blank">来源：字段级清洗逻辑总表.md</a>
+  <a class="citation" href="/Users/liuruibing/Downloads/MPRF_F_PLAN_DAYNETVALUE_字段清洗调用梳理.md" target="_blank">来源：MPRF_F_PLAN_DAYNETVALUE调用梳理.md</a>
+
+  <table>
+    <thead>
+      <tr>
+        <th>层级</th>
+        <th>数据颗粒度 (Granularity)</th>
+        <th>存储与形态 (Persistence)</th>
+        <th>核心职责 (Primary Responsibility)</th>
+        <th>典型代表</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1. 源数据与维表层</strong></td>
+        <td>细粒度 (按估值科目/证券明细)</td>
+        <td>物理数据表 (ODS 流水)</td>
+        <td>忠实记录交易流水与科目明细，不做跨日期连乘或多计划汇总。</td>
+        <td><code>MFACTGZ_FUND_HLDTOTAL</code></td>
+      </tr>
+      <tr>
+        <td><strong>2. 清洗与计算函数层</strong></td>
+        <td>逻辑计算过程</td>
+        <td>PL/SQL 存储过程 / 自定义函数</td>
+        <td>无状态清洗规则封装（区间过滤、剔除组合加权、几何连乘）。</td>
+        <td><code>DW_ZNST_INDEX_NEW</code></td>
+      </tr>
+      <tr>
+        <td><strong>3. 核心计划日数据层</strong></td>
+        <td>中粒度 (单计划 + 每日)</td>
+        <td>物理数据表 (DW 核心事实表)</td>
+        <td>持久化单个计划每日的标准净值、日收益率与报酬，是 SQL 唯一事实依赖。</td>
+        <td><code>MPRF_F_PLAN_DAYNETVALUE</code></td>
+      </tr>
+      <tr>
+        <td><strong>4. SQL 查询汇总层</strong></td>
+        <td>粗粒度 (多计划明细 + 合计)</td>
+        <td>SQL 动态查询逻辑 (UNION ALL)</td>
+        <td>多口径应用级汇总，拆分为期末加权、总体函数、逐日加权及历史直读。</td>
+        <td>查询 SQL <code>UNION ALL</code></td>
+      </tr>
+      <tr>
+        <td><strong>5. 输出指标层</strong></td>
+        <td>指标级 (四组业务 KPI)</td>
+        <td>前端应用层输出/展示列</td>
+        <td>为前端/报表展示提供业务语义化的指标分组（基础/收益/报酬/风险）。</td>
+        <td><code>RYIELDG</code>, <code>F_VIX</code> 等</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2. 核心解耦边界剖析</h2>
+
+  <div class="diff-card">
+    <h3>① 为什么 DW 层 (第 3 层) 与 ODS 层 (第 1 层) 必须解耦？</h3>
+    <p>ODS 估值流水表 <code>MFACTGZ_FUND_HLDTOTAL</code> 包含大量如 <code>701A</code>、<code>702A</code> 的底层会计科目，且持仓报酬分散在 <code>HLDDETAIL</code> 中。如果前端查询 SQL 直接读取 ODS 流水，每次查询都需要现场关联多个流水表并计算复杂的现金流收益率，查询性能极差且极易出错。DW 核心表 <code>MPRF_F_PLAN_DAYNETVALUE</code> 预先清洗并落库了单计划每日的标准值，极大地提升了查询性能。</p>
+  </div>
+
+  <div class="diff-card">
+    <h3>② 为什么 DW 层 (第 3 层) 不直接存储“合计行”指标？</h3>
+    <p>因为 SQL 合计行的汇总口径是<strong>动态的</strong>（取决于前端传入的计划范围过滤条件 <code>VC_PLAN_TYPE</code> 以及查询开始日与结束日 <code>beginDate / endDate</code>）。合计行的收益率必须根据所选范围内的计划，现场调用总体加权函数 <code>GET_OVERALL_WEIGHTED_RETURN_W</code> 或按期末资产净值动态加权，因此合计行只能在 SQL 查询层 (第 4 层) 现场计算。</p>
+  </div>
+
+  <!-- 检索练习 -->
+  <div class="quiz-container">
+    <div class="quiz-title">🎯 检索练习：测试你的长效记忆 (Storage Strength)</div>
+    <p><strong>问题：</strong> 为什么 SQL 查询中的“合计行”收益率指标（如 MYIELDG/YYIELDG）不能直接在第 3 层 DW 表（MPRF_F_PLAN_DAYNETVALUE）中预先算好并存储？</p>
+    
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：DW 事实表每天都会定时运行存储过程更新数据。')">A. DW 事实表的数据无法做到每日自动刷新</div>
+    <div class="quiz-option" onclick="checkAnswer(true, '正确！合计行依赖用户前端传入的动态计划过滤条件与查询日期范围，必须现场动态加权汇总。')">B. 合计行取决于用户传入的动态计划范围与日期</div>
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：DW 事实表支持存储浮点型与高精度的收益率数值。')">C. DW 事实表的精度限制无法存储连乘收益率</div>
+    <div class="quiz-option" onclick="checkAnswer(false, '错误：总体加权函数 GET_OVERALL_WEIGHTED_RETURN 已包含完整连乘逻辑。')">D. 总体加权函数缺少前一自然日规模加权逻辑</div>
+
+    <div id="feedback" class="feedback"></div>
+  </div>
+
+  <div class="nav-footer">
+    <a href="0001-plan-db-architecture-overview.html">← 上一课: Lesson 0001</a>
+    <span>当前进度: Lesson 0002 / 0004</span>
+    <span>提问教学 Agent: 随时在对话框中向我提问！</span>
+  </div>
+
+  <script>
+    function checkAnswer(isCorrect, msg) {
+      const fb = document.getElementById('feedback');
+      fb.style.display = 'block';
+      if (isCorrect) {
+        fb.className = 'feedback success';
+        fb.innerHTML = '🎉 ' + msg;
+      } else {
+        fb.className = 'feedback error';
+        fb.innerHTML = '❌ ' + msg + ' 请再试一次！';
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,689 @@
+[
+  {
+    "id": "vm-template-msfpnbsq-aaa7dc",
+    "title": "当前布局 2026/8/5 14:33:05",
+    "entityType": "vm-grid-layout-template",
+    "payload": {
+      "items": [
+        {
+          "type": "block",
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 10,
+          "block": {
+            "blockId": "81f8eefa-eab3-47d5-a53a-e4af9ffaa171",
+            "title": "股票净敞口时序",
+            "type": "echarts",
+            "viewType": "echarts",
+            "moduleKey": "stockExposureTiming",
+            "dsl": {
+              "action": "create",
+              "id": "81f8eefa-eab3-47d5-a53a-e4af9ffaa171",
+              "params": {
+                "fundCode": "SM0513",
+                "beginDate": "20220101",
+                "endDate": "20220331",
+                "dataFreqOpen": "true",
+                "dataFreq": "日频",
+                "benchmarks": "1",
+                "benchmarkA": "沪深300"
+              },
+              "requests": [
+                {
+                  "id": "stockExposure",
+                  "moduleId": "stockExposureTiming",
+                  "sqlCode": "712b930b-87a5-4cba-8da0-3671d4c8dc54"
+                }
+              ],
+              "transform": {
+                "language": "javascript",
+                "function": "function transform(responses) {\n  var response = responses && responses.stockExposure;\n  var rows = response && Array.isArray(response.body) ? response.body : [];\n  var result = [];\n  for (var i = 0; i < rows.length; i++) {\n    var row = rows[i];\n    result.push({\n      TDATE: row.TDATE,\n      stockExp: row.F_STOCK_EXP * 100,\n      netValue: row.F_905_GYH,\n      hs300: row.F_HS300_GYH,\n      zz500: row.F_ZZ500_GYH,\n      zz1000: row.F_ZZ1000_GYH\n    });\n  }\n  return result;\n}"
+              },
+              "view": {
+                "type": "echarts",
+                "title": "股票净敞口时序",
+                "legend": {
+                  "show": true,
+                  "data": [
+                    "股票净敞口占比",
+                    "累计单位净值",
+                    "沪深300",
+                    "中证500",
+                    "中证1000"
+                  ]
+                },
+                "dataset": {
+                  "source": "$transform",
+                  "dimensions": [
+                    "TDATE",
+                    "stockExp",
+                    "netValue",
+                    "hs300",
+                    "zz500",
+                    "zz1000"
+                  ]
+                },
+                "xAxis": {
+                  "type": "category",
+                  "name": "日期"
+                },
+                "yAxis": [
+                  {
+                    "type": "value",
+                    "name": "股票净敞口占比"
+                  },
+                  {
+                    "type": "value",
+                    "name": "归一化净值"
+                  }
+                ],
+                "series": [
+                  {
+                    "type": "line",
+                    "name": "股票净敞口占比",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "stockExp"
+                    },
+                    "yAxisIndex": 0,
+                    "format": {
+                      "type": "percentage",
+                      "digits": 2,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "累计单位净值",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "netValue"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "沪深300",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "hs300"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "中证500",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "zz500"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "中证1000",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "zz1000"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  }
+                ]
+              }
+            },
+            "queryContext": {
+              "fundCode": "SM0513",
+              "productCode": "SM0513",
+              "beginDate": "20220101",
+              "endDate": "20220331",
+              "dateRange": [
+                "20220101",
+                "20220331"
+              ],
+              "benchmarkA": "沪深300",
+              "benchmarkB": "",
+              "benchmarks": "1",
+              "dataFreq": "日频"
+            }
+          }
+        },
+        {
+          "type": "block",
+          "x": 0,
+          "y": 10,
+          "w": 24,
+          "h": 8,
+          "block": {
+            "blockId": "f1edef97-8d27-48d4-9c14-4402e6f1958d",
+            "title": "期货十大盈利亏损品种",
+            "type": "table",
+            "viewType": "table",
+            "moduleKey": "commodityProfitLoss",
+            "dsl": {
+              "action": "create",
+              "id": "f1edef97-8d27-48d4-9c14-4402e6f1958d",
+              "params": {
+                "fundCode": "SM0513",
+                "beginDate": "20220101",
+                "endDate": "20220331",
+                "dataFreqOpen": "true",
+                "dataFreq": "日频",
+                "benchmarks": "1",
+                "benchmarkA": "沪深300"
+              },
+              "requests": [
+                {
+                  "id": "topProfitCommodities",
+                  "moduleId": "commodityProfitLoss",
+                  "sqlCode": "b0a11b9d-5709-4c27-a0c0-57e859b2d9e8",
+                  "submoduleId": "topProfitCommodities"
+                },
+                {
+                  "id": "topLossCommodities",
+                  "moduleId": "commodityProfitLoss",
+                  "sqlCode": "b0a11b9d-5709-4c27-a0c0-57e859b2d9e8",
+                  "submoduleId": "topLossCommodities"
+                }
+              ],
+              "transform": {
+                "language": "javascript",
+                "function": "function transform(responses) {\n  var ylResponse = responses.topProfitCommodities;\n  var ksResponse = responses.topLossCommodities;\n  var ylData = ylResponse && ylResponse.body && Array.isArray(ylResponse.body.YLData) ? ylResponse.body.YLData : [];\n  var ksData = ksResponse && ksResponse.body && Array.isArray(ksResponse.body.KSData) ? ksResponse.body.KSData : [];\n  var result = [];\n  for (var i = 0; i < ylData.length; i++) {\n    var row = ylData[i];\n    result.push({\n      期货品种: row.VC_FUT_DETAIL_NAME,\n      多空方向: row.VC_DIRECTION,\n      盈亏类型: '盈利',\n      收益额: row.F_INCOME / 10000,\n      贡献度: row.F_GXD * 100,\n      期间平均风险暴露占净值比: row.F_JZZB * 100\n    });\n  }\n  for (var i = 0; i < ksData.length; i++) {\n    var row = ksData[i];\n    result.push({\n      期货品种: row.VC_FUT_DETAIL_NAME,\n      多空方向: row.VC_DIRECTION,\n      盈亏类型: '亏损',\n      收益额: row.F_INCOME / 10000,\n      贡献度: row.F_GXD * 100,\n      期间平均风险暴露占净值比: row.F_JZZB * 100\n    });\n  }\n  return result;\n}"
+              },
+              "view": {
+                "type": "table",
+                "title": "期货十大盈利亏损品种",
+                "columns": [
+                  {
+                    "field": "期货品种",
+                    "label": "期货品种",
+                    "format": {
+                      "type": "text",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "多空方向",
+                    "label": "多空方向",
+                    "format": {
+                      "type": "text",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "盈亏类型",
+                    "label": "盈亏类型",
+                    "format": {
+                      "type": "text",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "收益额",
+                    "label": "收益额",
+                    "unit": "万元",
+                    "format": {
+                      "type": "decimal",
+                      "digits": 4,
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "贡献度",
+                    "label": "贡献度",
+                    "format": {
+                      "type": "percentage",
+                      "digits": 2,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "期间平均风险暴露占净值比",
+                    "label": "期间平均风险暴露占净值比",
+                    "format": {
+                      "type": "percentage",
+                      "digits": 2,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  }
+                ]
+              }
+            },
+            "queryContext": {
+              "fundCode": "SM0513",
+              "productCode": "SM0513",
+              "beginDate": "20220101",
+              "endDate": "20220331",
+              "dateRange": [
+                "20220101",
+                "20220331"
+              ],
+              "benchmarkA": "沪深300",
+              "benchmarkB": "",
+              "benchmarks": "1",
+              "dataFreq": "日频"
+            }
+          }
+        },
+        {
+          "type": "block",
+          "x": 0,
+          "y": 18,
+          "w": 24,
+          "h": 10,
+          "block": {
+            "blockId": "0a98df91-621a-4bfd-953e-a6a46a3aff2c",
+            "title": "SM0513 股票期末持仓行业占比与沪深300对比",
+            "type": "echarts",
+            "viewType": "echarts",
+            "moduleKey": "positionIndustry",
+            "dsl": {
+              "action": "create",
+              "id": "0a98df91-621a-4bfd-953e-a6a46a3aff2c",
+              "params": {
+                "fundCode": "SM0513",
+                "beginDate": "20220101",
+                "endDate": "20220331",
+                "dataFreqOpen": "true",
+                "benchmarks": "1",
+                "benchmarkA": "沪深300",
+                "dataFreq": "日频"
+              },
+              "requests": [
+                {
+                  "id": "positionIndustry",
+                  "moduleId": "positionIndustry",
+                  "sqlCode": "d8ac50c1-b41c-498e-8c8a-bd6a577177a6"
+                }
+              ],
+              "transform": {
+                "language": "javascript",
+                "function": "function transform(responses) { var response = responses && responses.positionIndustry; var rows = response && Array.isArray(response.body) ? response.body : []; var maxDate = ''; var i; for (i = 0; i < rows.length; i++) { if (rows[i].TDATE && rows[i].TDATE > maxDate) { maxDate = rows[i].TDATE; } } var prod = {}; var bench = {}; var keys = []; var seen = {}; for (i = 0; i < rows.length; i++) { var row = rows[i]; if (maxDate && row.TDATE !== maxDate) { continue; } var name = row.industryName; if (name === undefined || name === null || name === '') { continue; } if (!seen[name]) { seen[name] = true; keys.push(name); } if (row.FCODE === 'SM0513') { prod[name] = row.industryRatio * 100; } else { bench[name] = row.industryRatio * 100; } } keys.sort(); var result = []; for (i = 0; i < keys.length; i++) { var n = keys[i]; result.push({ industryName: n, productRatio: prod[n] !== undefined ? prod[n] : null, benchmarkRatio: bench[n] !== undefined ? bench[n] : null }); } return result; }"
+              },
+              "view": {
+                "type": "echarts",
+                "title": "SM0513 股票期末持仓行业占比与沪深300对比",
+                "legend": {
+                  "show": true,
+                  "data": [
+                    "SM0513行业持仓占比",
+                    "沪深300行业持仓占比"
+                  ]
+                },
+                "dataset": {
+                  "source": "$transform",
+                  "dimensions": [
+                    "industryName",
+                    "productRatio",
+                    "benchmarkRatio"
+                  ]
+                },
+                "xAxis": {
+                  "type": "category",
+                  "name": "行业"
+                },
+                "yAxis": [
+                  {
+                    "type": "value",
+                    "name": "行业持仓占比"
+                  }
+                ],
+                "series": [
+                  {
+                    "type": "bar",
+                    "name": "SM0513行业持仓占比",
+                    "encode": {
+                      "x": "industryName",
+                      "y": "productRatio"
+                    },
+                    "yAxisIndex": 0,
+                    "format": {
+                      "type": "percentage",
+                      "digits": 4,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "type": "bar",
+                    "name": "沪深300行业持仓占比",
+                    "encode": {
+                      "x": "industryName",
+                      "y": "benchmarkRatio"
+                    },
+                    "yAxisIndex": 0,
+                    "format": {
+                      "type": "percentage",
+                      "digits": 4,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  }
+                ]
+              }
+            },
+            "queryContext": {
+              "fundCode": "SM0513",
+              "productCode": "SM0513",
+              "beginDate": "20220101",
+              "endDate": "20220331",
+              "dateRange": [
+                "20220101",
+                "20220331"
+              ],
+              "benchmarkA": "沪深300",
+              "benchmarkB": "",
+              "benchmarks": "1",
+              "dataFreq": "日频"
+            }
+          }
+        }
+      ]
+    },
+    "createdAt": "2026-08-05T06:33:06.938Z",
+    "updatedAt": "2026-08-05T06:33:06.938Z",
+    "updatedBy": "系统管理员"
+  },
+  {
+    "id": "vm-template-ms8hf35i-358789",
+    "title": "当前布局 2026/7/31 13:08:20",
+    "entityType": "vm-grid-layout-template",
+    "payload": {
+      "items": [
+        {
+          "type": "block",
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 10,
+          "block": {
+            "blockId": "81f8eefa-eab3-47d5-a53a-e4af9ffaa171",
+            "title": "股票净敞口时序",
+            "type": "echarts",
+            "viewType": "echarts",
+            "moduleKey": "stockExposureTiming",
+            "dsl": {
+              "action": "create",
+              "id": "81f8eefa-eab3-47d5-a53a-e4af9ffaa171",
+              "params": {
+                "fundCode": "SM0513",
+                "beginDate": "20220101",
+                "endDate": "20220331",
+                "dataFreqOpen": "true",
+                "dataFreq": "日频",
+                "benchmarks": "1",
+                "benchmarkA": "沪深300"
+              },
+              "requests": [
+                {
+                  "id": "stockExposure",
+                  "moduleId": "stockExposureTiming",
+                  "sqlCode": "712b930b-87a5-4cba-8da0-3671d4c8dc54"
+                }
+              ],
+              "transform": {
+                "language": "javascript",
+                "function": "function transform(responses) {\n  var response = responses && responses.stockExposure;\n  var rows = response && Array.isArray(response.body) ? response.body : [];\n  var result = [];\n  for (var i = 0; i < rows.length; i++) {\n    var row = rows[i];\n    result.push({\n      TDATE: row.TDATE,\n      stockExp: row.F_STOCK_EXP * 100,\n      netValue: row.F_905_GYH,\n      hs300: row.F_HS300_GYH,\n      zz500: row.F_ZZ500_GYH,\n      zz1000: row.F_ZZ1000_GYH\n    });\n  }\n  return result;\n}"
+              },
+              "view": {
+                "type": "echarts",
+                "title": "股票净敞口时序",
+                "legend": {
+                  "show": true,
+                  "data": [
+                    "股票净敞口占比",
+                    "累计单位净值",
+                    "沪深300",
+                    "中证500",
+                    "中证1000"
+                  ]
+                },
+                "dataset": {
+                  "source": "$transform",
+                  "dimensions": [
+                    "TDATE",
+                    "stockExp",
+                    "netValue",
+                    "hs300",
+                    "zz500",
+                    "zz1000"
+                  ]
+                },
+                "xAxis": {
+                  "type": "category",
+                  "name": "日期"
+                },
+                "yAxis": [
+                  {
+                    "type": "value",
+                    "name": "股票净敞口占比"
+                  },
+                  {
+                    "type": "value",
+                    "name": "归一化净值"
+                  }
+                ],
+                "series": [
+                  {
+                    "type": "line",
+                    "name": "股票净敞口占比",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "stockExp"
+                    },
+                    "yAxisIndex": 0,
+                    "format": {
+                      "type": "percentage",
+                      "digits": 2,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "累计单位净值",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "netValue"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "沪深300",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "hs300"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "中证500",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "zz500"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "name": "中证1000",
+                    "encode": {
+                      "x": "TDATE",
+                      "y": "zz1000"
+                    },
+                    "yAxisIndex": 1,
+                    "format": {
+                      "type": "raw"
+                    }
+                  }
+                ]
+              }
+            },
+            "queryContext": {
+              "fundCode": "SM0513",
+              "productCode": "SM0513",
+              "beginDate": "20220101",
+              "endDate": "20220331",
+              "dateRange": [
+                "20220101",
+                "20220331"
+              ],
+              "benchmarkA": "沪深300",
+              "benchmarkB": "",
+              "benchmarks": "1",
+              "dataFreq": "日频"
+            }
+          }
+        },
+        {
+          "type": "block",
+          "x": 0,
+          "y": 10,
+          "w": 24,
+          "h": 8,
+          "block": {
+            "blockId": "f1edef97-8d27-48d4-9c14-4402e6f1958d",
+            "title": "期货十大盈利亏损品种",
+            "type": "table",
+            "viewType": "table",
+            "moduleKey": "commodityProfitLoss",
+            "dsl": {
+              "action": "create",
+              "id": "f1edef97-8d27-48d4-9c14-4402e6f1958d",
+              "params": {
+                "fundCode": "SM0513",
+                "beginDate": "20220101",
+                "endDate": "20220331",
+                "dataFreqOpen": "true",
+                "dataFreq": "日频",
+                "benchmarks": "1",
+                "benchmarkA": "沪深300"
+              },
+              "requests": [
+                {
+                  "id": "topProfitCommodities",
+                  "moduleId": "commodityProfitLoss",
+                  "sqlCode": "b0a11b9d-5709-4c27-a0c0-57e859b2d9e8",
+                  "submoduleId": "topProfitCommodities"
+                },
+                {
+                  "id": "topLossCommodities",
+                  "moduleId": "commodityProfitLoss",
+                  "sqlCode": "b0a11b9d-5709-4c27-a0c0-57e859b2d9e8",
+                  "submoduleId": "topLossCommodities"
+                }
+              ],
+              "transform": {
+                "language": "javascript",
+                "function": "function transform(responses) {\n  var ylResponse = responses.topProfitCommodities;\n  var ksResponse = responses.topLossCommodities;\n  var ylData = ylResponse && ylResponse.body && Array.isArray(ylResponse.body.YLData) ? ylResponse.body.YLData : [];\n  var ksData = ksResponse && ksResponse.body && Array.isArray(ksResponse.body.KSData) ? ksResponse.body.KSData : [];\n  var result = [];\n  for (var i = 0; i < ylData.length; i++) {\n    var row = ylData[i];\n    result.push({\n      期货品种: row.VC_FUT_DETAIL_NAME,\n      多空方向: row.VC_DIRECTION,\n      盈亏类型: '盈利',\n      收益额: row.F_INCOME / 10000,\n      贡献度: row.F_GXD * 100,\n      期间平均风险暴露占净值比: row.F_JZZB * 100\n    });\n  }\n  for (var i = 0; i < ksData.length; i++) {\n    var row = ksData[i];\n    result.push({\n      期货品种: row.VC_FUT_DETAIL_NAME,\n      多空方向: row.VC_DIRECTION,\n      盈亏类型: '亏损',\n      收益额: row.F_INCOME / 10000,\n      贡献度: row.F_GXD * 100,\n      期间平均风险暴露占净值比: row.F_JZZB * 100\n    });\n  }\n  return result;\n}"
+              },
+              "view": {
+                "type": "table",
+                "title": "期货十大盈利亏损品种",
+                "columns": [
+                  {
+                    "field": "期货品种",
+                    "label": "期货品种",
+                    "format": {
+                      "type": "text",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "多空方向",
+                    "label": "多空方向",
+                    "format": {
+                      "type": "text",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "盈亏类型",
+                    "label": "盈亏类型",
+                    "format": {
+                      "type": "text",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "收益额",
+                    "label": "收益额",
+                    "unit": "万元",
+                    "format": {
+                      "type": "decimal",
+                      "digits": 4,
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "贡献度",
+                    "label": "贡献度",
+                    "format": {
+                      "type": "percentage",
+                      "digits": 2,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  },
+                  {
+                    "field": "期间平均风险暴露占净值比",
+                    "label": "期间平均风险暴露占净值比",
+                    "format": {
+                      "type": "percentage",
+                      "digits": 2,
+                      "suffix": "%",
+                      "nullValue": "-"
+                    }
+                  }
+                ]
+              }
+            },
+            "queryContext": {
+              "fundCode": "SM0513",
+              "productCode": "SM0513",
+              "beginDate": "20220101",
+              "endDate": "20220331",
+              "dateRange": [
+                "20220101",
+                "20220331"
+              ],
+              "benchmarkA": "沪深300",
+              "benchmarkB": "",
+              "benchmarks": "1",
+              "dataFreq": "日频"
+            }
+          }
+        }
+      ]
+    },
+    "createdAt": "2026-07-31T05:08:22.326Z",
+    "updatedAt": "2026-07-31T05:08:22.326Z",
+    "updatedBy": "系统管理员"
+  }
+]

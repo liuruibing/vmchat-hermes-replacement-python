@@ -1,0 +1,155 @@
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+
+public class ApiCaller {
+
+    public static void main(String[] args) {
+		//用户TOKEN
+        String token = "替换用户TOKEN";
+		
+		
+		
+		//URL接口地址（js代码动态替换为当前后端访问地址）
+		String host="http://localhost:8888/pflfofrest";
+		String intf="/api/browser/index_token";
+        String url = host+intf;
+        String jsonBody = buildJsonBody();
+        String response = sendPostRequest(url, token, jsonBody);
+        System.out.println("响应结果: " + response);
+    }
+    
+    private static String buildJsonBody() {
+        return "{"
+            + "\"fundInfos\":[{"
+            + "\"isPack\":false,"
+            + "\"fundCodeTitle\":\"度量3期大消费基金\","
+            + "\"fundCodeKey\":\"SM0513\","
+            + "\"funds\":[{\"fundCode\":\"SM0513\",\"dataSource\":\"\"}]"
+            + "}],"
+            + "\"beginDate\":\"2022-01-01\","
+            + "\"endDate\":\"2022-01-31\","
+            + "\"singleBenchmark\":\"000300\","
+            + "\"dateType\":\"workDate\","
+            + "\"dateStep\":\"1\","
+            + "\"paramMap\":{"
+            + "\"templateCode\":\"a6a4c1b0-513b-49a5-91b2-66eed40acf60\","
+            + "\"beginDate\":\"2022-01-01\","
+            + "\"endDate\":\"2022-01-31\","
+            + "\"benchmarks\":\"1\","
+            + "\"benchmarkA\":\"000300\","
+            + "\"benchmarkB\":\"000300\","
+            + "\"benchmarkAValue\":\"0.0000\","
+            + "\"benchmarkBValue\":\"0.0000\","
+            + "\"kpiCode\":\"\","
+            + "\"contrasCode\":\"\","
+            + "\"industryType\":\"SWSR\","
+            + "\"desensitizationFlag\":\"\","
+            + "\"desensitizationFun\":\"ALL\","
+            + "\"dataFreqOpen\":\"true\","
+            + "\"dataFreq\":\"1\""
+            + "},"
+            + "\"colList\":["
+            + "{"
+            + "\"vcInfoDefineId\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS\","
+            + "\"vcIndexCode\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS\","
+            + "\"vcColCode\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate\","
+            + "\"vcColName\":\"α系数(报告期间)\","
+            + "\"vcUnitType\":\"original\","
+            + "\"vcUnitDefineId\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS_original_id\","
+            + "\"vcScale\":\"4:2\","
+            + "\"vcFormat\":\"0.00\","
+            + "\"vcModelValue\":\"\","
+            + "\"vcItemDefineId\":\"\","
+            + "\"vcTimeDefineId\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate_id\","
+            + "\"fColOrder\":1"
+            + "},"
+            + "{"
+            + "\"vcInfoDefineId\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS\","
+            + "\"vcIndexCode\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS\","
+            + "\"vcColCode\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate\","
+            + "\"vcColName\":\"α系数(报告期间)\","
+            + "\"vcUnitType\":\"original\","
+            + "\"vcUnitDefineId\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS_original_id\","
+            + "\"vcScale\":\"4:2\","
+            + "\"vcFormat\":\"0.00\","
+            + "\"vcModelValue\":\"\","
+            + "\"vcItemDefineId\":\"\","
+            + "\"vcTimeDefineId\":\"DCPJX_SYFXFX_SYFXBR_RP_AXS_beginDate_id\","
+            + "\"fColOrder\":2"
+            + "}"
+            + "]"
+            + "}";
+    }
+    
+    private static String sendPostRequest(String urlString, String token, String jsonBody) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(urlString);
+            connection = (HttpURLConnection) url.openConnection();
+            
+            // 设置请求方法
+            connection.setRequestMethod("POST");
+            
+            // 设置请求头
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("token", token);
+            
+            // 允许输出
+            connection.setDoOutput(true);
+            connection.setDoInput(true);
+            
+            // 写入请求Body
+            try (OutputStream os = connection.getOutputStream()) {
+                byte[] input = jsonBody.getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+            
+            // 获取响应码
+            int responseCode = connection.getResponseCode();
+            System.out.println("响应码: " + responseCode);
+            
+
+			
+			            // 判断状态码
+            if (responseCode >= 200 && responseCode < 300) {
+                // 成功响应（2xx）
+				StringBuilder response = new StringBuilder();
+				try (BufferedReader br = new BufferedReader(
+						new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+					String line;
+					while ((line = br.readLine()) != null) {
+						response.append(line);
+					}
+				}
+				return response.toString();
+            }else {
+                throw new RuntimeException(String.format("HTTP请求失败，状态码: %d", responseCode));
+            }
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            // 尝试读取错误流
+            if (connection != null) {
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(connection.getErrorStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder errorResponse = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) {
+                        errorResponse.append(line);
+                    }
+                    return "错误响应: " + errorResponse.toString();
+                } catch (IOException ex) {
+                    return "请求失败: " + e.getMessage();
+                }
+            }
+            return "请求失败: " + e.getMessage();
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+}

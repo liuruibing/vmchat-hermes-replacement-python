@@ -1,0 +1,388 @@
+//覆盖一些element-ui样式
+
+.el-breadcrumb__inner,
+.el-breadcrumb__inner a {
+  font-weight: 400 !important;
+}
+
+.el-upload {
+  input[type='file'] {
+    display: none !important;
+  }
+}
+
+.el-upload__input {
+  display: none;
+}
+
+.cell {
+  .el-tag {
+    margin-right: 0px;
+  }
+}
+
+.small-padding {
+  .cell {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+}
+
+.fixed-width {
+  .el-button--mini {
+    padding: 7px 10px;
+    width: 60px;
+  }
+}
+
+.status-col {
+  .cell {
+    padding: 0 10px;
+    text-align: center;
+
+    .el-tag {
+      margin-right: 0px;
+    }
+  }
+}
+
+//暂时性解决dialog 问题 https://github.com/ElemeFE/element/issues/2461
+.el-dialog {
+  transform: none;
+  left: 0;
+  position: relative;
+  margin: 0 auto;
+}
+
+//文章页textarea修改样式
+.article-textarea {
+  textarea {
+    padding-right: 40px;
+    resize: none;
+    border: none;
+    border-radius: 0px;
+    border-bottom: 1px solid #bfcbd9;
+  }
+}
+
+//element ui upload
+.upload-container {
+  .el-upload {
+    width: 100%;
+
+    .el-upload-dragger {
+      width: 100%;
+      height: 200px;
+    }
+  }
+}
+
+//dropdown
+.el-dropdown-menu {
+  a {
+    display: block;
+  }
+}
+
+// 相邻按钮间距 8px
+.el-button + .el-button {
+  margin-left: 8px !important;
+}
+
+// 主要按钮
+.el-button.el-button--primary {
+  background-image: linear-gradient(to right, #f5d7bc, #e0b794) !important;
+  // border-color: #F5D7BC !important;
+  border: none !important;
+  color: #612d10 !important;
+  font-size: 14px !important;
+  padding: 7px 28px !important;
+}
+
+.el-button.el-button--primary:hover {
+  background-image: linear-gradient(to right, #ddb592, #cb9b72) !important;
+  // border-color: $hover !important;
+  font-size: 14px !important;
+  color: #612d10 !important;
+  padding: 7px 28px !important;
+}
+
+.el-button--info {
+  background-color: #FFF;
+}
+.el-button--info.is-plain {
+  background: #FFF;
+}
+.el-button--info:hover,
+.el-button--info:focus{
+  background-color: #f4ede7 !important;
+  color: #612d10 !important;
+}
+
+// 次要按钮
+.el-button.el-button--info {
+  font-size: 14px !important;
+  // background-color: #fff !important;
+  border: 1px solid #804f2b !important;
+  color: #612d10 !important;
+  padding: 7px 28px !important;
+}
+
+.el-button.el-button--info:hover {
+  font-size: 14px !important;
+  background-color: #f4ede7 !important;
+  // border-color: 1px solid $painBorderColor !important;
+  color: #612d10 !important;
+  padding: 7px 28px !important;
+}
+
+
+
+.el-button.el-button--danger:hover,
+.el-button.el-button--danger:focus{
+
+  background-color: #f4ede7 !important;
+  color: #612d10 !important;
+}
+
+.el-button.el-button--move {
+  border: 1px solid #804f2b !important;
+  color: #612d10 !important;
+}
+.el-button.el-button--move:hover {
+
+  background-color: #f4ede7 !important;
+  color: #612d10 !important;
+}
+
+$page_color: #e9c5a5;
+$fontColor: #612d10;
+$lineColor: linear-gradient(to right, #f5d7bc, #e0b794);
+
+
+// 分页器
+.el-pagination.is-background .el-pager li:not(.disabled).active {
+  background-image: $lineColor!important;
+  border: none;
+  color: $fontColor;
+  font-size: 14px;
+}
+
+.el-pagination.is-background .el-pager li:not(.disabled) {
+  background-color: #fff!important;
+  border: 1px solid #d1d3d6;
+  color: #404040;
+  font-size: 14px;
+}
+
+.el-pagination.is-background .el-pager li:not(.disabled):hover {
+  border: 1px solid $page_color !important;
+  color: $fontColor;
+  font-size: 14px;
+}
+
+.el-pagination.is-background .btn-prev,
+.el-pagination.is-background .btn-next {
+  background-color: #ffffff;
+  border: 1px solid #d1d3d6;
+  color: #404040;
+  font-size: 14px;
+}
+
+.el-pagination.is-background .btn-prev:hover,
+.el-pagination.is-background .btn-next:hover {
+  background-color: #ffffff;
+  border-color: $page_color !important;
+  color: $fontColor;
+  font-size: 14px;
+}
+
+.el-pagination.is-background .el-select .el-input .el-input__inner:hover {
+  background-color: #ffffff;
+  border-color: $page_color !important;
+  color: $fontColor;
+  font-size: 14px;
+}
+
+.el-pagination.is-background .el-pagination__sizes {
+  background-color: #ffffff;
+  border-color: #d1d3d6;
+  color: #404040;
+  font-size: 14px;
+}
+
+.el-table__header-wrapper {
+  border-bottom: 2px solid #f2f3f5;
+}
+
+.el-table .descending .sort-caret.descending {
+  border-top-color: #e19c5d;
+}
+.el-table .ascending .sort-caret.ascending {
+  border-bottom-color: #e19c5d;
+}
+.el-checkbox__input.is-checked .el-checkbox__inner, .el-checkbox__input.is-indeterminate .el-checkbox__inner
+{
+  background-color: #e19c5d;
+  border-color: #e19c5d;
+}
+.el-checkbox__input.is-focus .el-checkbox__inner,.el-checkbox__inner:hover {
+  border-color: #e19c5d;
+}
+
+.el-checkbox__input.is-checked+.el-checkbox__label {
+  color: #e19c5d;
+}
+.el-textarea__inner:focus {
+  outline: 0;
+  border-color: #e19c5d;
+}
+.el-range-editor.is-active, .el-range-editor.is-active:hover, .el-select .el-input.is-focus .el-input__inner {
+  border-color: #e19c5d;
+}
+.el-select .el-input__inner:focus {
+  border-color: #e19c5d;
+}
+.el-input.is-active .el-input__inner, .el-input__inner:focus{
+  border-color: #e19c5d;
+}
+//单选按钮样式
+.el-radio.is-bordered.is-checked {
+  border-color: #e19c5d
+}
+
+.el-radio__input.is-checked .el-radio__inner {
+  border-color: #e19c5d;
+  background: #e19c5d
+}
+.el-radio__input.is-checked+.el-radio__label {
+  color: #333333;
+}
+.el-radio__input.is-checked .el-radio__inner {
+  border-color: #e19c5d;
+  background: #e19c5d;
+}
+
+.el-radio__input.is-focus .el-radio__inner {
+  border-color: #e19c5d
+}
+
+.el-radio__inner:hover {
+  border-color: #e19c5d
+}
+
+.el-radio:focus:not(.is-focus):not(:active):not(.is-disabled) .el-radio__inner {
+  -webkit-box-shadow: 0 0 2px 2px #e19c5d;
+  box-shadow: 0 0 2px 2px #e19c5d
+}
+
+.el-switch.is-checked .el-switch__core {
+  border-color: #e19c5d;
+  background-color: #e19c5d;
+}
+
+
+
+// 日期样式
+.el-date-table td.today span {
+  color: $fontColor;
+  font-weight: 700
+}
+
+.el-date-table td.today.end-date span, .el-date-table td.today.start-date span {
+  color: $fontColor;
+}
+
+.el-date-table td.available:hover {
+  color: #CF7E34;
+}
+
+.el-date-table td.current:not(.disabled) span {
+  color: $fontColor;
+  background-color: #e9c5a5;
+}
+.el-date-table td.end-date div, .el-date-table td.start-date div {
+  color: $fontColor;
+}
+
+.el-date-table td.end-date span, .el-date-table td.start-date span {
+  background-color: #e9c5a5
+}
+
+.el-date-table td.selected span {
+  background-color: #e9c5a5;
+  color: $fontColor;
+  border-radius: 15px
+}
+
+.el-month-table td.today .cell {
+  color: $fontColor;
+  font-weight: 700;
+}
+
+.el-month-table td .cell:hover {
+  color: $fontColor;
+}
+
+.el-month-table td.end-date .cell, .el-month-table td.start-date .cell {
+  color: $fontColor;
+  background-color: #e9c5a5;
+}
+
+.el-month-table td.current:not(.disabled) .cell {
+  color: $fontColor;
+}
+
+.el-year-table td.today .cell {
+  color: $fontColor;
+  font-weight: 700
+}
+
+.el-year-table td .cell:hover, .el-year-table td.current:not(.disabled) .cell {
+  color: $fontColor;
+}
+.el-time-spinner__arrow:hover {
+  color: $fontColor;
+}
+
+.el-range-editor.is-active, .el-range-editor.is-active:hover {
+  border-color: #e19c5d;
+}
+
+.el-picker-panel__shortcut:hover {
+  color: $fontColor;
+}
+
+.el-picker-panel__shortcut.active {
+  background-color: #e9c5a5;
+  color: $fontColor;
+}
+
+.el-picker-panel__icon-btn:hover {
+  color: $fontColor;
+}
+
+.el-date-picker__header-label.active, .el-date-picker__header-label:hover {
+  color: $fontColor;
+}
+
+.el-time-panel__btn.confirm {
+  font-weight: 800;
+  color: $fontColor;
+}
+
+//修改loading加载时的颜色
+.el-loading-spinner .path{
+  stroke: #e19c5d;
+}
+
+
+
+
+
+
+
+
+
+
+
