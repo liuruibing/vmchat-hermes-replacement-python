@@ -348,6 +348,8 @@ def build_repair_prompt(
         current_dsls = input_obj.get("currentDsls") if "currentDsls" in input_obj else input_obj.get("current_dsls", [])
         selected_block_id = input_obj.get("selectedBlockId") if "selectedBlockId" in input_obj else input_obj.get("selected_block_id")
         user_message = input_obj.get("userMessage") if "userMessage" in input_obj else input_obj.get("user_message", "")
+        resolved_metrics = input_obj.get("resolvedMetrics") if "resolvedMetrics" in input_obj else input_obj.get("resolved_metrics", [])
+        semantic_plan = input_obj.get("semanticPlan") if "semanticPlan" in input_obj else input_obj.get("semantic_plan", {})
     else:
         raw_params = getattr(input_obj, "globalQueryParameters", None)
         if raw_params is None:
@@ -364,6 +366,12 @@ def build_repair_prompt(
         user_message = getattr(input_obj, "userMessage", None)
         if user_message is None:
             user_message = getattr(input_obj, "user_message", "")
+        resolved_metrics = getattr(input_obj, "resolvedMetrics", None)
+        if resolved_metrics is None:
+            resolved_metrics = getattr(input_obj, "resolved_metrics", [])
+        semantic_plan = getattr(input_obj, "semanticPlan", None)
+        if semantic_plan is None:
+            semantic_plan = getattr(input_obj, "semantic_plan", {})
 
     if isinstance(raw_params, BaseModel):
         raw_params = raw_params.model_dump()
@@ -416,6 +424,20 @@ def build_repair_prompt(
     def build_user_prompt(resource_section: str) -> str:
         user_prompt_lines = [
             resource_section,
+            (
+                "<resolved_metrics>\n"
+                + json.dumps(resolved_metrics, ensure_ascii=False, separators=(",", ":"))
+                + "\n</resolved_metrics>"
+                if resolved_metrics
+                else ""
+            ),
+            (
+                "<semantic_plan>\n"
+                + json.dumps(semantic_plan, ensure_ascii=False, separators=(",", ":"))
+                + "\n</semantic_plan>"
+                if semantic_plan
+                else ""
+            ),
             current_dsls_section,
             f"<global_query_parameters>\n界面全局查询条件字段: {param_flags_text or '无'}\n</global_query_parameters>",
             "",
