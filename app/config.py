@@ -28,6 +28,17 @@ class AppConfig(BaseModel):
     sse_chunk_chars: int = 256
     vmchat_frontend_root: str = ""
     templates_file: str = ".runtime/vmchat-templates.json"
+    default_agent_id: str = "performance-ai"
+    default_role_id: str = "performance-analyst"
+    agents_root: str = "agents"
+    session_db_path: str = ".runtime/ai-sessions.sqlite3"
+    artifact_db_path: str = ".runtime/ai-artifacts.sqlite3"
+    knowledge_db_path: str = ".runtime/knowledge.duckdb"
+    session_recent_messages: int = 6
+    session_relevant_history_messages: int = 4
+    max_context_tokens: int = 32000
+    max_context_dsl_tokens: int = 9000
+    max_context_history_tokens: int = 5000
 
     # JS camelCase property aliases
     @property
@@ -140,6 +151,17 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
     request_body_limit_bytes = int(raw_env.get("REQUEST_BODY_LIMIT_BYTES", "1048576"))
     sse_chunk_chars = int(raw_env.get("SSE_CHUNK_CHARS", "256"))
     templates_file = raw_env.get("VMCHAT_TEMPLATES_FILE", ".runtime/vmchat-templates.json")
+    default_agent_id = raw_env.get("DEFAULT_AGENT_ID", "performance-ai")
+    default_role_id = raw_env.get("DEFAULT_ROLE_ID", "performance-analyst")
+    agents_root = raw_env.get("AGENTS_ROOT", "agents")
+    session_db_path = raw_env.get("SESSION_DB_PATH", ".runtime/ai-sessions.sqlite3")
+    artifact_db_path = raw_env.get("ARTIFACT_DB_PATH", ".runtime/ai-artifacts.sqlite3")
+    knowledge_db_path = raw_env.get("KNOWLEDGE_DB_PATH", ".runtime/knowledge.duckdb")
+    session_recent_messages = int(raw_env.get("SESSION_RECENT_MESSAGES", "6"))
+    session_relevant_history_messages = int(raw_env.get("SESSION_RELEVANT_HISTORY_MESSAGES", "4"))
+    max_context_tokens = int(raw_env.get("MAX_CONTEXT_TOKENS", "32000"))
+    max_context_dsl_tokens = int(raw_env.get("MAX_CONTEXT_DSL_TOKENS", "9000"))
+    max_context_history_tokens = int(raw_env.get("MAX_CONTEXT_HISTORY_TOKENS", "5000"))
 
     return AppConfig(
         host=host,
@@ -161,6 +183,17 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
         sse_chunk_chars=sse_chunk_chars,
         vmchat_frontend_root=vmchat_frontend_root,
         templates_file=templates_file,
+        default_agent_id=default_agent_id,
+        default_role_id=default_role_id,
+        agents_root=agents_root,
+        session_db_path=session_db_path,
+        artifact_db_path=artifact_db_path,
+        knowledge_db_path=knowledge_db_path,
+        session_recent_messages=session_recent_messages,
+        session_relevant_history_messages=session_relevant_history_messages,
+        max_context_tokens=max_context_tokens,
+        max_context_dsl_tokens=max_context_dsl_tokens,
+        max_context_history_tokens=max_context_history_tokens,
     )
 
 
