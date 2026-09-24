@@ -81,16 +81,43 @@ class ContextManager:
             )
 
         view = dsl.get("view") if isinstance(dsl.get("view"), dict) else {}
+        columns = []
+        for column in view.get("columns") or []:
+            if isinstance(column, dict):
+                compact = {
+                    key: column.get(key)
+                    for key in ("field", "label", "unit")
+                    if column.get(key) not in (None, "")
+                }
+                if compact:
+                    columns.append(compact)
+        series = []
+        for item_series in view.get("series") or []:
+            if isinstance(item_series, dict):
+                compact = {
+                    key: item_series.get(key)
+                    for key in ("name", "type", "encode")
+                    if item_series.get(key) not in (None, "")
+                }
+                if compact:
+                    series.append(compact)
+
+        compact_view = {
+            key: view.get(key)
+            for key in ("type", "title")
+            if view.get(key) not in (None, "")
+        }
+        if columns:
+            compact_view["columns"] = columns[:20]
+        if series:
+            compact_view["series"] = series[:20]
+
         return {
             "action": dsl.get("action"),
             "id": dsl.get("id") or item.id,
             "title": dsl.get("title") or item.title,
             "requests": requests,
-            "view": {
-                key: view.get(key)
-                for key in ("type", "title")
-                if view.get(key) not in (None, "")
-            },
+            "view": compact_view,
         }
 
     def _block_relevance(self, item: CurrentDslItem, query_terms: set[str]) -> float:
@@ -103,6 +130,20 @@ class ContextManager:
                 haystack += " " + " ".join(
                     str(request.get(key) or "")
                     for key in ("moduleId", "submoduleId", "sqlCode")
+                )
+        view = dsl.get("view") if isinstance(dsl.get("view"), dict) else {}
+        haystack += " " + str(view.get("title") or "")
+        for column in view.get("columns") or []:
+            if isinstance(column, dict):
+                haystack += " " + " ".join(
+                    str(column.get(key) or "")
+                    for key in ("field", "label", "unit")
+                )
+        for series in view.get("series") or []:
+            if isinstance(series, dict):
+                haystack += " " + " ".join(
+                    str(series.get(key) or "")
+                    for key in ("name", "type")
                 )
         block_terms = _query_terms(haystack)
         return float(len(query_terms.intersection(block_terms)))
