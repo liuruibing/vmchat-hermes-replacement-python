@@ -35,6 +35,7 @@ class ModelSkillRunInput(BaseModel):
     systemPrompt: str = Field(alias="system_prompt")
     userPrompt: str = Field(alias="user_prompt")
     readResource: Callable[[str], str] = Field(alias="read_resource")
+    searchKnowledge: Optional[Callable[[str], str]] = Field(default=None, alias="search_knowledge")
     signal: Optional[Any] = None
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
@@ -50,6 +51,10 @@ class ModelSkillRunInput(BaseModel):
     @property
     def read_resource(self) -> Callable[[str], str]:
         return self.readResource
+
+    @property
+    def search_knowledge(self) -> Optional[Callable[[str], str]]:
+        return self.searchKnowledge
 
     def __getitem__(self, item: str) -> Any:
         return getattr(self, item)
