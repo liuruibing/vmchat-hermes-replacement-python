@@ -54,6 +54,35 @@ class AgentRegistry:
 
         return self
 
+    def read_skill(self, agent_id: str) -> str:
+        agent = self.require(agent_id)
+        if not agent.skillPath:
+            return ""
+        path = Path(agent.skillPath)
+        if not path.is_file():
+            raise RuntimeError(f"MISSING_AGENT_SKILL: {agent.skillPath}")
+        return path.read_text(encoding="utf-8")
+
+    def collect_knowledge(self, agent_id: str) -> Dict[str, str]:
+        agent = self.require(agent_id)
+        documents: Dict[str, str] = {}
+        allowed_suffixes = {".md", ".txt", ".json", ".yaml", ".yml"}
+        for configured in agent.knowledgePaths:
+            source = Path(configured)
+            if source.is_file():
+                if source.suffix.lower() in allowed_suffixes:
+                    documents[source.name] = source.read_text(encoding="utf-8")
+                continue
+            if not source.is_dir():
+                continue
+            for file_path in sorted(source.rglob("*")):
+                if not file_path.is_file() or file_path.suffix.lower() not in allowed_suffixes:
+                    continue
+                rel = file_path.relative_to(source).as_posix()
+                key = f"{source.name}/{rel}"
+                documents[key] = file_path.read_text(encoding="utf-8")
+        return documents
+
     def list_agents(self) -> List[AgentDefinition]:
         return list(self._agents.values())
 
