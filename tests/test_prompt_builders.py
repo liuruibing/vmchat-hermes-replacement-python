@@ -96,3 +96,78 @@ def test_builds_repair_prompt_with_invalid_candidate_validation_issues_and_resou
     assert "ID 必须是有效 UUID" in prompt.user_prompt
     assert "# Catalog Index" in prompt.user_prompt
     assert "# Module A" in prompt.user_prompt
+
+
+
+def test_repair_prompt_compacts_oversized_context_and_keeps_candidate_resources():
+    huge_skill = "HUGE_SKILL_SENTINEL\n" + ("skill-rule " * 900)
+    resource_context = {
+        "catalog/index.md": "INDEX_SENTINEL\n" + ("index " * 1200),
+        "catalog/metrics.md": "METRICS_SENTINEL\n" + ("metrics " * 1600),
+        "catalog/profiles/modA.json": '{"moduleId":"modA","entity":"fund","grain":{"primaryCanonicalKeys":["date"]}}',
+        "skill/references/dsl-spec.md": "DSL_SPEC_SENTINEL\n" + ("dsl " * 120),
+        "skill/references/dsl-table.md": "DSL_TABLE_SENTINEL\n" + ("table " * 80),
+    }
+    huge_transform = "function transform(responses) { " + ("var ignored = 1; " * 800) + " return []; }"
+
+    prompt = build_repair_prompt({
+        "invalidCandidate": {
+            "action": "create",
+            "id": "3d1d1f05-7f55-46eb-8e5f-155018a7b97a",
+            "requests": [{"id": "reqA", "moduleId": "modA", "sqlCode": "codeA"}],
+            "transform": {"language": "javascript", "function": "function transform(responses) { return []; }"},
+            "view": {"type": "table", "columns": []},
+        },
+        "validationErrors": [
+            ValidationIssue(code="INVALID_SCHEMA", path="/view", message="修复表格字段")
+        ],
+        "input": {
+            "userMessage": "把指标放到一张表里",
+            "currentDsls": [{
+                "blockId": "block-1",
+                "title": "旧报表",
+                "dsl": {
+                    "action": "create",
+                    "id": "3d1d1f05-7f55-46eb-8e5f-155018a7b97b",
+                    "requests": [{"id": "reqOld", "moduleId": "oldMod", "sqlCode": "oldCode"}],
+                    "transform": {"language": "javascript", "function": huge_transform},
+                    "view": {"type": "table", "columns": []},
+                },
+            }],
+        },
+        "resourceContext": resource_context,
+        "skillMd": huge_skill,
+        "maxPromptChars": 5000,
+    })
+
+    assert len(prompt.system_prompt) + len(prompt.user_prompt) <= 5000
+    assert "catalog/profiles/modA.json" in prompt.user_prompt
+    assert "DSL_SPEC_SENTINEL" in prompt.user_prompt
+    assert "DSL_TABLE_SENTINEL" in prompt.user_prompt
+    assert "METRICS_SENTINEL" not in prompt.user_prompt
+    assert "INDEX_SENTINEL" not in prompt.user_prompt
+    assert "HUGE_SKILL_SENTINEL" not in prompt.system_prompt
+    assert "当前已有报表块摘要" in prompt.user_prompt
+    assert "var ignored = 1" not in prompt.user_prompt
+
+
+def test_repair_prompt_still_raises_when_irreducible_core_exceeds_limit():
+    with pytest.raises(Exception, match="Repair core content length"):
+        build_repair_prompt({
+            "invalidCandidate": {
+                "action": "create",
+                "id": "x",
+                "transform": {
+                    "language": "javascript",
+                    "function": "function transform(responses) { " + ("x" * 8000) + " }",
+                },
+                "view": {"type": "table", "columns": []},
+            },
+            "validationErrors": [
+                ValidationIssue(code="INVALID_SCHEMA", path="/", message="bad")
+            ],
+            "input": {"userMessage": "test"},
+            "resourceContext": {},
+            "skillMd": "",
+            "maxPromptChars": 1200,
+        })
