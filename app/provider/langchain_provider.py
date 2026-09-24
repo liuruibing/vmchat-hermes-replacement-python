@@ -418,6 +418,10 @@ class LangChainVmChatProvider(VmChatModelProvider):
         turn_count = 0
         read_count = 0
         max_resource_reads = int(os.getenv("MAX_SKILL_RESOURCE_READS", "24"))
+        max_search_calls = int(os.getenv("MAX_KNOWLEDGE_SEARCH_CALLS", "6"))
+        max_tool_context_chars = int(os.getenv("MAX_TOOL_CONTEXT_CHARS", "50000"))
+        search_count = 0
+        tool_context_chars = 0
         total_prompt_tokens = 0
         total_completion_tokens = 0
         total_tokens = 0
@@ -519,12 +523,26 @@ class LangChainVmChatProvider(VmChatModelProvider):
                             except Exception:
                                 query_arg = None
 
+                        search_count += 1
+                        if search_count > max_search_calls:
+                            messages.append(
+                                ToolMessage(
+                                    content="KNOWLEDGE_SEARCH_LIMIT_EXCEEDED",
+                                    tool_call_id=call_id,
+                                )
+                            )
+                            continue
+
                         search_fn = getattr(input, "searchKnowledge", None) or getattr(input, "search_knowledge", None)
                         tool_result_text = (
                             search_fn(query_arg)
                             if query_arg and callable(search_fn)
                             else "KNOWLEDGE_NOT_FOUND"
                         )
+                        if tool_context_chars + len(tool_result_text) > max_tool_context_chars:
+                            tool_result_text = "KNOWLEDGE_CONTEXT_BUDGET_EXCEEDED"
+                        else:
+                            tool_context_chars += len(tool_result_text)
                         messages.append(
                             ToolMessage(content=tool_result_text, tool_call_id=call_id)
                         )
@@ -547,6 +565,16 @@ class LangChainVmChatProvider(VmChatModelProvider):
 
                     read_fn = getattr(input, "readResource", None) or getattr(input, "read_resource", None)
                     tool_result_text = read_fn(path_arg) if callable(read_fn) else ""
+                    if tool_result_text not in (
+                        "RESOURCE_NOT_ALLOWED",
+                        "RESOURCE_ALREADY_READ",
+                        "RESOURCE_CONTEXT_TOO_LARGE",
+                        "RESOURCE_BUDGET_EXCEEDED",
+                    ):
+                        if tool_context_chars + len(tool_result_text) > max_tool_context_chars:
+                            tool_result_text = "RESOURCE_BUDGET_EXCEEDED"
+                        else:
+                            tool_context_chars += len(tool_result_text)
 
                     messages.append(
                         ToolMessage(
