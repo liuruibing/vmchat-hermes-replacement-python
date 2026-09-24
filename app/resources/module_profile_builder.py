@@ -26,9 +26,10 @@ profile 中 structuralOnlyFields 允许在 transform 中作为关联键使用，
 
 满足以下条件时优先允许：
 
-- entity 一致；
-- 至少有一个相同 canonical join key，例如 date、industry、security、asset_class；
+- entity 一致且必须是已知实体；unknown 与 unknown 不构成可合并证据；
+- 至少有一个相同 canonical 主粒度 join key，例如 date、industry、security、asset_class；
 - 相同 canonical key 的原始字段名可以不同，例如 TDATE、D_DATE、XAXISDATA 都可标准化为 date；
+- 未识别分类维度使用 category:<rawField>，只有精确相同且属于主粒度键时才可作为证据；泛化 category 不允许跨模块关联；
 - 分类数据如果声明 taxonomy，则 taxonomy 必须一致；
 - 不需要临时聚合、重采样或多对多展开。
 
