@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
@@ -40,6 +40,8 @@ class LoadedResources:
     submodulesJson: Optional[list[Any]]
     moduleMarkdownMap: dict[str, str]
     toolResourceTextByPath: dict[str, str]
+    moduleProfiles: dict[str, dict[str, Any]] = field(default_factory=dict)
+    profileIndex: dict[str, Any] = field(default_factory=dict)
 
     @property
     def skill_md(self) -> str:
@@ -72,3 +74,11 @@ class LoadedResources:
     @property
     def tool_resource_text_by_path(self) -> dict[str, str]:
         return self.toolResourceTextByPath
+
+    @property
+    def module_profiles(self) -> dict[str, dict[str, Any]]:
+        return self.moduleProfiles
+
+    @property
+    def profile_index(self) -> dict[str, Any]:
+        return self.profileIndex
