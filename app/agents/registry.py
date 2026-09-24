@@ -95,6 +95,13 @@ class AgentRegistry:
             raise ValueError(f"UNKNOWN_AGENT: {agent_id}")
         return agent
 
+    def list_roles(self, agent_id: str) -> List[RoleDefinition]:
+        return [
+            role
+            for (owner_id, _), role in self._roles.items()
+            if owner_id == agent_id
+        ]
+
     def get_role(self, agent_id: str, role_id: Optional[str] = None) -> Optional[RoleDefinition]:
         agent = self.get(agent_id)
         if agent is None:
