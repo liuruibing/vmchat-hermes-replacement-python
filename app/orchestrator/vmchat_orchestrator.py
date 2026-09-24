@@ -508,6 +508,7 @@ async def run_vm_chat_orchestrator(
     reader_options = SkillResourceReaderOptions(
         maxContextChars=max_prompt_chars,
         initialContextChars=initial_context_chars,
+        maxResourceChars=int(os.environ.get("MAX_RESOURCE_CONTEXT_CHARS", "40000")),
     )
     reader = SkillResourceReader(resources, reader_options)
 
@@ -679,6 +680,7 @@ async def stream_vm_chat(
     reader_options = SkillResourceReaderOptions(
         maxContextChars=max_prompt_chars,
         initialContextChars=initial_context_chars,
+        maxResourceChars=int(os.environ.get("MAX_RESOURCE_CONTEXT_CHARS", "40000")),
     )
     reader = SkillResourceReader(resources, reader_options)
 
