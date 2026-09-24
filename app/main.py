@@ -34,7 +34,7 @@ from app.session.store import SqliteSessionStore
 from app.session.manager import SessionManager
 from app.context.manager import ContextManager
 from app.artifacts.store import SqliteArtifactStore
-from app.knowledge.store import DuckDbKnowledgeStore
+from app.knowledge.store import DuckDbKnowledgeStore, SqliteKnowledgeStore
 from app.knowledge.service import KnowledgeService
 
 logger = logging.getLogger("app")
@@ -195,9 +195,15 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 getattr(config, "knowledge_db_path", ".runtime/knowledge.duckdb")
             )
             knowledge_service = KnowledgeService(knowledge_store)
+            knowledge_backend = "duckdb"
         except Exception as err:
-            logger.warning(f"[app] KnowledgeService disabled: {err}")
-            knowledge_service = None
+            logger.info(f"[app] DuckDB unavailable, using SQLite knowledge store: {err}")
+            fallback_path = str(getattr(config, "knowledge_db_path", ".runtime/knowledge.duckdb"))
+            if fallback_path.endswith(".duckdb"):
+                fallback_path = fallback_path[:-7] + ".sqlite3"
+            knowledge_store = SqliteKnowledgeStore(fallback_path)
+            knowledge_service = KnowledgeService(knowledge_store)
+            knowledge_backend = "sqlite"
 
     if deps_override.get("provider"):
         provider = deps_override["provider"]
@@ -291,6 +297,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 "modelConfigured": model_configured,
                 "sessionStore": "sqlite",
                 "knowledgeReady": knowledge_service is not None,
+                "knowledgeBackend": locals().get("knowledge_backend", "custom"),
                 "defaultAgent": default_agent_id,
             }
         )
