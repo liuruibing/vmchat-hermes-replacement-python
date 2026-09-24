@@ -166,6 +166,10 @@ class ReadSkillResourceInput(BaseModel):
     path: str = Field(description="Relative path to skill resource file")
 
 
+class SearchKnowledgeInput(BaseModel):
+    query: str = Field(description="Natural-language query for relevant agent knowledge")
+
+
 class LangChainVmChatProvider(VmChatModelProvider):
     def __init__(
         self,
@@ -389,11 +393,22 @@ class LangChainVmChatProvider(VmChatModelProvider):
         model = self.build_model()
         @tool("read_vmchat_skill_resource", args_schema=ReadSkillResourceInput)
         def read_resource_tool(path: str) -> str:
-            """Read a vmchat skill resource file by path."""
+            """Read one allow-listed agent resource by relative path."""
             if input.read_resource:
                 return input.read_resource(path)
             return ""
-        bound_model = model.bind_tools([read_resource_tool])
+
+        tools = [read_resource_tool]
+        if input.search_knowledge:
+            @tool("search_agent_knowledge", args_schema=SearchKnowledgeInput)
+            def search_knowledge_tool(query: str) -> str:
+                """Search the active agent knowledge base and return only relevant chunks."""
+                if input.search_knowledge:
+                    return input.search_knowledge(query)
+                return "KNOWLEDGE_NOT_FOUND"
+            tools.append(search_knowledge_tool)
+
+        bound_model = model.bind_tools(tools)
         
         messages: List[Any] = [
             {"role": "system", "content": input.systemPrompt},
@@ -403,6 +418,10 @@ class LangChainVmChatProvider(VmChatModelProvider):
         turn_count = 0
         read_count = 0
         max_resource_reads = int(os.getenv("MAX_SKILL_RESOURCE_READS", "24"))
+        max_search_calls = int(os.getenv("MAX_KNOWLEDGE_SEARCH_CALLS", "6"))
+        max_tool_context_chars = int(os.getenv("MAX_TOOL_CONTEXT_CHARS", "50000"))
+        search_count = 0
+        tool_context_chars = 0
         total_prompt_tokens = 0
         total_completion_tokens = 0
         total_tokens = 0
@@ -471,7 +490,7 @@ class LangChainVmChatProvider(VmChatModelProvider):
                     call_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
                     tool_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
 
-                    if not call_id or tool_name != "read_vmchat_skill_resource":
+                    if not call_id or tool_name not in ("read_vmchat_skill_resource", "search_agent_knowledge"):
                         messages.append(
                             ToolMessage(
                                 content="RESOURCE_NOT_ALLOWED",
@@ -492,6 +511,43 @@ class LangChainVmChatProvider(VmChatModelProvider):
                         except Exception:
                             path_arg = None
 
+                    if tool_name == "search_agent_knowledge":
+                        query_arg: Optional[str] = None
+                        if isinstance(raw_args, dict) and isinstance(raw_args.get("query"), str):
+                            query_arg = raw_args["query"]
+                        elif isinstance(raw_args, str):
+                            try:
+                                parsed_args = json.loads(raw_args)
+                                if isinstance(parsed_args, dict) and isinstance(parsed_args.get("query"), str):
+                                    query_arg = parsed_args["query"]
+                            except Exception:
+                                query_arg = None
+
+                        search_count += 1
+                        if search_count > max_search_calls:
+                            messages.append(
+                                ToolMessage(
+                                    content="KNOWLEDGE_SEARCH_LIMIT_EXCEEDED",
+                                    tool_call_id=call_id,
+                                )
+                            )
+                            continue
+
+                        search_fn = getattr(input, "searchKnowledge", None) or getattr(input, "search_knowledge", None)
+                        tool_result_text = (
+                            search_fn(query_arg)
+                            if query_arg and callable(search_fn)
+                            else "KNOWLEDGE_NOT_FOUND"
+                        )
+                        if tool_context_chars + len(tool_result_text) > max_tool_context_chars:
+                            tool_result_text = "KNOWLEDGE_CONTEXT_BUDGET_EXCEEDED"
+                        else:
+                            tool_context_chars += len(tool_result_text)
+                        messages.append(
+                            ToolMessage(content=tool_result_text, tool_call_id=call_id)
+                        )
+                        continue
+
                     if not path_arg:
                         messages.append(
                             ToolMessage(
@@ -509,6 +565,16 @@ class LangChainVmChatProvider(VmChatModelProvider):
 
                     read_fn = getattr(input, "readResource", None) or getattr(input, "read_resource", None)
                     tool_result_text = read_fn(path_arg) if callable(read_fn) else ""
+                    if tool_result_text not in (
+                        "RESOURCE_NOT_ALLOWED",
+                        "RESOURCE_ALREADY_READ",
+                        "RESOURCE_CONTEXT_TOO_LARGE",
+                        "RESOURCE_BUDGET_EXCEEDED",
+                    ):
+                        if tool_context_chars + len(tool_result_text) > max_tool_context_chars:
+                            tool_result_text = "RESOURCE_BUDGET_EXCEEDED"
+                        else:
+                            tool_context_chars += len(tool_result_text)
 
                     messages.append(
                         ToolMessage(

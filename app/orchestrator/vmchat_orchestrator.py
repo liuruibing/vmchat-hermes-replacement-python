@@ -42,6 +42,8 @@ class OrchestratorInput:
     resources: LoadedResources
     provider: Any
     signal: Optional[Any] = None
+    rolePrompt: str = ""
+    knowledgeSearch: Optional[Any] = None
 
 
 class OrchestratorUsage(BaseModel):
@@ -86,6 +88,8 @@ class StreamOrchestratorOptions:
     signal: Optional[Any] = None
     messageChunkChars: Optional[int] = None
     message_chunk_chars: Optional[int] = None
+    rolePrompt: str = ""
+    knowledgeSearch: Optional[Any] = None
 
 
 class ReasoningDeltaStreamEvent(BaseModel):
@@ -256,9 +260,9 @@ VmChatStreamEvent = Union[
 ]
 
 def _call_build_generate_prompt(
-    input_val: VmChatInput, skill_md: str
+    input_val: VmChatInput, skill_md: str, role_prompt: str = ""
 ) -> tuple[str, str]:
-    opts = {"input": input_val, "skillMd": skill_md}
+    opts = {"input": input_val, "skillMd": skill_md, "rolePrompt": role_prompt}
     res = build_generate_prompt(opts)
     return res.systemPrompt, res.userPrompt
 
@@ -483,23 +487,28 @@ async def run_vm_chat_orchestrator(
         resources = options.get("resources")
         provider = options.get("provider")
         signal = options.get("signal")
+        role_prompt = options.get("rolePrompt") or options.get("role_prompt") or ""
+        knowledge_search = options.get("knowledgeSearch") or options.get("knowledge_search")
     else:
         input_val = options.input
         resources = options.resources
         provider = options.provider
         signal = options.signal
+        role_prompt = getattr(options, "rolePrompt", "") or ""
+        knowledge_search = getattr(options, "knowledgeSearch", None)
 
     max_prompt_chars = int(os.environ.get("MAX_PROMPT_CHARS", "120000"))
     skill_md = getattr(resources, "skillMd", None) or getattr(
         resources, "skill_md", ""
     )
 
-    sys_prompt, user_prompt = _call_build_generate_prompt(input_val, skill_md)
+    sys_prompt, user_prompt = _call_build_generate_prompt(input_val, skill_md, role_prompt)
     initial_context_chars = len(sys_prompt) + len(user_prompt)
 
     reader_options = SkillResourceReaderOptions(
         maxContextChars=max_prompt_chars,
         initialContextChars=initial_context_chars,
+        maxResourceChars=int(os.environ.get("MAX_RESOURCE_CONTEXT_CHARS", "40000")),
     )
     reader = SkillResourceReader(resources, reader_options)
 
@@ -519,6 +528,8 @@ async def run_vm_chat_orchestrator(
         "user_prompt": user_prompt,
         "readResource": lambda p: reader.read(p),
         "read_resource": lambda p: reader.read(p),
+        "searchKnowledge": knowledge_search,
+        "search_knowledge": knowledge_search,
         "signal": signal,
     }
 
@@ -632,6 +643,8 @@ async def stream_vm_chat(
         resources = options.get("resources")
         provider = options.get("provider")
         signal = options.get("signal")
+        role_prompt = options.get("rolePrompt") or options.get("role_prompt") or ""
+        knowledge_search = options.get("knowledgeSearch") or options.get("knowledge_search")
         msg_chunk_chars = options.get("messageChunkChars") or options.get(
             "message_chunk_chars"
         )
@@ -640,6 +653,8 @@ async def stream_vm_chat(
         resources = options.resources
         provider = options.provider
         signal = options.signal
+        role_prompt = getattr(options, "rolePrompt", "") or ""
+        knowledge_search = getattr(options, "knowledgeSearch", None)
         msg_chunk_chars = getattr(options, "messageChunkChars", None) or getattr(
             options, "message_chunk_chars", None
         )
@@ -659,12 +674,13 @@ async def stream_vm_chat(
         resources, "skill_md", ""
     )
 
-    sys_prompt, user_prompt = _call_build_generate_prompt(input_val, skill_md)
+    sys_prompt, user_prompt = _call_build_generate_prompt(input_val, skill_md, role_prompt)
     initial_context_chars = len(sys_prompt) + len(user_prompt)
 
     reader_options = SkillResourceReaderOptions(
         maxContextChars=max_prompt_chars,
         initialContextChars=initial_context_chars,
+        maxResourceChars=int(os.environ.get("MAX_RESOURCE_CONTEXT_CHARS", "40000")),
     )
     reader = SkillResourceReader(resources, reader_options)
 
@@ -682,6 +698,7 @@ async def stream_vm_chat(
         system_prompt=sys_prompt,
         user_prompt=user_prompt,
         read_resource=lambda p: reader.read(p),
+        search_knowledge=knowledge_search,
         signal=signal,
     )
 
