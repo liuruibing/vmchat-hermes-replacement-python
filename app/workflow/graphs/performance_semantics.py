@@ -8,6 +8,15 @@ def _norm(text: Any) -> str:
     return re.sub(r"[^a-z0-9\u3400-\u9fff]+", "", str(text or "").lower())
 
 
+def _metric_aliases(name: str) -> List[str]:
+    aliases = [_norm(name)]
+    axisless = re.sub(r"[（(](?:左|右)[）)]\s*$", "", str(name or "")).strip()
+    normalized_axisless = _norm(axisless)
+    if normalized_axisless and normalized_axisless not in aliases:
+        aliases.append(normalized_axisless)
+    return aliases
+
+
 def _metric_unit(profile: Dict[str, Any], raw_field: str) -> str | None:
     for field in profile.get("fields") or []:
         if not isinstance(field, dict):
@@ -43,9 +52,10 @@ def resolve_metrics(user_message: str, resources: Any) -> List[Dict[str, Any]]:
                 continue
             name = str(metric.get("name") or "").strip()
             raw_field = str(metric.get("rawField") or "").strip()
-            normalized = _norm(name)
-            if not normalized or normalized not in query:
+            aliases = [alias for alias in _metric_aliases(name) if alias]
+            if not aliases or not any(alias in query for alias in aliases):
                 continue
+            normalized = aliases[0]
             key = (str(module_id), raw_field or normalized)
             if key in seen:
                 continue
