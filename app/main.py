@@ -293,6 +293,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             request.url.path.startswith("/v1/sessions")
             or request.url.path.startswith("/v1/agents")
             or request.url.path.startswith("/v1/knowledge")
+            or request.url.path.startswith("/v1/artifacts")
         )
         if is_run_or_wiki or is_template or is_runtime:
             if not verify_bearer_auth(request, config.service_api_key):
@@ -368,6 +369,29 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             })
         return JSONResponse(status_code=200, content={"agents": agents})
 
+    @app.get("/v1/agents/{agentId}/roles")
+    async def list_agent_roles(agentId: str):
+        if agent_registry is None or agent_registry.get(agentId) is None:
+            return JSONResponse(status_code=404, content={"error": "AGENT_NOT_FOUND"})
+        roles = agent_registry.list_roles(agentId)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "agent_id": agentId,
+                "roles": [
+                    {
+                        "id": role.id,
+                        "name": role.name,
+                        "allowedSkills": role.allowedSkills,
+                        "allowedTools": role.allowedTools,
+                        "knowledgeScopes": role.knowledgeScopes,
+                        "metadata": role.metadata,
+                    }
+                    for role in roles
+                ],
+            },
+        )
+
     @app.get("/v1/sessions/{sessionId}")
     async def get_session(sessionId: str):
         state = session_store.get(sessionId)
@@ -419,6 +443,16 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     for hit in hits
                 ],
             },
+        )
+
+    @app.get("/v1/artifacts/{artifactId}")
+    async def get_artifact(artifactId: str):
+        artifact = artifact_store.get(artifactId)
+        if artifact is None:
+            return JSONResponse(status_code=404, content={"error": "ARTIFACT_NOT_FOUND"})
+        return JSONResponse(
+            status_code=200,
+            content=artifact.model_dump(by_alias=True),
         )
 
     @app.get("/v1/templates")
@@ -554,12 +588,6 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
 
     @app.get("/v1/runs/{runId}/events")
     async def run_events(runId: str, request: Request):
-        if not resource_loader.is_ready():
-            return JSONResponse(
-                status_code=503,
-                content={"error": "SERVICE_DEGRADED: Resources not loaded"}
-            )
-
         claim_result = run_store.claim(runId)
         outcome = getattr(claim_result, "outcome", None) or (claim_result.get("outcome") if isinstance(claim_result, dict) else None)
 
