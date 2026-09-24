@@ -61,10 +61,10 @@ class SkillResourceReader:
         # Check both the global prompt budget and the dedicated knowledge budget.
         # This prevents tool-driven context from filling the entire model window.
         new_length = len(content)
-        if self._current_read_chars + new_length > self._max_resource_chars:
-            return "RESOURCE_BUDGET_EXCEEDED"
         if self._initial_context_chars + self._current_read_chars + new_length > self._max_context_chars:
             return "RESOURCE_CONTEXT_TOO_LARGE"
+        if self._current_read_chars + new_length > self._max_resource_chars:
+            return "RESOURCE_BUDGET_EXCEEDED"
 
         # Record successful read
         self._read_resources_map[res_path] = content
