@@ -49,13 +49,13 @@ def test_rejects_non_empty_tools():
         normalize_create_run_request(raw)
 
 
-def test_rejects_non_dsl_skills():
+def test_accepts_agent_defined_skills_at_wire_normalization_layer():
     raw = {
         "input": [{"role": "user", "content": "hi"}],
-        "skills": ["other-skill"],
+        "skills": ["other-skill", "other-skill"],
     }
-    with pytest.raises(ValueError, match="UNSUPPORTED_SKILLS"):
-        normalize_create_run_request(raw)
+    normalized = normalize_create_run_request(raw)
+    assert normalized.skills == ["other-skill"]
 
 
 def test_normalize_vm_chat_input():
