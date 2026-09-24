@@ -554,6 +554,15 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             role = agent_registry.get_role(agent_id, role_id) if agent_registry else None
             if agent is not None and role is None and agent.defaultRole:
                 role_id = agent.defaultRole
+                role = agent_registry.get_role(agent_id, role_id) if agent_registry else None
+
+            if normalized_req.skills:
+                allowed_skills = set(role.allowedSkills if role is not None else [])
+                denied = [skill for skill in normalized_req.skills if skill not in allowed_skills]
+                if denied:
+                    raise ValueError(
+                        "SKILL_NOT_ALLOWED: " + ", ".join(denied)
+                    )
 
             session_state = session_manager.get_or_create(
                 normalized_req.session_id,
