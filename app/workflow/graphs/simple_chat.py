@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Dict, List
 
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.compatibility.hermes_events import (
@@ -66,6 +67,9 @@ def _build_user_prompt(state: SimpleChatGraphState) -> str:
 
 class SimpleChatLangGraphWorkflow:
     id = "simple-chat"
+
+    def __init__(self) -> None:
+        self._checkpointer = InMemorySaver()
 
     def _compile(self, context: WorkflowContext):
         async def retrieve_knowledge(
@@ -172,7 +176,7 @@ class SimpleChatLangGraphWorkflow:
         builder.add_edge(START, "retrieve_knowledge")
         builder.add_edge("retrieve_knowledge", "answer")
         builder.add_edge("answer", END)
-        return builder.compile()
+        return builder.compile(checkpointer=self._checkpointer)
 
     async def stream(
         self,
@@ -191,7 +195,11 @@ class SimpleChatLangGraphWorkflow:
         }
 
         try:
-            result = await graph.ainvoke(initial)
+            thread_id = context.run_id or context.session_id or "simple-chat"
+            result = await graph.ainvoke(
+                initial,
+                config={"configurable": {"thread_id": thread_id}},
+            )
         except Exception as err:
             yield RunFailedEvent(error=f"AI 助手任务执行失败: {err}")
             return
