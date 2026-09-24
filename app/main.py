@@ -196,6 +196,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             max_context_tokens=getattr(config, "max_context_tokens", 32000),
             max_dsl_tokens=getattr(config, "max_context_dsl_tokens", 9000),
             max_history_tokens=getattr(config, "max_context_history_tokens", 5000),
+            reserved_prompt_tokens=getattr(config, "max_context_reserved_tokens", 8000),
         )
     )
     artifact_store = (
@@ -616,6 +617,11 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                         "estimated_tokens": context_report.total_estimated_tokens,
                         "history_tokens": context_report.history_tokens,
                         "dsl_tokens": context_report.dsl_tokens,
+                        "summary_tokens": context_report.summary_tokens,
+                        "budget_tokens": context_report.budget_tokens,
+                        "reserved_prompt_tokens": context_report.reserved_prompt_tokens,
+                        "dropped_history_messages": context_report.dropped_history_messages,
+                        "summary_truncated": context_report.summary_truncated,
                         "full_dsl_blocks": context_report.full_dsl_blocks,
                         "summarized_dsl_blocks": context_report.summarized_dsl_blocks,
                     },
