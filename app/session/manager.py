@@ -148,6 +148,27 @@ class SessionManager:
         state.updatedAt = time.time()
         self.store.put(state)
 
+    def _refresh_summary(self, state: SessionState) -> None:
+        # Keep the durable full history in SQLite, but give the model a bounded
+        # synopsis of older turns. This deterministic summarizer is deliberately
+        # replaceable by an LLM summarizer later.
+        if len(state.messages) <= 16:
+            return
+        older = state.messages[:-10]
+        lines: List[str] = []
+        for message in older[-24:]:
+            clean = " ".join(str(message.content or "").split())
+            if not clean:
+                continue
+            if clean.startswith("[artifact:"):
+                clean = clean[:260]
+            else:
+                clean = clean[:220]
+            prefix = "用户" if message.role == "user" else "助手"
+            lines.append(f"{prefix}: {clean}")
+        if lines:
+            state.summary = ("较早会话要点：\n" + "\n".join(lines))[-4000:]
+
     def complete_turn(
         self,
         state: SessionState,
@@ -167,7 +188,11 @@ class SessionManager:
                 ),
                 SessionMessage(
                     role="assistant",
-                    content=str(assistant_output or "")[:32000],
+                    content=(
+                        f"[artifact:{artifact_id}] 已生成或更新结构化报表结果。"
+                        if artifact_id
+                        else str(assistant_output or "")[:12000]
+                    ),
                     created_at=now,
                     run_id=run_id,
                 ),
@@ -178,6 +203,7 @@ class SessionManager:
         if artifact_id and artifact_id not in state.artifactIds:
             state.artifactIds.append(artifact_id)
             state.artifactIds = state.artifactIds[-100:]
+        self._refresh_summary(state)
         state.updatedAt = now
         self.store.put(state)
         return state
