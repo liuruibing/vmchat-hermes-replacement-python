@@ -112,7 +112,14 @@ class KnowledgeService:
 
         for path, content in resources.items():
             raw = str(content or "")
-            checksum = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+            embedding_fingerprint = (
+                str(getattr(self.embedder, "fingerprint", "embedding-enabled"))
+                if self.embedder is not None
+                else "lexical-only"
+            )
+            checksum = hashlib.sha256(
+                (embedding_fingerprint + "\0" + raw).encode("utf-8")
+            ).hexdigest()
             if existing.get(path) == checksum:
                 continue
 
