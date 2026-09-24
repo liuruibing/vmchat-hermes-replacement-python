@@ -29,6 +29,8 @@ from app.provider.fixed_provider import FixedVmChatProvider, VmChatModelProvider
 from app.provider.langchain_provider import LangChainVmChatProvider
 from app.orchestrator.vmchat_orchestrator import stream_vm_chat
 from app.orchestrator.simple_chat_orchestrator import stream_simple_chat
+from app.workflow.engine import WorkflowContext, WorkflowEngine
+from app.workflow.legacy import build_default_workflow_registry
 from app.resources.wiki_catalog import get_wiki_tree, get_wiki_document
 from app.agents.registry import AgentRegistry
 from app.session.store import SqliteSessionStore
@@ -88,6 +90,8 @@ class AppDependencies:
     context_manager: Any = None
     artifact_store: Any = None
     knowledge_service: Any = None
+    workflow_registry: Any = None
+    workflow_engine: Any = None
 
     @property
     def resourceLoader(self):
@@ -242,6 +246,20 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
         provider = FixedVmChatProvider(config.fixed_provider_fixture)
     else:
         provider = None
+
+    workflow_registry = (
+        deps_override.get("workflow_registry")
+        or deps_override.get("workflowRegistry")
+        or build_default_workflow_registry(
+            simple_chat_stream=stream_simple_chat,
+            vm_report_stream=stream_vm_chat,
+        )
+    )
+    workflow_engine = (
+        deps_override.get("workflow_engine")
+        or deps_override.get("workflowEngine")
+        or WorkflowEngine(workflow_registry)
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -715,34 +733,36 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 sequence = 0
                 last_usage: Dict[str, Any] = {}
 
-                if workflow == "simple-chat":
-                    skill_md = agent_registry.read_skill(agent_id) if agent_registry else ""
-                    stream_gen = stream_simple_chat(
-                        input_val=vm_input,
-                        provider=provider,
-                        skill_md=skill_md,
-                        role_prompt=role_prompt,
-                        knowledge_search=knowledge_search,
-                        signal=controller,
-                        message_chunk_chars=config.sse_chunk_chars,
+                skill_md = agent_registry.read_skill(agent_id) if agent_registry else ""
+                loaded_resources = (
+                    resource_loader.get_resources()
+                    if resource_loader.is_ready()
+                    else None
+                )
+                workflow_context = WorkflowContext(
+                    input_val=vm_input,
+                    provider=provider,
+                    agent_id=agent_id,
+                    role_id=role_id,
+                    role_prompt=role_prompt,
+                    skill_md=skill_md,
+                    knowledge_search=knowledge_search,
+                    resources=loaded_resources,
+                    signal=controller,
+                    message_chunk_chars=config.sse_chunk_chars,
+                    run_id=runId,
+                    session_id=getattr(getattr(record, "request", None), "session_id", None),
+                )
+                try:
+                    stream_gen = workflow_engine.stream(
+                        workflow,
+                        workflow_context,
                     ).__aiter__()
-                else:
-                    if not resource_loader.is_ready():
-                        raise VmChatRunError(
-                            "SERVICE_DEGRADED",
-                            "当前 Agent 资源尚未加载完成",
-                        )
-                    loaded_resources = resource_loader.get_resources()
-                    opts = {
-                        "input": vm_input,
-                        "resources": loaded_resources,
-                        "provider": provider,
-                        "signal": controller,
-                        "message_chunk_chars": config.sse_chunk_chars,
-                        "role_prompt": role_prompt,
-                        "knowledge_search": knowledge_search,
-                    }
-                    stream_gen = stream_vm_chat(opts).__aiter__()
+                except ValueError as err:
+                    raise VmChatRunError(
+                        "UNKNOWN_WORKFLOW",
+                        str(err),
+                    ) from err
 
                 if stream_gen is not None:
                     next_event_task = asyncio.create_task(stream_gen.__anext__())
