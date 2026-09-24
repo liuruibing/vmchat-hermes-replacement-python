@@ -4,6 +4,7 @@ import { loadVmSource } from './load-vm-source.mjs'
 const {
   assertVmHermesOperationAllowed,
   buildVmReportNoticeFromError,
+  buildVmHermesContext,
   buildVmHermesMessages,
   formatVmAssistantStreamingContent,
   isExplicitVmBatchUpdateRequest,
@@ -244,14 +245,22 @@ const hermesMessages = buildVmHermesMessages({
   sessionId: 'vm-report-dsl-test'
 })
 const systemMessage = hermesMessages[0].content
-assert.ok(systemMessage.includes('$vm-report-dsl'))
-assert.ok(systemMessage.includes('不得向用户显示 catalog、moduleId、submoduleId、sqlCode、英文模块标识或文件路径'))
-assert.ok(systemMessage.includes('父模块中文标题 > 子模块中文标题'))
-assert.ok(systemMessage.includes('示例 JSON 只供 transform 判断接口响应结构和原始取值'))
-assert.ok(systemMessage.includes('currentDsls'))
-assert.ok(systemMessage.includes('以语言目标为准'))
-assert.ok(systemMessage.includes('不要代码块或 operations/blocks 包装对象'))
-assert.ok(systemMessage.includes('intent/renderType: businessInfo'))
+assert.ok(systemMessage.includes('Python 服务端统一处理'))
+assert.ok(systemMessage.includes('当前 currentDsls'))
+assert.ok(!systemMessage.includes('$vm-report-dsl'))
+assert.ok(!systemMessage.includes('allBlockSummaries'))
+assert.strictEqual(hermesMessages.length, 2)
+assert.strictEqual(hermesMessages[1].content, '把当前模块改成表格')
+assert.ok(!hermesMessages.some(item => String(item.content || '').includes('vmChat 会话锚点')))
+
+const hermesContext = buildVmHermesContext({
+  reportBlocks,
+  selectedBlockId: 'existing-block',
+  globalQueryParams: { fundCode: 'F001' }
+})
+assert.strictEqual(hermesContext.selectedBlockId, 'existing-block')
+assert.strictEqual(hermesContext.currentDsls.length, 2)
+assert.strictEqual(hermesContext.globalQueryParams.fundCode, 'F001')
 
 const errorNotice = buildVmReportNoticeFromError(new Error('vmChat 请求失败'), {
   traceId: 'trace-error',
