@@ -5,6 +5,7 @@ import json
 import os
 from typing import Any, AsyncGenerator, Dict, List
 
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from app.compatibility.hermes_events import (
@@ -97,6 +98,9 @@ class PerformanceReportLangGraphWorkflow:
     """
 
     id = "vm-report"
+
+    def __init__(self) -> None:
+        self._checkpointer = InMemorySaver()
 
     def _compile(self, context: WorkflowContext):
         if context.resources is None:
@@ -398,11 +402,12 @@ class PerformanceReportLangGraphWorkflow:
         builder.add_edge("finalize_text", END)
         builder.add_edge("finalize_dsl", END)
         builder.add_edge("failed", END)
-        return builder.compile()
+        return builder.compile(checkpointer=self._checkpointer)
 
     async def stream(self, context: WorkflowContext) -> AsyncGenerator[Any, None]:
         try:
             graph = self._compile(context)
+            thread_id = context.run_id or context.session_id or "vm-report"
             result = await graph.ainvoke(
                 {
                     "resolved_metrics": [],
@@ -421,7 +426,8 @@ class PerformanceReportLangGraphWorkflow:
                     "candidate_dirty": True,
                     "error_code": "",
                     "error_message": "",
-                }
+                },
+                config={"configurable": {"thread_id": thread_id}},
             )
         except VmChatRunError as err:
             message = getattr(err, "public_message", None) or getattr(err, "publicMessage", None) or str(err)
