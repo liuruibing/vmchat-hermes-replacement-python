@@ -128,8 +128,8 @@ def test_context_manager_keeps_selected_full_and_summarizes_other_blocks():
     selected = next(item for item in prepared.currentDsls if item.blockId == "a")
     other = next(item for item in prepared.currentDsls if item.blockId == "e")
 
-    selected_dsl = selected.dsl if isinstance(selected.dsl, dict) else selected.dsl.model_dump()
-    other_dsl = other.dsl if isinstance(other.dsl, dict) else other.dsl.model_dump()
+    selected_dsl = selected.dsl if isinstance(selected.dsl, dict) else selected.dsl.model_dump(exclude_none=True)
+    other_dsl = other.dsl if isinstance(other.dsl, dict) else other.dsl.model_dump(exclude_none=True)
 
     assert "transform" in selected_dsl
     assert "transform" not in other_dsl
