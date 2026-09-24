@@ -269,6 +269,9 @@ export function createHermesRun(messages, options) {
   const model = (options && options.model) || 'hermes-agent'
   const skills = Array.isArray(options && options.skills) ? options.skills.filter(Boolean) : []
   const tools = Array.isArray(options && options.tools) ? options.tools.filter(Boolean) : []
+  const context = options && options.context && typeof options.context === 'object'
+    ? options.context
+    : null
   const splitMessages = splitRunMessages(messages)
   const payload = {
     model: model,
@@ -278,6 +281,7 @@ export function createHermesRun(messages, options) {
   }
   if (skills.length) payload.skills = skills
   if (tools.length) payload.tools = tools
+  if (context) payload.context = context
   return post('/v1/runs', payload, {
     'Content-Type': 'application/json;charset=UTF-8'
   })
