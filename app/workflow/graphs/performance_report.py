@@ -28,6 +28,7 @@ from app.provider.fixed_provider import ModelGenerateInput, ModelSkillRunInput
 from app.resources.skill_resource_reader import SkillResourceReader, SkillResourceReaderOptions
 from app.workflow.engine import WorkflowContext
 from app.workflow.graphs.performance_report_state import PerformanceReportGraphState
+from app.workflow.graphs.performance_semantics import build_semantic_plan, resolve_metrics
 
 
 def _is_aborted(signal: Any) -> bool:
@@ -111,13 +112,30 @@ class PerformanceReportLangGraphWorkflow:
         skill_md = getattr(resources, "skillMd", None) or getattr(resources, "skill_md", "")
         current_block_ids = _current_block_ids(context)
 
+        async def resolve_semantics(_state: PerformanceReportGraphState) -> Dict[str, Any]:
+            metrics = resolve_metrics(input_val.userMessage, resources)
+            plan = build_semantic_plan(metrics, resources)
+            return {
+                "resolved_metrics": metrics,
+                "semantic_plan": plan,
+            }
+
+        def enriched_input(state: PerformanceReportGraphState):
+            return input_val.model_copy(
+                update={
+                    "resolvedMetrics": state.get("resolved_metrics") or [],
+                    "semanticPlan": state.get("semantic_plan") or {},
+                }
+            )
+
         async def generate(state: PerformanceReportGraphState) -> Dict[str, Any]:
             if _is_aborted(signal):
                 raise ClientDisconnectedError("CLIENT_DISCONNECTED: Execution aborted during generation")
 
             max_prompt_chars = int(os.environ.get("MAX_PROMPT_CHARS", "120000"))
+            run_input_val = enriched_input(state)
             sys_prompt, user_prompt = _call_build_generate_prompt(
-                input_val,
+                run_input_val,
                 skill_md,
                 context.role_prompt,
             )
@@ -255,7 +273,7 @@ class PerformanceReportLangGraphWorkflow:
             sys_prompt, user_prompt = _call_build_repair_prompt(
                 state.get("candidate"),
                 errors,
-                input_val,
+                enriched_input(state),
                 _resource_context(context, state.get("read_resource_paths") or []),
                 skill_md,
             )
@@ -352,6 +370,7 @@ class PerformanceReportLangGraphWorkflow:
             }
 
         builder = StateGraph(PerformanceReportGraphState)
+        builder.add_node("resolve_semantics", resolve_semantics)
         builder.add_node("generate", generate)
         builder.add_node("validate", validate)
         builder.add_node("repair", repair)
@@ -359,7 +378,8 @@ class PerformanceReportLangGraphWorkflow:
         builder.add_node("finalize_dsl", finalize_dsl)
         builder.add_node("failed", failed)
 
-        builder.add_edge(START, "generate")
+        builder.add_edge(START, "resolve_semantics")
+        builder.add_edge("resolve_semantics", "generate")
         builder.add_conditional_edges(
             "generate",
             route_after_generate,
@@ -385,6 +405,8 @@ class PerformanceReportLangGraphWorkflow:
             graph = self._compile(context)
             result = await graph.ainvoke(
                 {
+                    "resolved_metrics": [],
+                    "semantic_plan": {},
                     "reasoning": [],
                     "usage": {
                         "prompt_tokens": 0,
