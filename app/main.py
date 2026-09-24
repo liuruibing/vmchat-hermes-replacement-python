@@ -37,6 +37,7 @@ from app.context.manager import ContextManager
 from app.artifacts.store import SqliteArtifactStore
 from app.knowledge.store import DuckDbKnowledgeStore, SqliteKnowledgeStore
 from app.knowledge.service import KnowledgeService
+from app.knowledge.embeddings import OpenAICompatibleEmbeddingProvider
 
 logger = logging.getLogger("app")
 
@@ -202,10 +203,22 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
     knowledge_service = deps_override.get("knowledge_service") or deps_override.get("knowledgeService")
     knowledge_store = None
     knowledge_backend = "custom" if knowledge_service is not None else "disabled"
+    embedding_provider = None
     if knowledge_service is None:
+        if getattr(config, "embedding_model", "") and getattr(config, "embedding_api_key", ""):
+            try:
+                embedding_provider = OpenAICompatibleEmbeddingProvider(
+                    model=config.embedding_model,
+                    api_key=config.embedding_api_key,
+                    base_url=config.embedding_base_url or None,
+                )
+            except Exception as err:
+                logger.warning(f"[app] Embedding provider disabled: {err}")
+                embedding_provider = None
+
         try:
             knowledge_store = DuckDbKnowledgeStore(default_knowledge_path)
-            knowledge_service = KnowledgeService(knowledge_store)
+            knowledge_service = KnowledgeService(knowledge_store, embedder=embedding_provider)
             knowledge_backend = "duckdb"
         except Exception as err:
             logger.info(f"[app] DuckDB unavailable, using SQLite knowledge store: {err}")
@@ -213,7 +226,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             if fallback_path.endswith(".duckdb"):
                 fallback_path = fallback_path[:-7] + ".sqlite3"
             knowledge_store = SqliteKnowledgeStore(fallback_path)
-            knowledge_service = KnowledgeService(knowledge_store)
+            knowledge_service = KnowledgeService(knowledge_store, embedder=embedding_provider)
             knowledge_backend = "sqlite"
 
     if deps_override.get("provider"):
@@ -323,6 +336,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 "sessionStore": "sqlite",
                 "knowledgeReady": knowledge_service is not None,
                 "knowledgeBackend": knowledge_backend,
+                "knowledgeVectorEnabled": embedding_provider is not None,
                 "defaultAgent": default_agent_id,
             }
         )
