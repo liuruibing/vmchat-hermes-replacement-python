@@ -357,6 +357,9 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 "knowledgeBackend": knowledge_backend,
                 "knowledgeVectorEnabled": embedding_provider is not None,
                 "defaultAgent": default_agent_id,
+                "workflowEngine": "registry",
+                "workflows": workflow_registry.list_ids() if workflow_registry is not None else [],
+                "langGraphEnabled": True,
             }
         )
 
