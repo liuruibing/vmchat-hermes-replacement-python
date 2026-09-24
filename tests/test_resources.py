@@ -33,6 +33,8 @@ def test_resource_loader_sync():
     assert "catalog/profile-index.json" in resources.toolResourceTextByPath
     assert "catalog/profiles/averagePePb.json" in resources.toolResourceTextByPath
     assert "skill/references/merge-guidance-v2.md" in resources.toolResourceTextByPath
+    assert resources.moduleProfiles["averagePePb"]["shape"] == "time_series"
+    assert resources.profileIndex["modules"]["averagePePb"]["entity"] == "fund"
 
 
 def test_skill_requires_business_info_protocol_for_knowledge_queries():
