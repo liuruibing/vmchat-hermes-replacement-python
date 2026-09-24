@@ -117,6 +117,7 @@ def build_generate_prompt(
         "- Profile 的 quality.warnings 非空或 sqlTrust=low 时，不把 SQL 摘要当强证据；优先使用字段映射、样例结构和执行契约。",
         "- 单位不同不是拒绝合并的理由；table 保留独立单位，ECharts 最多两个 Y 轴。超过两个不兼容量纲且用户未强制图表时优先 table。",
         "- 数据集合不完全重合时使用 outer join 思路；缺失侧填 null。禁止按数组下标、返回顺序或未知分类键强行拼接。",
+        "- 如果 user prompt 中存在 <resolved_metrics>/<semantic_plan>，它们是 Python 根据结构化 Profile 计算出的高优先级提示：优先复用其中已确定的指标、moduleId、entity、grain 与 joinKey；status=unresolved 时仍需自行检索，mergeable=false 时不得通过数组下标或猜测字段绕过。",
         "- 跨模块先在内部形成 merge plan：entity、shape、grain、canonical join key、taxonomy、view，再生成 DSL；不要向用户输出内部计划。",
     ])
 
