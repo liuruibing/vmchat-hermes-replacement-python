@@ -562,26 +562,15 @@ async def run_vm_chat_orchestrator(
             "EMPTY_MODEL_OUTPUT", "AI 助手未生成有效内容，请重试"
         )
 
-    starts_with_json_container = bool(re.search(r"^[\[{]", trimmed))
-    has_dsl_key = bool(
-        re.search(r'"(?:action|requests|transform|view)"\s*:', trimmed)
-    )
-    has_dsl_fence = bool(
-        re.search(
-            r'```(?:json)?[\s\S]*"(?:action|requests|transform|view)"\s*:',
-            trimmed,
-            re.IGNORECASE,
-        )
-    )
+    classified = _classify_model_output(trimmed)
 
-    is_dsl_like = starts_with_json_container or has_dsl_key or has_dsl_fence
-
-    if not is_dsl_like:
+    if classified["kind"] == "text":
+        output_text = str(classified.get("text") or trimmed)
         max_output_chars = int(os.environ.get("MAX_FINAL_OUTPUT_CHARS", "200000"))
-        if len(trimmed) > max_output_chars:
+        if len(output_text) > max_output_chars:
             raise VmChatRunError(
                 "MAX_FINAL_OUTPUT_CHARS_EXCEEDED",
-                f"生成的文本长度 ({len(trimmed)}) 超过上限 ({max_output_chars})",
+                f"生成的文本长度 ({len(output_text)}) 超过上限 ({max_output_chars})",
             )
         tokens = {
             "prompt_tokens": int(
@@ -602,28 +591,14 @@ async def run_vm_chat_orchestrator(
         }
         return OrchestratorOutput(
             resultType="text",
-            text=trimmed,
+            text=output_text,
             attemptCount=1,
             repairAttempts=0,
             usage=tokens,
         )
 
-    initial_candidate: Any = None
-    initial_issues: Optional[List[ValidationIssue]] = None
-
-    try:
-        raw_json = re.sub(r"^```(?:json)?\s*", "", trimmed, flags=re.IGNORECASE)
-        raw_json = re.sub(r"\s*```$", "", raw_json).strip()
-        initial_candidate = json.loads(raw_json)
-    except Exception:
-        initial_candidate = trimmed
-        initial_issues = [
-            ValidationIssue(
-                code="INVALID_JSON",
-                path="/",
-                message="模型输出的 DSL 不是完整且唯一的 JSON 对象或数组",
-            )
-        ]
+    initial_candidate = classified.get("candidate")
+    initial_issues = classified.get("issues")
 
     read_res = reader.get_read_resources()
     repaired = await validate_and_repair_dsl(
@@ -768,60 +743,28 @@ async def stream_vm_chat(
             "EMPTY_MODEL_OUTPUT", "AI 助手未生成有效内容，请重试"
         )
 
-    has_dsl_key = bool(
-        re.search(r'"(?:action|requests|views|transform|moduleId|sqlCode)"\s*:', trimmed)
-    )
-    has_dsl_fence = bool(
-        re.search(
-            r'```(?:json)?[\s\S]*"(?:action|requests|views|transform|moduleId|sqlCode)"\s*:',
-            trimmed,
-            re.IGNORECASE,
-        )
-    )
-    starts_with_json_container = bool(re.search(r"^[\[{]", trimmed))
-
-    is_dsl_like = has_dsl_fence or (
-        starts_with_json_container and has_dsl_key
-    )
-
+    classified = _classify_model_output(trimmed)
     final_text = ""
     final_usage: Optional[Dict[str, Any]] = None
 
-    if not is_dsl_like:
+    if classified["kind"] == "text":
+        final_text = str(classified.get("text") or trimmed)
         max_output_chars = int(os.environ.get("MAX_FINAL_OUTPUT_CHARS", "200000"))
-        if len(trimmed) > max_output_chars:
+        if len(final_text) > max_output_chars:
             raise VmChatRunError(
                 "MAX_FINAL_OUTPUT_CHARS_EXCEEDED",
-                f"生成的文本长度 ({len(trimmed)}) 超过上限 ({max_output_chars})",
+                f"生成的文本长度 ({len(final_text)}) 超过上限 ({max_output_chars})",
             )
-        final_text = trimmed
         final_usage = initial_usage or {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
         }
     else:
-        initial_candidate: Any = None
-        initial_issues: Optional[List[ValidationIssue]] = None
-
-        try:
-            raw_json = re.sub(r"^```(?:json)?\s*", "", trimmed, flags=re.IGNORECASE)
-            raw_json = re.sub(r"\s*```$", "", raw_json).strip()
-            initial_candidate = json.loads(raw_json)
-        except Exception:
-            initial_candidate = trimmed
-            initial_issues = [
-                ValidationIssue(
-                    code="INVALID_JSON",
-                    path="/",
-                    message="模型输出的 DSL 不是完整且唯一的 JSON 对象或数组",
-                )
-            ]
-
         try:
             repaired = await validate_and_repair_dsl(
-                initialCandidate=initial_candidate,
-                initialIssues=initial_issues,
+                initialCandidate=classified.get("candidate"),
+                initialIssues=classified.get("issues"),
                 initialUsage=initial_usage,
                 input=input_val,
                 resourceContext=reader.get_read_resources(),
