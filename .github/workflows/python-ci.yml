@@ -54,9 +54,13 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install frontend dependencies
+      - name: Install vmChat test dependencies
         working-directory: web
-        run: npm ci --ignore-scripts
+        run: >-
+          npm install --no-save --package-lock=false --ignore-scripts --legacy-peer-deps
+          babel-core@6.26.3 babel-register@6.26.0 babel-preset-env@1.7.0
+          babel-preset-stage-2@6.24.1 babel-plugin-transform-runtime@6.23.0
+          babel-runtime@6.26.0 axios@0.18.0
 
       - name: Run vmChat deterministic tests
         working-directory: web
