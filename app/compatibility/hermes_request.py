@@ -16,6 +16,7 @@ class HermesCreateRunRequest(BaseModel):
     session_id: str
     skills: List[str]
     tools: List[Any] = Field(default_factory=list)
+    context: Dict[str, Any] = Field(default_factory=dict)
 
 
 class VmReportDslRequest(BaseModel):
@@ -125,6 +126,16 @@ def normalize_create_run_request(raw: Any) -> HermesCreateRunRequest:
     session_id = raw["session_id"][:256] if isinstance(raw.get("session_id"), str) else "default-session"
     instructions = raw["instructions"][:512000] if isinstance(raw.get("instructions"), str) else ""
 
+    raw_context = raw.get("context") or {}
+    if not isinstance(raw_context, dict):
+        raise ValueError("INVALID_REQUEST_FORMAT: context must be an object")
+    try:
+        context_size = len(json.dumps(raw_context, ensure_ascii=False))
+    except Exception as err:
+        raise ValueError("INVALID_REQUEST_FORMAT: context must be JSON serializable") from err
+    if context_size > 512000:
+        raise ValueError("INVALID_REQUEST_FORMAT: context is too large")
+
     if raw.get("tools") is not None:
         if not isinstance(raw["tools"], list):
             raise ValueError("INVALID_REQUEST_FORMAT: tools must be an array")
@@ -169,32 +180,60 @@ def normalize_create_run_request(raw: Any) -> HermesCreateRunRequest:
         session_id=session_id,
         skills=skills,
         tools=[],
+        context=raw_context,
     )
 
 
 def normalize_vm_chat_input(request: HermesCreateRunRequest) -> VmChatInput:
     user_message = ""
-    for item in reversed(request.input):
+    last_user_index = -1
+    for idx in range(len(request.input) - 1, -1, -1):
+        item = request.input[idx]
         if item.role == "user":
             user_message = item.content
+            last_user_index = idx
             break
 
+    history_source = request.input[:last_user_index] if last_user_index >= 0 else request.input
     history_messages = [
-        item for item in request.input if item.role in ("user", "assistant")
+        item
+        for item in history_source
+        if item.role in ("user", "assistant")
+        and not (
+            item.role == "user"
+            and item.content.strip().startswith("vmChat 会话锚点：")
+        )
     ]
 
-    # Search context source: instructions + system prompt content
+    # Prefer structured machine context. The legacy instruction markers remain a
+    # compatibility fallback for older frontends.
+    context = request.context if isinstance(request.context, dict) else {}
     text_to_search = "\n".join([request.instructions] + [i.content for i in request.input])
 
     selected_block_id: Optional[str] = None
-    sel_block_match = re.search(r"当前 selectedBlockId：\s*([^\n]+)", text_to_search)
-    if sel_block_match and sel_block_match.group(1):
-        val = sel_block_match.group(1).strip()
-        if val and val != "null" and val != "undefined":
-            selected_block_id = val
+    context_selected = context.get("selectedBlockId")
+    if isinstance(context_selected, str) and context_selected.strip():
+        selected_block_id = context_selected.strip()
+    else:
+        sel_block_match = re.search(r"当前 selectedBlockId：\s*([^\n]+)", text_to_search)
+        if sel_block_match and sel_block_match.group(1):
+            val = sel_block_match.group(1).strip()
+            if val and val != "null" and val != "undefined":
+                selected_block_id = val
 
     current_dsls: List[CurrentDslItem] = []
-    if "当前 currentDsls：" in text_to_search:
+    if "currentDsls" in context:
+        parsed = context.get("currentDsls")
+        if not isinstance(parsed, list):
+            raise ValueError("INVALID_VMCHAT_CONTEXT: currentDsls is not an array")
+        try:
+            current_dsls = [
+                item if isinstance(item, CurrentDslItem) else CurrentDslItem.model_validate(item)
+                for item in parsed
+            ]
+        except Exception as err:
+            raise ValueError("INVALID_VMCHAT_CONTEXT: Malformed currentDsls context") from err
+    elif "当前 currentDsls：" in text_to_search:
         try:
             json_str = extract_json_block(text_to_search, "当前 currentDsls：")
             parsed = json.loads(json_str)
@@ -211,8 +250,18 @@ def normalize_vm_chat_input(request: HermesCreateRunRequest) -> VmChatInput:
 
     names: List[str] = []
     nonempty_flags: Dict[str, bool] = {}
+    context_params = context.get("globalQueryParams")
+    if context_params is None:
+        context_params = context.get("globalQueryParameters")
 
-    if "当前全局查询条件" in text_to_search:
+    if context_params is not None:
+        if not isinstance(context_params, dict) or isinstance(context_params, list):
+            raise ValueError("INVALID_VMCHAT_CONTEXT: globalQueryParams is not an object")
+        for k, val in context_params.items():
+            names.append(str(k))
+            val_str = str(val).strip() if val is not None else ""
+            nonempty_flags[str(k)] = bool(val and len(val_str) > 0)
+    elif "当前全局查询条件" in text_to_search:
         try:
             json_str = extract_json_block(text_to_search, "当前全局查询条件")
             parsed_obj = json.loads(json_str)
