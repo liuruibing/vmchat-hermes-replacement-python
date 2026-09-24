@@ -127,12 +127,24 @@ class SessionManager:
                     }
                 )
             view = dsl.get("view") if isinstance(dsl.get("view"), dict) else {}
+            metric_labels = []
+            for column in view.get("columns") or []:
+                if isinstance(column, dict):
+                    label = column.get("label") or column.get("field")
+                    if label and label not in metric_labels:
+                        metric_labels.append(str(label))
+            for series in view.get("series") or []:
+                if isinstance(series, dict):
+                    name = series.get("name")
+                    if name and name not in metric_labels:
+                        metric_labels.append(str(name))
             summaries.append(
                 {
                     "blockId": item.blockId,
                     "id": item.id,
                     "title": item.title,
                     "viewType": item.viewType or view.get("type"),
+                    "metrics": metric_labels[:20],
                     "requests": requests,
                 }
             )
