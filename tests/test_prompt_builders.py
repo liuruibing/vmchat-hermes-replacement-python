@@ -27,6 +27,10 @@ def test_builds_generation_prompt_without_js_preselected_candidates():
     assert "catalog/profiles/<moduleId>.json" in prompt.system_prompt
     assert "merge-guidance-v2.md" in prompt.system_prompt
     assert "单位不同不是拒绝合并的理由" in prompt.system_prompt
+    assert "非 DSL 场景禁止返回裸文本" in prompt.system_prompt
+    assert "entity=unknown 不是可合并证据" in prompt.system_prompt
+    assert "只有字段/指标名称存在歧义" in prompt.system_prompt
+    assert "Python 服务端会执行 Schema、执行契约和语义合并校验" in prompt.system_prompt
     assert "意图:" not in prompt.system_prompt
     assert "候选 Catalog" not in prompt.system_prompt
 

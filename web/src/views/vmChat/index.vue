@@ -939,6 +939,7 @@ import {
   assertVmHermesOperationAllowed,
   buildVmReportNoticeFromError,
   buildVmReportNoticeFromPayload,
+  buildVmHermesContext,
   buildVmHermesMessages,
   buildVmReportBlocksSummary,
   createVmReportBlock,
@@ -2392,13 +2393,18 @@ export default {
       this.messageListPinnedToBottom = true
       this.scrollMessagesToBottom(true)
 
+      const globalQueryParams = this.getGlobalQueryParamsForDsl()
+      const hermesContext = buildVmHermesContext({
+        reportBlocks: requestReportBlocks,
+        selectedBlockId: requestSelectedBlockId,
+        globalQueryParams
+      })
       const messages = buildVmHermesMessages({
         historyMessages: this.chatMessages.filter(item => item.id !== assistantMessage.id && item.id !== userMessage.id).map(item => ({ role: item.role, content: item.content })),
         userInput: question,
         reportBlocks: requestReportBlocks,
         selectedBlockId: requestSelectedBlockId,
-        sessionId: this.sessionId,
-        globalQueryParams: this.getGlobalQueryParamsForDsl()
+        globalQueryParams
       })
 
       const metrics = {
@@ -2439,7 +2445,8 @@ export default {
             {
               sessionId: this.sessionId,
               model: this.analysisModel,
-              skills: ['vm-report-dsl']
+              skills: ['vm-report-dsl'],
+              context: hermesContext
             },
             {
               onRunCreated: run => {

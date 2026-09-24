@@ -272,6 +272,8 @@ class ResourceLoader:
             submodulesJson=submodules_json,
             moduleMarkdownMap=module_markdown_map,
             toolResourceTextByPath=tool_resource_map,
+            moduleProfiles=module_profiles,
+            profileIndex=profile_index,
         )
 
         self._ready = True

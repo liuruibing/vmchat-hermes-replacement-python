@@ -24,6 +24,7 @@ from app.orchestrator.vmchat_orchestrator import (
     stream_vm_chat,
     streamVmChat,
     MAX_DSL_REPAIR_ATTEMPTS,
+    _classify_model_output,
 )
 
 @pytest.fixture
@@ -244,3 +245,25 @@ async def test_validate_and_repair_passes_node_compatible_validation_options():
     assert repaired["attemptCount"] == 1
     assert repaired["repairAttempts"] == 0
     assert provider.generate_calls == 0
+
+
+def test_model_output_classifier_keeps_business_info_out_of_dsl_repair():
+    raw = '{"intent":"businessInfo","renderType":"businessInfo","title":"说明","message":"内容"}'
+    classified = _classify_model_output(raw)
+
+    assert classified["kind"] == "text"
+    assert '"businessInfo"' in classified["text"]
+    assert classified["candidate"] is None
+
+
+def test_model_output_classifier_extracts_prefixed_dsl_json():
+    raw = (
+        "已完成检索。\n"
+        '{"action":"create","id":"3d1d1f05-7f55-46eb-8e5f-155018a7b97a",'
+        '"requests":[],"transform":{"language":"javascript","function":"function transform(responses){return [];}"},'
+        '"view":{"type":"table","columns":[]}}'
+    )
+    classified = _classify_model_output(raw)
+
+    assert classified["kind"] == "dsl"
+    assert classified["candidate"]["action"] == "create"

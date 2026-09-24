@@ -151,3 +151,52 @@ def test_extract_json_block_strings_with_brackets_and_escapes():
         "key": 'a [b] {c} "quoted"',
         "list": [1, 2, {"nested": True}],
     }
+
+
+def test_structured_context_takes_precedence_and_history_excludes_current_user():
+    req = normalize_create_run_request({
+        "input": [
+            {"role": "user", "content": "vmChat 会话锚点：legacy。请记录但不要回复这条锚点。"},
+            {"role": "user", "content": "上一轮问题"},
+            {"role": "assistant", "content": "上一轮回答"},
+            {"role": "user", "content": "把当前图改成表格"},
+        ],
+        "instructions": "当前 selectedBlockId：legacy-block\n当前 currentDsls：\n[]\n当前全局查询条件：\n{}",
+        "context": {
+            "selectedBlockId": "structured-block",
+            "currentDsls": [
+                {
+                    "blockId": "structured-block",
+                    "id": "00000000-0000-4000-8000-000000000001",
+                    "title": "结构化上下文",
+                    "dsl": {
+                        "action": "create",
+                        "id": "00000000-0000-4000-8000-000000000001",
+                        "requests": [],
+                    },
+                }
+            ],
+            "globalQueryParams": {
+                "fundCode": "F001",
+                "beginDate": "",
+            },
+        },
+    })
+
+    vm_input = normalize_vm_chat_input(req)
+
+    assert vm_input.userMessage == "把当前图改成表格"
+    assert vm_input.selectedBlockId == "structured-block"
+    assert len(vm_input.currentDsls) == 1
+    assert vm_input.currentDsls[0].blockId == "structured-block"
+    assert vm_input.globalQueryParameters.nonemptyFlags["fundCode"] is True
+    assert vm_input.globalQueryParameters.nonemptyFlags["beginDate"] is False
+    assert [item.content for item in vm_input.historyMessages] == ["上一轮问题", "上一轮回答"]
+
+
+def test_rejects_non_object_structured_context():
+    with pytest.raises(ValueError, match="context must be an object"):
+        normalize_create_run_request({
+            "input": [{"role": "user", "content": "test"}],
+            "context": ["bad"],
+        })

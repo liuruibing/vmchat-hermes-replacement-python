@@ -12,6 +12,7 @@ class ValidateOptions(BaseModel):
     catalogContract: Optional[Dict[str, Any]] = Field(default=None, alias="catalog_contract")
     schemaJson: Optional[Dict[str, Any]] = Field(default=None, alias="schema_json")
     currentBlockIds: Optional[List[str]] = Field(default=None, alias="current_block_ids")
+    moduleProfiles: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, alias="module_profiles")
 
     model_config = {"populate_by_name": True}
 
@@ -217,12 +218,184 @@ def check_js_ast(node_source: str, path_prefix: str) -> List[ValidationIssue]:
     return issues
 
 
+
+def _profile_join_keys(profile: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    result: Dict[str, Dict[str, Any]] = {}
+    for item in profile.get("joinKeys") or []:
+        if not isinstance(item, dict):
+            continue
+        canonical = str(item.get("canonical") or "").strip()
+        if canonical:
+            result[canonical] = item
+    return result
+
+
+def _transform_references_raw_field(source: str, raw_field: str) -> bool:
+    if not source or not raw_field:
+        return False
+    escaped = re.escape(str(raw_field))
+    return bool(
+        re.search(
+            rf"(?:\.\s*{escaped}\b|\[\s*['\"]{escaped}['\"]\s*\])",
+            source,
+        )
+    )
+
+
+def _validate_cross_module_semantics(
+    requests: Any,
+    module_profiles: Optional[Dict[str, Dict[str, Any]]],
+    transform_source: str,
+    path_prefix: str,
+) -> List[ValidationIssue]:
+    valid_requests = [
+        req for req in (requests or [])
+        if isinstance(req, dict) and isinstance(req.get("moduleId"), str) and req.get("moduleId")
+    ]
+    module_ids: List[str] = []
+    for req in valid_requests:
+        module_id = req["moduleId"]
+        if module_id not in module_ids:
+            module_ids.append(module_id)
+
+    if len(module_ids) <= 1:
+        return []
+
+    issue_path = f"{path_prefix}/requests"
+    if not module_profiles:
+        return [
+            ValidationIssue(
+                code="SEMANTIC_PROFILE_MISSING",
+                path=issue_path,
+                message="跨模块 DSL 缺少结构化语义 Profile，无法证明可安全合并",
+            )
+        ]
+
+    missing = [module_id for module_id in module_ids if module_id not in module_profiles]
+    if missing:
+        return [
+            ValidationIssue(
+                code="SEMANTIC_PROFILE_MISSING",
+                path=issue_path,
+                message="跨模块 DSL 缺少模块语义 Profile：" + ", ".join(missing),
+            )
+        ]
+
+    profiles = [module_profiles[module_id] for module_id in module_ids]
+    entities = [str(profile.get("entity") or "unknown") for profile in profiles]
+    if any(entity == "unknown" for entity in entities):
+        return [
+            ValidationIssue(
+                code="SEMANTIC_ENTITY_UNPROVEN",
+                path=issue_path,
+                message="跨模块 DSL 的分析对象存在 unknown，不能仅凭未知实体相同而合并",
+            )
+        ]
+    if len(set(entities)) != 1:
+        return [
+            ValidationIssue(
+                code="SEMANTIC_ENTITY_MISMATCH",
+                path=issue_path,
+                message="跨模块 DSL 的分析对象不一致：" + ", ".join(entities),
+            )
+        ]
+
+    shapes = [str(profile.get("shape") or "unknown") for profile in profiles]
+    all_scalar = all(shape == "scalar_or_single_row" for shape in shapes)
+    if not all_scalar and len(set(shapes)) != 1:
+        return [
+            ValidationIssue(
+                code="SEMANTIC_SHAPE_MISMATCH",
+                path=issue_path,
+                message="跨模块 DSL 的数据形态不一致：" + ", ".join(shapes),
+            )
+        ]
+
+    if all_scalar:
+        return []
+
+    primary_sets: List[Set[str]] = []
+    for profile in profiles:
+        grain = profile.get("grain") or {}
+        primary = {
+            str(value).strip()
+            for value in (grain.get("primaryCanonicalKeys") or [])
+            if str(value).strip() and str(value).strip() != "category"
+        }
+        primary_sets.append(primary)
+
+    if not primary_sets or any(not values for values in primary_sets):
+        return [
+            ValidationIssue(
+                code="SEMANTIC_GRAIN_UNPROVEN",
+                path=issue_path,
+                message="跨模块 DSL 缺少可信的主粒度键，无法证明一对一关联",
+            )
+        ]
+
+    common_keys = set.intersection(*primary_sets)
+    if not common_keys:
+        return [
+            ValidationIssue(
+                code="SEMANTIC_JOIN_KEY_MISSING",
+                path=issue_path,
+                message="跨模块 DSL 不存在共同的 canonical 主粒度键",
+            )
+        ]
+
+    if "industry" in common_keys:
+        taxonomies = [str(profile.get("taxonomy") or "").strip() for profile in profiles]
+        nonempty_taxonomies = [value for value in taxonomies if value]
+        if nonempty_taxonomies and (
+            len(nonempty_taxonomies) != len(taxonomies)
+            or len(set(nonempty_taxonomies)) != 1
+        ):
+            return [
+                ValidationIssue(
+                    code="SEMANTIC_TAXONOMY_MISMATCH",
+                    path=issue_path,
+                    message="跨模块行业分类体系不一致或证据不完整，不能直接关联",
+                )
+            ]
+
+    referenced_common_keys: List[str] = []
+    for canonical in sorted(common_keys):
+        all_referenced = True
+        for profile in profiles:
+            key_info = _profile_join_keys(profile).get(canonical) or {}
+            raw_fields = [
+                str(raw).strip()
+                for raw in (key_info.get("rawFields") or [])
+                if str(raw).strip()
+            ]
+            if not raw_fields or not any(
+                _transform_references_raw_field(transform_source, raw)
+                for raw in raw_fields
+            ):
+                all_referenced = False
+                break
+        if all_referenced:
+            referenced_common_keys.append(canonical)
+
+    if not referenced_common_keys:
+        return [
+            ValidationIssue(
+                code="SEMANTIC_JOIN_KEY_NOT_USED",
+                path=f"{path_prefix}/transform/function",
+                message="跨模块 transform 未显式读取各模块共同主粒度键，禁止按数组下标或隐式顺序对齐",
+            )
+        ]
+
+    return []
+
+
 def validate_vm_report_dsl_set(
     input_data: Any,
     options: Optional[Union[ValidateOptions, Dict[str, Any]]] = None,
     catalog_contract: Optional[Dict[str, Any]] = None,
     schema_json: Optional[Dict[str, Any]] = None,
     current_block_ids: Optional[List[str]] = None,
+    module_profiles: Optional[Dict[str, Dict[str, Any]]] = None,
     **kwargs: Any,
 ) -> ValidationResult:
     issues: List[ValidationIssue] = []
@@ -230,6 +403,7 @@ def validate_vm_report_dsl_set(
     opts_catalog = catalog_contract
     opts_schema = schema_json
     opts_block_ids = current_block_ids
+    opts_profiles = module_profiles
 
     if options is not None:
         if isinstance(options, dict):
@@ -239,6 +413,8 @@ def validate_vm_report_dsl_set(
                 opts_schema = options.get("schemaJson") or options.get("schema_json")
             if opts_block_ids is None:
                 opts_block_ids = options.get("currentBlockIds") or options.get("current_block_ids")
+            if opts_profiles is None:
+                opts_profiles = options.get("moduleProfiles") or options.get("module_profiles")
         elif isinstance(options, ValidateOptions):
             if opts_catalog is None:
                 opts_catalog = options.catalogContract
@@ -246,6 +422,8 @@ def validate_vm_report_dsl_set(
                 opts_schema = options.schemaJson
             if opts_block_ids is None:
                 opts_block_ids = options.currentBlockIds
+            if opts_profiles is None:
+                opts_profiles = options.moduleProfiles
         elif hasattr(options, "__dict__"):
             if opts_catalog is None:
                 opts_catalog = getattr(options, "catalogContract", None) or getattr(
@@ -258,6 +436,10 @@ def validate_vm_report_dsl_set(
             if opts_block_ids is None:
                 opts_block_ids = getattr(options, "currentBlockIds", None) or getattr(
                     options, "current_block_ids", None
+                )
+            if opts_profiles is None:
+                opts_profiles = getattr(options, "moduleProfiles", None) or getattr(
+                    options, "module_profiles", None
                 )
 
     if not input_data:
@@ -664,6 +846,15 @@ def validate_vm_report_dsl_set(
                             message=f"transform.function 未引用 request：{request_id}",
                         )
                     )
+
+            issues.extend(
+                _validate_cross_module_semantics(
+                    requests,
+                    opts_profiles,
+                    transform_source,
+                    path_prefix,
+                )
+            )
 
         # View validation
         view_obj = dsl.get("view")

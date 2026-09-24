@@ -144,3 +144,125 @@ def test_echarts_validation():
 
     res = validate_vm_report_dsl_set(echarts_dsl)
     assert res.ok is True
+
+
+def _cross_module_dsl(transform_function):
+    return {
+        "action": "create",
+        "id": "3d1d1f05-7f55-46eb-8e5f-155018a7b97a",
+        "requests": [
+            {"id": "reqA", "moduleId": "modA", "sqlCode": "codeA"},
+            {"id": "reqB", "moduleId": "modB", "sqlCode": "codeB"},
+        ],
+        "transform": {
+            "language": "javascript",
+            "function": transform_function,
+        },
+        "view": {
+            "type": "table",
+            "title": "跨模块",
+            "columns": [
+                {"field": "date", "label": "日期"},
+                {"field": "a", "label": "A"},
+                {"field": "b", "label": "B"},
+            ],
+        },
+    }
+
+
+def _time_series_profiles(entity="fund"):
+    return {
+        "modA": {
+            "entity": entity,
+            "shape": "time_series",
+            "grain": {"primaryCanonicalKeys": ["date"]},
+            "joinKeys": [{"canonical": "date", "rawFields": ["TDATE"]}],
+            "taxonomy": None,
+        },
+        "modB": {
+            "entity": entity,
+            "shape": "time_series",
+            "grain": {"primaryCanonicalKeys": ["date"]},
+            "joinKeys": [{"canonical": "date", "rawFields": ["D_DATE"]}],
+            "taxonomy": None,
+        },
+    }
+
+
+def test_cross_module_semantic_validation_accepts_explicit_shared_grain():
+    dsl = _cross_module_dsl(
+        "function transform(responses) { "
+        "var x = responses.reqA && responses.reqA.TDATE; "
+        "var y = responses.reqB && responses.reqB.D_DATE; "
+        "return [{ date: x || y, a: 1, b: 2 }]; }"
+    )
+
+    res = validate_vm_report_dsl_set(
+        dsl,
+        options={"moduleProfiles": _time_series_profiles()},
+    )
+
+    assert res.ok is True
+
+
+def test_cross_module_semantic_validation_rejects_unknown_entity():
+    dsl = _cross_module_dsl(
+        "function transform(responses) { "
+        "var x = responses.reqA && responses.reqA.TDATE; "
+        "var y = responses.reqB && responses.reqB.D_DATE; "
+        "return [{ date: x || y, a: 1, b: 2 }]; }"
+    )
+
+    res = validate_vm_report_dsl_set(
+        dsl,
+        options={"moduleProfiles": _time_series_profiles(entity="unknown")},
+    )
+
+    assert res.ok is False
+    assert any(e.code == "SEMANTIC_ENTITY_UNPROVEN" for e in res.errors)
+
+
+def test_cross_module_semantic_validation_rejects_unreferenced_join_key():
+    dsl = _cross_module_dsl(
+        "function transform(responses) { "
+        "var x = responses.reqA; var y = responses.reqB; "
+        "return [{ date: '20260101', a: x.value, b: y.value }]; }"
+    )
+
+    res = validate_vm_report_dsl_set(
+        dsl,
+        options={"moduleProfiles": _time_series_profiles()},
+    )
+
+    assert res.ok is False
+    assert any(e.code == "SEMANTIC_JOIN_KEY_NOT_USED" for e in res.errors)
+
+
+def test_cross_module_semantic_validation_rejects_taxonomy_mismatch():
+    profiles = {
+        "modA": {
+            "entity": "fund",
+            "shape": "cross_section",
+            "grain": {"primaryCanonicalKeys": ["industry"]},
+            "joinKeys": [{"canonical": "industry", "rawFields": ["industryCode"]}],
+            "taxonomy": "SWSR",
+        },
+        "modB": {
+            "entity": "fund",
+            "shape": "cross_section",
+            "grain": {"primaryCanonicalKeys": ["industry"]},
+            "joinKeys": [{"canonical": "industry", "rawFields": ["industryCode"]}],
+            "taxonomy": "HS_CUSTOM",
+        },
+    }
+    dsl = _cross_module_dsl(
+        "function transform(responses) { "
+        "var x = responses.reqA && responses.reqA.industryCode; "
+        "var y = responses.reqB && responses.reqB.industryCode; "
+        "return [{ date: x || y, a: 1, b: 2 }]; }"
+    )
+
+    res = validate_vm_report_dsl_set(dsl, options={"moduleProfiles": profiles})
+
+    assert res.ok is False
+    assert any(e.code == "SEMANTIC_TAXONOMY_MISMATCH" for e in res.errors)

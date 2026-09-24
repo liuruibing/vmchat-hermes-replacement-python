@@ -26,9 +26,10 @@ profile 中 structuralOnlyFields 允许在 transform 中作为关联键使用，
 
 满足以下条件时优先允许：
 
-- entity 一致；
-- 至少有一个相同 canonical join key，例如 date、industry、security、asset_class；
+- entity 一致且必须是已知实体；unknown 与 unknown 不构成可合并证据；
+- 至少有一个相同 canonical 主粒度 join key，例如 date、industry、security、asset_class；
 - 相同 canonical key 的原始字段名可以不同，例如 TDATE、D_DATE、XAXISDATA 都可标准化为 date；
+- 未识别分类维度使用 category:<rawField>，只有精确相同且属于主粒度键时才可作为证据；泛化 category 不允许跨模块关联；
 - 分类数据如果声明 taxonomy，则 taxonomy 必须一致；
 - 不需要临时聚合、重采样或多对多展开。
 
@@ -207,7 +208,8 @@ def _canonical(name: str, raw: str, sample_value: Any = None) -> str:
         return "security"
     if any(token in name for token in ("资产类别", "资产类型", "大类资产")):
         return "asset_class"
-    return "category"
+    normalized_raw = re.sub(r"[^a-z0-9_]+", "_", lower).strip("_")
+    return f"category:{normalized_raw or 'unknown'}"
 
 
 def _sql_sections(sql_document: str) -> Dict[str, str]:
@@ -316,7 +318,14 @@ def build_module_profile(module_id: str, markdown: str, sql_section: str = "") -
     if not taxonomy and module_id.startswith("hsIndu"):
         taxonomy = "HS_CUSTOM"
 
-    entity = "fund" if "fund" in join_keys or front.get("templateType") == "single-product-performance" else "unknown"
+    if "fund" in join_keys or front.get("templateType") == "single-product-performance":
+        entity = "fund"
+    elif "security" in join_keys:
+        entity = "security"
+    elif "asset_class" in join_keys:
+        entity = "asset_class"
+    else:
+        entity = "unknown"
     if "date" in dimension_types:
         shape = "time_series"
     elif dimensions:
@@ -403,6 +412,16 @@ def build_profile_index(profiles: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
             ],
             "taxonomy": profile.get("taxonomy"),
             "defaultView": (profile.get("render") or {}).get("defaultView"),
+            "dimensionNames": [
+                item.get("name")
+                for item in ((profile.get("render") or {}).get("dimensions") or [])
+                if isinstance(item, dict) and item.get("name")
+            ],
+            "metricNames": [
+                item.get("name")
+                for item in ((profile.get("render") or {}).get("metrics") or [])
+                if isinstance(item, dict) and item.get("name")
+            ],
             "sqlEvidenceAvailable": bool((profile.get("sqlEvidence") or {}).get("available")),
         }
     return {

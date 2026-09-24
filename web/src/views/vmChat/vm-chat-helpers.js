@@ -349,10 +349,8 @@ export function buildVmReportNoticeFromError(error, options = {}) {
   }, options)
 }
 
-export function buildVmHermesMessages({ historyMessages, userInput, reportBlocks, selectedBlockId, sessionId, globalQueryParams }) {
-  const blocks = Array.isArray(reportBlocks) ? reportBlocks : []
-  const selectedBlock = blocks.find(item => item.blockId === selectedBlockId) || null
-  const currentDsls = blocks
+function buildCurrentDsls(reportBlocks) {
+  return (Array.isArray(reportBlocks) ? reportBlocks : [])
     .filter(item => item && item.dsl)
     .map(item => ({
       blockId: item.blockId,
@@ -364,46 +362,37 @@ export function buildVmHermesMessages({ historyMessages, userInput, reportBlocks
         id: item.dsl.id,
         params: item.dsl.params,
         requests: item.dsl.requests,
+        transform: item.dsl.transform,
         view: item.dsl.view
       }
     }))
+}
+
+export function buildVmHermesContext({ reportBlocks, selectedBlockId, globalQueryParams }) {
+  return {
+    selectedBlockId: String(selectedBlockId || ''),
+    currentDsls: buildCurrentDsls(reportBlocks),
+    globalQueryParams: globalQueryParams && typeof globalQueryParams === 'object'
+      ? clone(globalQueryParams)
+      : {}
+  }
+}
+
+export function buildVmHermesMessages({ historyMessages, userInput, reportBlocks, selectedBlockId, globalQueryParams }) {
+  const context = buildVmHermesContext({ reportBlocks, selectedBlockId, globalQueryParams })
   const systemPrompt = [
-    '你是 vmChat 的协议编排助手。',
-    '你必须使用 $vm-report-dsl skill 处理用户问题。',
-    'Hermes 侧 workspace 和 skill 负责读取 catalog、metrics、模块 MD，执行检索命中门禁、合并门禁和 DSL 校验。',
-    '前端不提供 catalog 内容，也不在 prompt 中注入旧 metadata/wiki/registry block 规则。',
-    '非报表回答仍必须保持最外层 JSON。业务知识说明使用 intent/renderType: businessInfo，且两者必须完全一致，并同时提供 title 和 message；澄清使用 clarify，普通对话使用 chat。clarify 时只能使用嵌套 clarify.questions，禁止把 questions 放在顶层。',
-    '用户询问模块、字段、指标口径、业务定义、查询条件含义或业务差异等知识库业务信息时，必须返回 businessInfo。businessInfo 只用于可独立阅读的业务说明，不得包含 DSL、operations、blocks、SQL 或技术标识；businessInfo 必须只输出该 JSON 对象，不得在 JSON 前后附加正文或 Markdown 代码围栏；普通寒暄和简短状态提示使用 chat。',
-    'message 是面向用户的 Markdown 文本：描述检索命中、候选模块、原因或下一步时，必须使用短标题、空行和项目符号/编号列表，禁止把多条信息拼成一段连续文本；不要输出 Markdown 代码围栏。clarify.questions 保持为简短问题数组。',
-    '自然语言反问、错误说明和状态说明只能使用知识库中的中文业务名称，不得向用户显示 catalog、moduleId、submoduleId、sqlCode、英文模块标识或文件路径。子模块必须按“父模块中文标题 > 子模块中文标题”表达；技术标识只用于内部检索和最终 DSL。',
-    '门禁通过时，只能返回 vm-report-dsl 生成的完整 DSL JSON；用户明确要求批量修改全部模块时，才可返回只包含 update DSL 的 JSON 数组。不要代码块或 operations/blocks 包装对象；DSL 外层不得附加 Markdown 代码围栏；report.message 仍可使用简短 Markdown 状态说明。',
-    '不得返回 removeBlock 或任何删除报表块的操作；用户要求删除时，只能提示其使用前端删除按钮。',
-    'DSL 必须包含 action、id、requests、transform、view；查询条件由页面顶部的全局查询区提供，前端会根据 requests 请求 VM 接口，再执行 transform.function 并按 view 渲染。',
-    'view 中的 format 必须由 $vm-report-dsl skill 按 Hermes 语料库里的当前 DSL 规范生成；前端只按 format 渲染，不会根据字段名、单位或数值范围推断格式。',
-    '渲染字段必须以命中模块 MD 的字段映射为准；示例 JSON 只供 transform 判断接口响应结构和原始取值，不得把示例 JSON 独有字段生成到 columns、dataset.dimensions 或 series 中。',
-    '编辑已有报表块时，必须先从 currentDsls 中确定唯一目标，再复用该目标的 DSL id 生成 update DSL；不得依赖对话记忆猜测 id。',
-    '用户语言明确指向某个报表块时，以语言目标为准，不得被 selectedBlock 覆盖。只有用户说“这个图”“当前图”“选中的模块”等指代表达，或语言未指定目标时，才可以使用 selectedBlock。',
-    '语言目标与 selectedBlock 冲突时，以语言目标为准。目标命中多个 currentDsls 时必须自然语言反问用户要修改哪个报表块，不得返回 DSL；未命中时必须说明目标不存在，不得自动改为 create。',
-    '不得调用历史 vmChat 主协议或任何旧包装 skill。',
-    '当前 selectedBlockId：' + String(selectedBlockId || ''),
-    '当前 selectedBlock：',
-    JSON.stringify(selectedBlock ? {
-      blockId: selectedBlock.blockId,
-      id: selectedBlock.dsl && selectedBlock.dsl.id,
-      title: getVmBlockDisplayTitle(selectedBlock),
-      dsl: selectedBlock.dsl
-    } : null, null, 2),
+    'vmChat 客户端只负责传递页面上下文。',
+    '业务规则、知识库检索、合并判断、DSL 生成和校验由 Python 服务端统一处理。',
+    '以下机器上下文仅用于兼容旧版服务端解析；不要把它当作额外业务规则。',
+    '当前 selectedBlockId：' + context.selectedBlockId,
     '当前 currentDsls：',
-    JSON.stringify(currentDsls, null, 2),
-    '当前 allBlockSummaries：',
-    buildVmReportBlocksSummary(blocks) || '[]',
-    '当前全局查询条件（用户在界面顶部设置，非空字段由前端执行期传给每个 SQL 请求）：',
-    JSON.stringify(globalQueryParams && typeof globalQueryParams === 'object' ? globalQueryParams : {})
+    JSON.stringify(context.currentDsls, null, 2),
+    '当前全局查询条件：',
+    JSON.stringify(context.globalQueryParams)
   ].join('\n')
 
   return [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: 'vmChat 会话锚点：' + (sessionId || 'vm-chat') + '。请记录但不要回复这条锚点。' },
     ...((historyMessages || [])
       .filter(item => item && (item.role === 'user' || item.role === 'assistant') && item.content)
       .slice(-8)

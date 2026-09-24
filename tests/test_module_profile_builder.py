@@ -1,7 +1,7 @@
 import json
 import os
 
-from app.resources.module_profile_builder import build_module_profile
+from app.resources.module_profile_builder import _canonical, build_module_profile
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -69,3 +69,9 @@ def test_different_industry_families_do_not_share_taxonomy():
     assert sw["taxonomy"] == "SWSR"
     assert hs["taxonomy"] == "HS_CUSTOM"
     assert sw["taxonomy"] != hs["taxonomy"]
+
+
+def test_generic_dimensions_do_not_collapse_to_one_cross_module_key():
+    assert _canonical("分类", "GROUP_A") == "category:group_a"
+    assert _canonical("分类", "GROUP_B") == "category:group_b"
+    assert _canonical("分类", "GROUP_A") != _canonical("分类", "GROUP_B")
