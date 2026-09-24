@@ -17,6 +17,8 @@ class HermesCreateRunRequest(BaseModel):
     skills: List[str]
     tools: List[Any] = Field(default_factory=list)
     context: Dict[str, Any] = Field(default_factory=dict)
+    agent_id: str = "performance-ai"
+    role_id: str = "performance-analyst"
 
 
 class VmReportDslRequest(BaseModel):
@@ -62,6 +64,9 @@ class VmChatInput(BaseModel):
     currentDsls: List[CurrentDslItem] = Field(default_factory=list)
     globalQueryParameters: GlobalQueryParameters
     historyMessages: List[HermesChatMessage] = Field(default_factory=list)
+    sessionSummary: str = ""
+    agentId: str = "performance-ai"
+    roleId: str = "performance-analyst"
 
 
 def extract_json_block(text: str, marker: str) -> str:
@@ -124,6 +129,8 @@ def normalize_create_run_request(raw: Any) -> HermesCreateRunRequest:
 
     model = raw["model"][:256] if isinstance(raw.get("model"), str) else "deepseek-v4-flash"
     session_id = raw["session_id"][:256] if isinstance(raw.get("session_id"), str) else "default-session"
+    agent_id = raw["agent_id"][:128] if isinstance(raw.get("agent_id"), str) else "performance-ai"
+    role_id = raw["role_id"][:128] if isinstance(raw.get("role_id"), str) else "performance-analyst"
     instructions = raw["instructions"][:512000] if isinstance(raw.get("instructions"), str) else ""
 
     raw_context = raw.get("context") or {}
@@ -181,6 +188,8 @@ def normalize_create_run_request(raw: Any) -> HermesCreateRunRequest:
         skills=skills,
         tools=[],
         context=raw_context,
+        agent_id=agent_id or "performance-ai",
+        role_id=role_id or "performance-analyst",
     )
 
 
@@ -285,6 +294,9 @@ def normalize_vm_chat_input(request: HermesCreateRunRequest) -> VmChatInput:
             nonemptyFlags=nonempty_flags,
         ),
         historyMessages=history_messages,
+        sessionSummary="",
+        agentId=request.agent_id,
+        roleId=request.role_id,
     )
 
 
