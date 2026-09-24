@@ -95,6 +95,10 @@ def build_repair_prompt(
         "view.type === 'echarts' 时，title、legend、dataset、xAxis/yAxis（Cartesian 时）和 series 必须为 view 的直接属性。禁止 view.echarts、view.options 或任何图表配置包装层。",
         "# Skill 规则",
         skill_md if skill_md else "Skill rules loaded.",
+        "",
+        "# 修复阶段运行时覆盖",
+        "- 不执行 Skill 中任何 Node、shell、临时文件或 validate-dsl.mjs 指令；只根据 Validation Issues 修复 JSON，随后由 Python 服务端重新校验。",
+        "- 不得通过删除跨模块 request、改成无关模块、按数组下标对齐或隐藏共同键来绕过语义合并错误。",
     ])
 
     # 3. Format validationErrors
