@@ -137,7 +137,7 @@ def _add_usage(target: Dict[str, int], usage: Any) -> None:
 
 def _extract_first_json_value(text: str) -> Optional[str]:
     source = str(text or "").strip()
-    fence_match = re.match(r"^\`\`\`(?:json)?\\s*([\\s\\S]*?)\\s*\`\`\`$", source, re.IGNORECASE)
+    fence_match = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", source, re.IGNORECASE)
     if fence_match:
         source = fence_match.group(1).strip()
 
@@ -226,7 +226,7 @@ def _classify_model_output(text: str) -> Dict[str, Any]:
             }
 
     if re.search(
-        r'"(?:action|requests|transform|view|views|moduleId|sqlCode)"\\s*:',
+        r'"(?:action|requests|transform|view|views|moduleId|sqlCode)"\s*:',
         trimmed,
         re.IGNORECASE,
     ):
