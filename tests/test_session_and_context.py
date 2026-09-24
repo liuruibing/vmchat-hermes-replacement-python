@@ -135,3 +135,39 @@ def test_context_manager_keeps_selected_full_and_summarizes_other_blocks():
     assert "transform" not in other_dsl
     assert report.full_dsl_blocks >= 1
     assert report.summarized_dsl_blocks >= 1
+
+
+
+def test_context_manager_enforces_total_dynamic_budget():
+    store = SqliteSessionStore(":memory:")
+    manager = SessionManager(store, recent_messages=20, relevant_history_messages=0)
+    context = ContextManager(
+        manager,
+        max_context_tokens=8000,
+        max_dsl_tokens=2500,
+        max_history_tokens=5000,
+        reserved_prompt_tokens=3000,
+    )
+    state = manager.get_or_create("s-budget")
+    for index in range(12):
+        manager.complete_turn(
+            state,
+            f"用户历史 {index} " + ("问题" * 300),
+            f"助手历史 {index} " + ("回答" * 300),
+        )
+    state.summary = "旧会话摘要" * 1200
+    manager.store.put(state)
+
+    incoming = make_input(
+        "修改当前表",
+        [make_block("a", "当前表", transform_size=1200)],
+        selected="a",
+    )
+
+    prepared, report = context.prepare(state, incoming)
+
+    assert report.total_estimated_tokens <= report.budget_tokens
+    assert report.budget_tokens == 5000
+    assert report.reserved_prompt_tokens == 3000
+    assert report.dropped_history_messages > 0 or report.summary_truncated
+    assert prepared.selectedBlockId == "a"
