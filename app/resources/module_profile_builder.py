@@ -207,7 +207,8 @@ def _canonical(name: str, raw: str, sample_value: Any = None) -> str:
         return "security"
     if any(token in name for token in ("资产类别", "资产类型", "大类资产")):
         return "asset_class"
-    return "category"
+    normalized_raw = re.sub(r"[^a-z0-9_]+", "_", lower).strip("_")
+    return f"category:{normalized_raw or 'unknown'}"
 
 
 def _sql_sections(sql_document: str) -> Dict[str, str]:
@@ -316,7 +317,14 @@ def build_module_profile(module_id: str, markdown: str, sql_section: str = "") -
     if not taxonomy and module_id.startswith("hsIndu"):
         taxonomy = "HS_CUSTOM"
 
-    entity = "fund" if "fund" in join_keys or front.get("templateType") == "single-product-performance" else "unknown"
+    if "fund" in join_keys or front.get("templateType") == "single-product-performance":
+        entity = "fund"
+    elif "security" in join_keys:
+        entity = "security"
+    elif "asset_class" in join_keys:
+        entity = "asset_class"
+    else:
+        entity = "unknown"
     if "date" in dimension_types:
         shape = "time_series"
     elif dimensions:
