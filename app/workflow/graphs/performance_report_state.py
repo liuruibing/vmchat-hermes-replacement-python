@@ -4,6 +4,8 @@ from typing import Any, Dict, List, TypedDict
 
 
 class PerformanceReportGraphState(TypedDict, total=False):
+    resolved_metrics: List[Dict[str, Any]]
+    semantic_plan: Dict[str, Any]
     raw_output: str
     candidate: Any
     validation_errors: List[Dict[str, Any]]
