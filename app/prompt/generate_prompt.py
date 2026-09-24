@@ -129,6 +129,8 @@ def build_generate_prompt(
         user_message = input_obj.get("userMessage") if "userMessage" in input_obj else input_obj.get("user_message", "")
         history_messages = input_obj.get("historyMessages") if "historyMessages" in input_obj else input_obj.get("history_messages", [])
         session_summary = input_obj.get("sessionSummary") if "sessionSummary" in input_obj else input_obj.get("session_summary", "")
+        resolved_metrics = input_obj.get("resolvedMetrics") if "resolvedMetrics" in input_obj else input_obj.get("resolved_metrics", [])
+        semantic_plan = input_obj.get("semanticPlan") if "semanticPlan" in input_obj else input_obj.get("semantic_plan", {})
     else:
         raw_params = getattr(input_obj, "globalQueryParameters", None)
         if raw_params is None:
@@ -151,6 +153,12 @@ def build_generate_prompt(
         session_summary = getattr(input_obj, "sessionSummary", None)
         if session_summary is None:
             session_summary = getattr(input_obj, "session_summary", "")
+        resolved_metrics = getattr(input_obj, "resolvedMetrics", None)
+        if resolved_metrics is None:
+            resolved_metrics = getattr(input_obj, "resolved_metrics", [])
+        semantic_plan = getattr(input_obj, "semanticPlan", None)
+        if semantic_plan is None:
+            semantic_plan = getattr(input_obj, "semantic_plan", {})
 
     if isinstance(raw_params, BaseModel):
         raw_params = raw_params.model_dump()
@@ -229,9 +237,25 @@ def build_generate_prompt(
         if session_summary
         else ""
     )
+    resolved_metrics_section = (
+        "<resolved_metrics>\n"
+        + json.dumps(resolved_metrics, ensure_ascii=False, separators=(",", ":"))
+        + "\n</resolved_metrics>"
+        if resolved_metrics
+        else ""
+    )
+    semantic_plan_section = (
+        "<semantic_plan>\n"
+        + json.dumps(semantic_plan, ensure_ascii=False, separators=(",", ":"))
+        + "\n</semantic_plan>"
+        if semantic_plan
+        else ""
+    )
 
     base_user_prompt_lines = [line for line in [
         session_summary_section,
+        resolved_metrics_section,
+        semantic_plan_section,
         current_dsls_section,
         f"<global_query_parameters>\n界面全局查询条件字段: {param_flags_text or '无'}\n</global_query_parameters>",
         user_request_block,
