@@ -56,9 +56,12 @@ def build_default_workflow_registry(
 ):
     from app.workflow.registry import WorkflowRegistry
 
+    from app.workflow.graphs.performance_report import PerformanceReportLangGraphWorkflow
+    from app.workflow.graphs.simple_chat import SimpleChatLangGraphWorkflow
+
     return WorkflowRegistry(
         [
-            SimpleChatWorkflow(simple_chat_stream),
-            VmReportWorkflow(vm_report_stream),
+            SimpleChatLangGraphWorkflow(),
+            PerformanceReportLangGraphWorkflow(),
         ]
     )

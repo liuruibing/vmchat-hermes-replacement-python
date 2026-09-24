@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.23.0",
     "pydantic>=2.0.0",
     "langchain>=0.1.0",
+    "langgraph>=1.2.10",
     "langchain-deepseek>=1.1.0",
     "langchain-openai>=0.1.0",
     "jsonschema>=4.19.0",

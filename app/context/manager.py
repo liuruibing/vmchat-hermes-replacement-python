@@ -36,6 +36,10 @@ class ContextBudgetReport:
     dsl_tokens: int = 0
     summary_tokens: int = 0
     total_estimated_tokens: int = 0
+    budget_tokens: int = 0
+    reserved_prompt_tokens: int = 0
+    dropped_history_messages: int = 0
+    summary_truncated: bool = False
     full_dsl_blocks: int = 0
     summarized_dsl_blocks: int = 0
 
@@ -54,11 +58,13 @@ class ContextManager:
         max_context_tokens: int = 32000,
         max_dsl_tokens: int = 9000,
         max_history_tokens: int = 5000,
+        reserved_prompt_tokens: int = 8000,
     ) -> None:
         self.session_manager = session_manager
         self.max_context_tokens = max(8000, max_context_tokens)
         self.max_dsl_tokens = max(2000, max_dsl_tokens)
         self.max_history_tokens = max(1000, max_history_tokens)
+        self.reserved_prompt_tokens = max(2000, min(reserved_prompt_tokens, self.max_context_tokens - 2000))
 
     def _dsl_dict(self, item: CurrentDslItem) -> Dict[str, Any]:
         value = item.dsl.model_dump(exclude_none=True) if hasattr(item.dsl, "model_dump") else item.dsl
@@ -270,6 +276,37 @@ class ContextManager:
             )
         )
 
+        # Reserve model-window space for system/role/skill instructions, the
+        # current user request and per-run knowledge retrieval. Session memory
+        # and UI artifacts are not allowed to consume the whole model window.
+        dynamic_budget = max(2000, self.max_context_tokens - self.reserved_prompt_tokens)
+        if dsl_tokens > dynamic_budget:
+            raise ValueError(
+                "CONTEXT_DSL_TOO_LARGE: selected/relevant DSL context alone "
+                f"needs about {dsl_tokens} tokens, budget is {dynamic_budget}"
+            )
+
+        dropped_history_messages = 0
+        while (
+            bounded_history
+            and history_tokens + summary_tokens + dsl_tokens > dynamic_budget
+        ):
+            removed = bounded_history.pop(0)
+            history_tokens = max(0, history_tokens - _estimate_tokens(removed.content))
+            dropped_history_messages += 1
+
+        summary_truncated = False
+        remaining_for_summary = max(0, dynamic_budget - history_tokens - dsl_tokens)
+        if summary_tokens > remaining_for_summary:
+            if remaining_for_summary <= 0:
+                summary = ""
+            else:
+                # Conservative char/token conversion for mixed Chinese text.
+                max_chars = max(200, int(remaining_for_summary * 1.35))
+                summary = summary[-max_chars:]
+            summary_tokens = _estimate_tokens(summary)
+            summary_truncated = True
+
         prepared = incoming.model_copy(
             update={
                 "historyMessages": bounded_history,
@@ -285,6 +322,10 @@ class ContextManager:
             dsl_tokens=dsl_tokens,
             summary_tokens=summary_tokens,
             total_estimated_tokens=history_tokens + dsl_tokens + summary_tokens,
+            budget_tokens=dynamic_budget,
+            reserved_prompt_tokens=self.reserved_prompt_tokens,
+            dropped_history_messages=dropped_history_messages,
+            summary_truncated=summary_truncated,
             full_dsl_blocks=full_count,
             summarized_dsl_blocks=summary_count,
         )

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import app.main as main_module
 from app.config import load_config, AppConfig
 from app.main import create_app, verify_bearer_auth
+from app.workflow.registry import WorkflowRegistry
 
 
 def test_load_config_defaults():
@@ -151,12 +152,18 @@ def test_runs_create_and_events():
     assert "run.completed" in res_events.text
 
 
-def test_runs_events_forwards_orchestrator_failure(monkeypatch):
-    async def failed_stream(_options):
-        yield {"event": "run.failed", "error": "DSL 校验失败"}
+def test_runs_events_forwards_workflow_failure():
+    class FailedWorkflow:
+        id = "vm-report"
 
-    monkeypatch.setattr(main_module, "stream_vm_chat", failed_stream)
-    app = create_app({"resource_loader": MockResourceLoader(ready=True), "provider": DummyProvider()})
+        async def stream(self, _context):
+            yield {"event": "run.failed", "error": "DSL 校验失败"}
+
+    app = create_app({
+        "resource_loader": MockResourceLoader(ready=True),
+        "provider": DummyProvider(),
+        "workflow_registry": WorkflowRegistry([FailedWorkflow()]),
+    })
     client = TestClient(app)
 
     res_create = client.post("/v1/runs", json={

@@ -180,3 +180,49 @@ Existing `/v1/runs` and SSE remain compatible.
 3. Add a workflow registry / LangGraph adapter for complex stateful workflows.
 4. Replace the deterministic session synopsis with an optional background LLM summarizer.
 5. Add evaluation suites under each Agent Package.
+
+
+## LangGraph Workflow 层
+
+Runtime Core 不直接依赖具体业务流程。所有 Agent 通过 `WorkflowEngine -> WorkflowRegistry` 选择工作流；LangGraph 只是其中一个 workflow 实现技术。
+
+当前内置 LangGraph：
+
+- `simple-chat`: `retrieve_knowledge -> answer`
+- `vm-report`: `resolve_semantics -> generate -> validate -> repair -> validate -> finalize`
+
+`vm-report` 的 `resolve_semantics` 会优先从运行时 Module Profile 中确定用户明确点名的指标，并生成结构化 `semanticPlan`（entity / shape / grain / joinKey / taxonomy）。这些结果作为高优先级提示注入 generate/repair，但最终 DSL 仍由 Python Validator 决定是否合法。
+
+### State 边界
+
+Graph State 只保存本次 run 的轻量执行状态，例如：
+
+- resolved metrics
+- semantic plan
+- candidate DSL
+- validation errors
+- usage
+- resource path refs
+
+完整 Session、Wiki、Artifact DB、Provider 实例不会进入 Graph State。
+
+长期会话继续由 `SessionManager` 管理；页面 DSL 大对象由 `ArtifactStore` 管理；知识正文由 `KnowledgeService` 按需 Top-K 检索。
+
+### Checkpoint
+
+LangGraph 当前使用共享的 `InMemorySaver` 做 run 级 checkpoint，thread id 优先使用 `run_id`。它用于测试/单进程恢复能力，不替代长期 Session Store。
+
+后续如果需要进程重启后的 workflow resume，可在 Workflow 层替换持久化 checkpointer，而无需修改 Session/Knowledge/Artifact API。
+
+## Context Budget
+
+ContextManager 会在 Python 端强制执行总预算：
+
+- `MAX_CONTEXT_TOKENS`: 总模型上下文目标预算
+- `MAX_CONTEXT_RESERVED_TOKENS`: 为 system/role/skill/当前问题/知识检索预留
+- `MAX_CONTEXT_DSL_TOKENS`: 页面 DSL 上限
+- `MAX_CONTEXT_HISTORY_TOKENS`: 历史对话上限
+
+运行时优先保留 selected/relevant DSL，再裁剪较老 history，必要时截短 session summary。如果 selected/relevant DSL 自身已经超过动态预算，会在调用 LLM 前返回明确的 `CONTEXT_DSL_TOO_LARGE`，而不是继续堆到模型窗口溢出。
+
+`POST /v1/runs` 返回 context telemetry，包括 estimated/budget/reserved tokens、被丢弃的历史条数以及 summary 是否被截断。
