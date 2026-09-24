@@ -1,0 +1,17 @@
+{
+  "id": "performance-ai",
+  "name": "绩效分析 AI",
+  "version": "2.0.0",
+  "workflow": "vm-report",
+  "resources_dir": "../../resources",
+  "skill_path": "../../resources/skill/SKILL.md",
+  "knowledge_paths": [
+    "../../resources/catalog",
+    "../../resources/skill/references"
+  ],
+  "roles_dir": "roles",
+  "default_role": "performance-analyst",
+  "metadata": {
+    "description": "以指标为中心的基金绩效分析、跨模块合并与报表 DSL 生成"
+  }
+}
