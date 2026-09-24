@@ -18,11 +18,14 @@ module.exports = {
         }
       },
       '/hermes-api': {
-        target: 'http://127.0.0.1:7310',
+        target: process.env.HERMES_BACKEND_URL || 'https://vmchat-api-production.up.railway.app',
         changeOrigin: true,
         onProxyReq(proxyReq) {
           proxyReq.removeHeader('origin')
           proxyReq.removeHeader('referer')
+          if (process.env.HERMES_BACKEND_API_KEY && !proxyReq.getHeader('authorization')) {
+            proxyReq.setHeader('authorization', 'Bearer ' + process.env.HERMES_BACKEND_API_KEY)
+          }
         },
         onProxyRes(proxyRes) {
           if (!proxyRes || !proxyRes.headers) return
