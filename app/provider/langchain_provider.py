@@ -166,6 +166,10 @@ class ReadSkillResourceInput(BaseModel):
     path: str = Field(description="Relative path to skill resource file")
 
 
+class SearchKnowledgeInput(BaseModel):
+    query: str = Field(description="Natural-language query for relevant agent knowledge")
+
+
 class LangChainVmChatProvider(VmChatModelProvider):
     def __init__(
         self,
@@ -389,11 +393,22 @@ class LangChainVmChatProvider(VmChatModelProvider):
         model = self.build_model()
         @tool("read_vmchat_skill_resource", args_schema=ReadSkillResourceInput)
         def read_resource_tool(path: str) -> str:
-            """Read a vmchat skill resource file by path."""
+            """Read one allow-listed agent resource by relative path."""
             if input.read_resource:
                 return input.read_resource(path)
             return ""
-        bound_model = model.bind_tools([read_resource_tool])
+
+        tools = [read_resource_tool]
+        if input.search_knowledge:
+            @tool("search_agent_knowledge", args_schema=SearchKnowledgeInput)
+            def search_knowledge_tool(query: str) -> str:
+                """Search the active agent knowledge base and return only relevant chunks."""
+                if input.search_knowledge:
+                    return input.search_knowledge(query)
+                return "KNOWLEDGE_NOT_FOUND"
+            tools.append(search_knowledge_tool)
+
+        bound_model = model.bind_tools(tools)
         
         messages: List[Any] = [
             {"role": "system", "content": input.systemPrompt},
@@ -471,7 +486,7 @@ class LangChainVmChatProvider(VmChatModelProvider):
                     call_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
                     tool_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
 
-                    if not call_id or tool_name != "read_vmchat_skill_resource":
+                    if not call_id or tool_name not in ("read_vmchat_skill_resource", "search_agent_knowledge"):
                         messages.append(
                             ToolMessage(
                                 content="RESOURCE_NOT_ALLOWED",
@@ -491,6 +506,29 @@ class LangChainVmChatProvider(VmChatModelProvider):
                                 path_arg = parsed_args["path"]
                         except Exception:
                             path_arg = None
+
+                    if tool_name == "search_agent_knowledge":
+                        query_arg: Optional[str] = None
+                        if isinstance(raw_args, dict) and isinstance(raw_args.get("query"), str):
+                            query_arg = raw_args["query"]
+                        elif isinstance(raw_args, str):
+                            try:
+                                parsed_args = json.loads(raw_args)
+                                if isinstance(parsed_args, dict) and isinstance(parsed_args.get("query"), str):
+                                    query_arg = parsed_args["query"]
+                            except Exception:
+                                query_arg = None
+
+                        search_fn = getattr(input, "searchKnowledge", None) or getattr(input, "search_knowledge", None)
+                        tool_result_text = (
+                            search_fn(query_arg)
+                            if query_arg and callable(search_fn)
+                            else "KNOWLEDGE_NOT_FOUND"
+                        )
+                        messages.append(
+                            ToolMessage(content=tool_result_text, tool_call_id=call_id)
+                        )
+                        continue
 
                     if not path_arg:
                         messages.append(
