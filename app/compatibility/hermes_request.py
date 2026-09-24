@@ -67,6 +67,8 @@ class VmChatInput(BaseModel):
     sessionSummary: str = ""
     agentId: str = "performance-ai"
     roleId: str = "performance-analyst"
+    resolvedMetrics: List[Dict[str, Any]] = Field(default_factory=list)
+    semanticPlan: Dict[str, Any] = Field(default_factory=dict)
 
 
 def extract_json_block(text: str, marker: str) -> str:
