@@ -55,12 +55,13 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install vmChat test dependencies
-        working-directory: web
-        run: >-
-          npm install --no-save --package-lock=false --ignore-scripts --legacy-peer-deps
-          babel-core@6.26.3 babel-register@6.26.0 babel-preset-env@1.7.0
-          babel-preset-stage-2@6.24.1 babel-plugin-transform-runtime@6.23.0
-          babel-runtime@6.26.0 axios@0.18.0
+        run: |
+          mkdir -p /tmp/vmchat-test-deps
+          npm install --prefix /tmp/vmchat-test-deps --no-save --package-lock=false --ignore-scripts --legacy-peer-deps \
+            babel-core@6.26.3 babel-register@6.26.0 babel-preset-env@1.7.0 \
+            babel-preset-stage-2@6.24.1 babel-plugin-transform-runtime@6.23.0 \
+            babel-runtime@6.26.0 axios@0.18.0
+          echo "NODE_PATH=/tmp/vmchat-test-deps/node_modules" >> "$GITHUB_ENV"
 
       - name: Run vmChat deterministic tests
         working-directory: web
