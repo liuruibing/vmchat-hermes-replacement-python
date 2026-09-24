@@ -18,7 +18,7 @@ module.exports = {
         }
       },
       '/hermes-api': {
-        target: process.env.HERMES_BACKEND_URL || 'https://vmchat-api-production.up.railway.app',
+        target: process.env.HERMES_BACKEND_URL || 'https://elegant-beverages-tin-citations.trycloudflare.com',
         changeOrigin: true,
         onProxyReq(proxyReq) {
           proxyReq.removeHeader('origin')
