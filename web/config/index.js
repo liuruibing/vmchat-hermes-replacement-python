@@ -18,7 +18,7 @@ module.exports = {
         }
       },
       '/hermes-api': {
-        target: process.env.HERMES_BACKEND_URL || 'https://elegant-beverages-tin-citations.trycloudflare.com',
+        target: process.env.HERMES_BACKEND_URL || 'https://lyrics-olympus-physician-tied.trycloudflare.com',
         changeOrigin: true,
         onProxyReq(proxyReq) {
           proxyReq.removeHeader('origin')
