@@ -26,6 +26,7 @@ class GeneratePromptOptions(BaseModel):
 
     input: Union[VmChatInput, Dict[str, Any], Any]
     skillMd: str = Field(default="", alias="skill_md")
+    rolePrompt: str = Field(default="", alias="role_prompt")
     maxPromptChars: Optional[int] = Field(default=None, alias="max_prompt_chars")
 
     @property
@@ -47,6 +48,9 @@ def build_generate_prompt(
         skill_md = options.get("skillMd") if "skillMd" in options else options.get("skill_md")
         if skill_md is None:
             skill_md = ""
+        role_prompt = options.get("rolePrompt") if "rolePrompt" in options else options.get("role_prompt")
+        if role_prompt is None:
+            role_prompt = ""
         input_obj = options.get("input")
     else:
         max_prompt_chars = getattr(options, "maxPromptChars", None)
@@ -57,6 +61,11 @@ def build_generate_prompt(
             skill_md = getattr(options, "skill_md", None)
         if skill_md is None:
             skill_md = ""
+        role_prompt = getattr(options, "rolePrompt", None)
+        if role_prompt is None:
+            role_prompt = getattr(options, "role_prompt", None)
+        if role_prompt is None:
+            role_prompt = ""
         input_obj = getattr(options, "input", None)
 
     max_chars = (
@@ -67,7 +76,8 @@ def build_generate_prompt(
 
     # 2. Build systemPrompt
     system_prompt = "\n".join([
-        "你是 vmChat 服务端唯一的业务协议编排器。前端只负责传递用户消息和页面上下文；业务规则、知识库检索、合并判断、DSL 生成与修复均以本服务端提示和 Skill 为准。",
+        role_prompt.strip() if role_prompt and role_prompt.strip() else "你是 vmChat 服务端唯一的业务协议编排器。",
+        "前端只负责传递用户消息和页面上下文；业务规则、知识库检索、合并判断、DSL 生成与修复均以本服务端提示和 Skill 为准。",
         "你只能通过只读工具 read_vmchat_skill_resource 读取允许的知识库资源；你没有 shell、Node、文件写入或任意代码执行工具。",
         "",
         "# 资源读取策略",
@@ -117,6 +127,7 @@ def build_generate_prompt(
         selected_block_id = input_obj.get("selectedBlockId") if "selectedBlockId" in input_obj else input_obj.get("selected_block_id")
         user_message = input_obj.get("userMessage") if "userMessage" in input_obj else input_obj.get("user_message", "")
         history_messages = input_obj.get("historyMessages") if "historyMessages" in input_obj else input_obj.get("history_messages", [])
+        session_summary = input_obj.get("sessionSummary") if "sessionSummary" in input_obj else input_obj.get("session_summary", "")
     else:
         raw_params = getattr(input_obj, "globalQueryParameters", None)
         if raw_params is None:
@@ -136,6 +147,9 @@ def build_generate_prompt(
         history_messages = getattr(input_obj, "historyMessages", None)
         if history_messages is None:
             history_messages = getattr(input_obj, "history_messages", [])
+        session_summary = getattr(input_obj, "sessionSummary", None)
+        if session_summary is None:
+            session_summary = getattr(input_obj, "session_summary", "")
 
     if isinstance(raw_params, BaseModel):
         raw_params = raw_params.model_dump()
@@ -209,7 +223,14 @@ def build_generate_prompt(
     ])
 
     # 6. Format baseUserPromptLines
+    session_summary_section = (
+        f"<session_summary>\n{session_summary}\n</session_summary>"
+        if session_summary
+        else ""
+    )
+
     base_user_prompt_lines = [line for line in [
+        session_summary_section,
         current_dsls_section,
         f"<global_query_parameters>\n界面全局查询条件字段: {param_flags_text or '无'}\n</global_query_parameters>",
         user_request_block,
