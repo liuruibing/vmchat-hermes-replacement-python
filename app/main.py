@@ -157,10 +157,21 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
         or TemplateStore(config.templates_file)
     )
 
+    isolated_runtime = bool(deps_override)
+    default_session_path = ":memory:" if isolated_runtime else getattr(
+        config, "session_db_path", ".runtime/ai-sessions.sqlite3"
+    )
+    default_artifact_path = ":memory:" if isolated_runtime else getattr(
+        config, "artifact_db_path", ".runtime/ai-artifacts.sqlite3"
+    )
+    default_knowledge_path = ":memory:" if isolated_runtime else getattr(
+        config, "knowledge_db_path", ".runtime/knowledge.duckdb"
+    )
+
     session_store = (
         deps_override.get("session_store")
         or deps_override.get("sessionStore")
-        or SqliteSessionStore(getattr(config, "session_db_path", ".runtime/ai-sessions.sqlite3"))
+        or SqliteSessionStore(default_session_path)
     )
     session_manager = (
         deps_override.get("session_manager")
@@ -184,21 +195,20 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
     artifact_store = (
         deps_override.get("artifact_store")
         or deps_override.get("artifactStore")
-        or SqliteArtifactStore(getattr(config, "artifact_db_path", ".runtime/ai-artifacts.sqlite3"))
+        or SqliteArtifactStore(default_artifact_path)
     )
 
     knowledge_service = deps_override.get("knowledge_service") or deps_override.get("knowledgeService")
     knowledge_store = None
+    knowledge_backend = "custom" if knowledge_service is not None else "disabled"
     if knowledge_service is None:
         try:
-            knowledge_store = DuckDbKnowledgeStore(
-                getattr(config, "knowledge_db_path", ".runtime/knowledge.duckdb")
-            )
+            knowledge_store = DuckDbKnowledgeStore(default_knowledge_path)
             knowledge_service = KnowledgeService(knowledge_store)
             knowledge_backend = "duckdb"
         except Exception as err:
             logger.info(f"[app] DuckDB unavailable, using SQLite knowledge store: {err}")
-            fallback_path = str(getattr(config, "knowledge_db_path", ".runtime/knowledge.duckdb"))
+            fallback_path = str(default_knowledge_path)
             if fallback_path.endswith(".duckdb"):
                 fallback_path = fallback_path[:-7] + ".sqlite3"
             knowledge_store = SqliteKnowledgeStore(fallback_path)
@@ -297,7 +307,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 "modelConfigured": model_configured,
                 "sessionStore": "sqlite",
                 "knowledgeReady": knowledge_service is not None,
-                "knowledgeBackend": locals().get("knowledge_backend", "custom"),
+                "knowledgeBackend": knowledge_backend,
                 "defaultAgent": default_agent_id,
             }
         )
