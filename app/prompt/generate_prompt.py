@@ -187,7 +187,7 @@ def build_generate_prompt(
         dsl_blocks = []
         for d in current_dsls:
             if isinstance(d, BaseModel):
-                d_dict = d.model_dump()
+                d_dict = d.model_dump(exclude_none=True)
             elif isinstance(d, dict):
                 d_dict = d
             else:
@@ -199,7 +199,7 @@ def build_generate_prompt(
             if dsl_val is None:
                 dsl_val = d_dict
             elif isinstance(dsl_val, BaseModel):
-                dsl_val = dsl_val.model_dump()
+                dsl_val = dsl_val.model_dump(exclude_none=True)
 
             dsl_blocks.append(
                 f"--- Block {block_id}: {title} ---\n"
