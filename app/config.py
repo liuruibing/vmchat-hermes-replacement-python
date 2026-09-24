@@ -39,6 +39,9 @@ class AppConfig(BaseModel):
     max_context_tokens: int = 32000
     max_context_dsl_tokens: int = 9000
     max_context_history_tokens: int = 5000
+    embedding_model: str = ""
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
 
     # JS camelCase property aliases
     @property
@@ -162,6 +165,9 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
     max_context_tokens = int(raw_env.get("MAX_CONTEXT_TOKENS", "32000"))
     max_context_dsl_tokens = int(raw_env.get("MAX_CONTEXT_DSL_TOKENS", "9000"))
     max_context_history_tokens = int(raw_env.get("MAX_CONTEXT_HISTORY_TOKENS", "5000"))
+    embedding_model = raw_env.get("EMBEDDING_MODEL", "")
+    embedding_base_url = raw_env.get("EMBEDDING_BASE_URL", "")
+    embedding_api_key = raw_env.get("EMBEDDING_API_KEY", "")
 
     return AppConfig(
         host=host,
@@ -194,6 +200,9 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
         max_context_tokens=max_context_tokens,
         max_context_dsl_tokens=max_context_dsl_tokens,
         max_context_history_tokens=max_context_history_tokens,
+        embedding_model=embedding_model,
+        embedding_base_url=embedding_base_url,
+        embedding_api_key=embedding_api_key,
     )
 
 
