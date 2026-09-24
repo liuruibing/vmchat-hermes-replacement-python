@@ -29,6 +29,7 @@ class OpenAICompatibleEmbeddingProvider:
         }
         if base_url:
             kwargs["base_url"] = base_url
+        self.fingerprint = f"openai-compatible:{base_url or 'default'}:{model}"
         self._client = OpenAIEmbeddings(**kwargs)
 
     def embed_documents(self, texts: Sequence[str]) -> List[List[float]]:
