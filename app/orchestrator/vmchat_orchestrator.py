@@ -134,6 +134,118 @@ def _add_usage(target: Dict[str, int], usage: Any) -> None:
         target["completion_tokens"] += int(getattr(usage, "completion_tokens", 0) or 0)
         target["total_tokens"] += int(getattr(usage, "total_tokens", 0) or 0)
 
+
+def _extract_first_json_value(text: str) -> Optional[str]:
+    source = str(text or "").strip()
+    fence_match = re.match(r"^\`\`\`(?:json)?\\s*([\\s\\S]*?)\\s*\`\`\`$", source, re.IGNORECASE)
+    if fence_match:
+        source = fence_match.group(1).strip()
+
+    start = -1
+    for index, char in enumerate(source):
+        if char in ("{", "["):
+            start = index
+            break
+    if start < 0:
+        return None
+
+    stack: List[str] = []
+    in_string = False
+    escaped = False
+    for index in range(start, len(source)):
+        char = source[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char in ("{", "["):
+            stack.append(char)
+            continue
+        if char not in ("}", "]"):
+            continue
+        expected = "{" if char == "}" else "["
+        if not stack or stack[-1] != expected:
+            return None
+        stack.pop()
+        if not stack:
+            return source[start : index + 1]
+    return None
+
+
+def _is_nonreport_protocol(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    intent = str(value.get("intent") or "").strip().lower()
+    render_type = str(value.get("renderType") or "").strip().lower()
+    allowed = {"chat", "clarify", "businessinfo"}
+    return intent in allowed or render_type in allowed
+
+
+def _is_dsl_candidate(value: Any) -> bool:
+    if isinstance(value, list):
+        return bool(value) and all(_is_dsl_candidate(item) for item in value)
+    if not isinstance(value, dict) or _is_nonreport_protocol(value):
+        return False
+    action = str(value.get("action") or "").strip().lower()
+    if action in {"create", "update"}:
+        return True
+    return any(key in value for key in ("requests", "transform", "view", "views", "moduleId", "sqlCode"))
+
+
+def _classify_model_output(text: str) -> Dict[str, Any]:
+    trimmed = str(text or "").strip()
+    json_text = _extract_first_json_value(trimmed)
+    parsed: Any = None
+    if json_text:
+        try:
+            parsed = json.loads(json_text)
+        except Exception:
+            parsed = None
+
+    if parsed is not None:
+        if _is_nonreport_protocol(parsed):
+            return {
+                "kind": "text",
+                "text": json.dumps(parsed, ensure_ascii=False),
+                "candidate": None,
+                "issues": None,
+            }
+        if _is_dsl_candidate(parsed):
+            return {
+                "kind": "dsl",
+                "text": "",
+                "candidate": parsed,
+                "issues": None,
+            }
+
+    if re.search(
+        r'"(?:action|requests|transform|view|views|moduleId|sqlCode)"\\s*:',
+        trimmed,
+        re.IGNORECASE,
+    ):
+        return {
+            "kind": "dsl",
+            "text": "",
+            "candidate": trimmed,
+            "issues": [
+                ValidationIssue(
+                    code="INVALID_JSON",
+                    path="/",
+                    message="模型输出的 DSL 不是完整且唯一的 JSON 对象或数组",
+                )
+            ],
+        }
+
+    return {"kind": "text", "text": trimmed, "candidate": None, "issues": None}
+
+
 class RunFailedEvent(BaseModel):
     type: Literal["run.failed"] = "run.failed"
     event: Literal["run.failed"] = "run.failed"
@@ -178,6 +290,8 @@ def _call_validate_vm_report_dsl_set(
             "schemaJson": getattr(resources, "schemaJson", None)
             or getattr(resources, "schema_json", None),
             "currentBlockIds": current_block_ids,
+            "moduleProfiles": getattr(resources, "moduleProfiles", None)
+            or getattr(resources, "module_profiles", None),
         },
     )
 
