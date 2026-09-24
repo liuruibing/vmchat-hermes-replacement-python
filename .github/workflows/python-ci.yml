@@ -63,6 +63,10 @@ jobs:
             babel-runtime@6.26.0 axios@0.18.0 ajv@6.12.6
           echo "NODE_PATH=/tmp/vmchat-test-deps/node_modules" >> "$GITHUB_ENV"
 
+      - name: Check preview server syntax
+        working-directory: web
+        run: node --check server.js
+
       - name: Run vmChat deterministic tests
         working-directory: web
         run: npm run test:vmchat
