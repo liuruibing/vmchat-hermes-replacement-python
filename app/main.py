@@ -28,6 +28,7 @@ from app.template_store import TemplateStore
 from app.provider.fixed_provider import FixedVmChatProvider, VmChatModelProvider
 from app.provider.langchain_provider import LangChainVmChatProvider
 from app.orchestrator.vmchat_orchestrator import stream_vm_chat
+from app.orchestrator.simple_chat_orchestrator import stream_simple_chat
 from app.resources.wiki_catalog import get_wiki_tree, get_wiki_document
 from app.agents.registry import AgentRegistry
 from app.session.store import SqliteSessionStore
@@ -245,7 +246,20 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                         default_agent_id,
                         resource_map,
                     )
-                    logger.info(f"[app] Knowledge index ready: {stats}")
+                    logger.info(f"[app] Knowledge index ready for {default_agent_id}: {stats}")
+
+                if agent_registry is not None:
+                    for agent in agent_registry.list_agents():
+                        if agent.id == default_agent_id:
+                            continue
+                        generic_docs = agent_registry.collect_knowledge(agent.id)
+                        if generic_docs:
+                            stats = await asyncio.to_thread(
+                                knowledge_service.index_resource_map,
+                                agent.id,
+                                generic_docs,
+                            )
+                            logger.info(f"[app] Knowledge index ready for {agent.id}: {stats}")
         except Exception as err:
             logger.warning(f"[app] ResourceLoader/Knowledge load failed at startup: {err}")
 
@@ -286,7 +300,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     status_code=403,
                     content={"error": "FORBIDDEN: Invalid or missing bearer token"}
                 )
-            if is_run_or_wiki and not resource_loader.is_ready():
+            if request.url.path.startswith("/v1/wiki") and not resource_loader.is_ready():
                 return JSONResponse(status_code=503, content={"error": "SERVICE_DEGRADED: Resources not loaded"})
         return await call_next(request)
 
@@ -467,12 +481,6 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
 
     @app.post("/v1/runs")
     async def create_run(request: Request):
-        if not resource_loader.is_ready():
-            return JSONResponse(
-                status_code=503,
-                content={"error": "SERVICE_DEGRADED: Resources not loaded"}
-            )
-
         try:
             try:
                 body = await request.json()
@@ -493,6 +501,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             agent = agent_registry.get(agent_id) if agent_registry else None
             if agent_registry and agent is None:
                 raise ValueError(f"UNKNOWN_AGENT: {agent_id}")
+            if agent is not None and agent.workflow == "vm-report" and not resource_loader.is_ready():
+                raise RuntimeError("SERVICE_DEGRADED: Resources not loaded")
             role = agent_registry.get_role(agent_id, role_id) if agent_registry else None
             if agent is not None and role is None and agent.defaultRole:
                 role_id = agent.defaultRole
@@ -623,7 +633,6 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 return frame
 
             try:
-                loaded_resources = resource_loader.get_resources()
                 vm_input = (
                     getattr(record, "normalizedInput", None)
                     or getattr(record, "normalized_input", None)
@@ -636,23 +645,43 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     )
                 )
 
+                agent_id = getattr(vm_input, "agentId", None) or default_agent_id
+                role_id = getattr(vm_input, "roleId", None) or default_role_id
+                agent = agent_registry.get(agent_id) if agent_registry else None
+                if agent_registry is not None and agent is None:
+                    raise VmChatRunError("UNKNOWN_AGENT", f"未知 Agent: {agent_id}")
+                workflow = agent.workflow if agent is not None else "vm-report"
+                role = agent_registry.get_role(agent_id, role_id) if agent_registry else None
+                role_prompt = role.systemPrompt if role else ""
+                knowledge_search = (
+                    (lambda query: knowledge_service.format_for_tool(agent_id, query))
+                    if knowledge_service is not None
+                    else None
+                )
+
                 full_output = ""
                 has_reasoning = False
                 sequence = 0
                 last_usage: Dict[str, Any] = {}
 
-                # If orchestrator stream_vm_chat is available, stream from it
-                if stream_vm_chat is not None:
-                    agent_id = getattr(vm_input, "agentId", None) or default_agent_id
-                    role_id = getattr(vm_input, "roleId", None) or default_role_id
-                    role = agent_registry.get_role(agent_id, role_id) if agent_registry else None
-                    role_prompt = role.systemPrompt if role else ""
-                    knowledge_search = (
-                        (lambda query: knowledge_service.format_for_tool(agent_id, query))
-                        if knowledge_service is not None
-                        else None
-                    )
-
+                if workflow == "simple-chat":
+                    skill_md = agent_registry.read_skill(agent_id) if agent_registry else ""
+                    stream_gen = stream_simple_chat(
+                        input_val=vm_input,
+                        provider=provider,
+                        skill_md=skill_md,
+                        role_prompt=role_prompt,
+                        knowledge_search=knowledge_search,
+                        signal=controller,
+                        message_chunk_chars=config.sse_chunk_chars,
+                    ).__aiter__()
+                else:
+                    if not resource_loader.is_ready():
+                        raise VmChatRunError(
+                            "SERVICE_DEGRADED",
+                            "当前 Agent 资源尚未加载完成",
+                        )
+                    loaded_resources = resource_loader.get_resources()
                     opts = {
                         "input": vm_input,
                         "resources": loaded_resources,
@@ -663,6 +692,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                         "knowledge_search": knowledge_search,
                     }
                     stream_gen = stream_vm_chat(opts).__aiter__()
+
+                if stream_gen is not None:
                     next_event_task = asyncio.create_task(stream_gen.__anext__())
 
                     try:
