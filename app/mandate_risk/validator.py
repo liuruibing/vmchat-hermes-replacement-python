@@ -4,11 +4,21 @@ import re
 from typing import Any, Dict, Iterable, List, Mapping, Set
 
 from app.mandate_risk.clauses import DocumentClause, split_document_clauses
+from app.mandate_risk.matcher import metric_concept_phrases, phrase_in_text
 from app.mandate_risk.models import EvidenceQuote, LibraryGap, MetricMatch, RiskAnalysisResult
 from app.mandate_risk.registry import RawRiskMetricRegistry
 
 
 _ALLOWED_LEVELS = {"DIRECT", "STRONG_INFERRED", "WEAK_INFERRED", "REJECTED"}
+_DIRECT_REQUIREMENT_EN = re.compile(
+    r"\b(?:shall|must|should|target(?:s|ed|ing)?|aim(?:s|ed|ing)?|objective|"
+    r"require(?:s|d)?|limit(?:s|ed)?|maintain(?:s|ed)?|keep|is\s+to|"
+    r"not\s+exceed|no\s+less\s+than|at\s+least|at\s+most|maximum|minimum)\b",
+    re.IGNORECASE,
+)
+_DIRECT_REQUIREMENT_ZH = re.compile(
+    r"(?:应当|应|必须|须|不得|不超过|不低于|至少|至多|目标|限额|限制|保持|维持)"
+)
 
 
 def _normalize_evidence(value: str) -> str:
@@ -76,6 +86,25 @@ def _canonical_evidence(
     )
 
 
+def _supports_direct_requirement(metric: Any, evidence: Iterable[EvidenceQuote]) -> bool:
+    """Return true only when one evidence clause directly requires the metric concept.
+
+    Definitions, permitted actions, asset descriptions and general strategy prose are
+    useful evidence for inferred matches, but they are not enough for DIRECT. A DIRECT
+    clause must contain a stable metric concept phrase and requirement/target/limit
+    language in the same auditable clause.
+    """
+
+    concept_phrases = metric_concept_phrases(metric)
+    for quote in evidence:
+        text = str(quote.text or "")
+        if not any(phrase_in_text(text, phrase) for phrase in concept_phrases):
+            continue
+        if _DIRECT_REQUIREMENT_EN.search(text) or _DIRECT_REQUIREMENT_ZH.search(text):
+            return True
+    return False
+
+
 def validate_model_result(
     *,
     payload: Dict[str, Any],
@@ -137,18 +166,32 @@ def validate_model_result(
         if level != "REJECTED" and not evidence:
             level = "REJECTED"
 
+        downgraded_direct = False
+        if level == "DIRECT" and evidence and not _supports_direct_requirement(metric, evidence):
+            # A concept definition or an allowed adjustment can establish a strong
+            # semantic relationship, but not a direct monitoring/limit requirement.
+            level = "STRONG_INFERRED"
+            downgraded_direct = True
+
         confidence = item.get("confidence")
         try:
             confidence_float = max(0.0, min(1.0, float(confidence)))
         except Exception:
             confidence_float = 0.0
+        if downgraded_direct:
+            confidence_float = min(confidence_float, 0.85)
+
+        reason = str(item.get("reason") or "").strip()
+        if downgraded_direct:
+            note = "Python校验：证据表明指标概念相关，但未形成明确的指标目标、约束、限额或监控要求，因此由 DIRECT 降为 STRONG_INFERRED。"
+            reason = f"{reason} {note}".strip()
 
         match = MetricMatch(
             raw_row_id=row_id,
             metric_name=metric.metric_name,
             match_level=level,
             confidence=confidence_float,
-            reason=str(item.get("reason") or "").strip(),
+            reason=reason,
             evidence=evidence,
         )
         seen.add(row_id)
