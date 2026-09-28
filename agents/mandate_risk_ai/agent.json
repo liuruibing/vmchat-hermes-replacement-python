@@ -1,0 +1,13 @@
+{
+  "id": "mandate-risk-ai",
+  "name": "投资策略风险指标匹配 AI",
+  "version": "1.0.0",
+  "workflow": "mandate-risk-analysis",
+  "skill_path": "skill/SKILL.md",
+  "knowledge_paths": [],
+  "roles_dir": "roles",
+  "default_role": "risk-analyst",
+  "metadata": {
+    "description": "从投资策略/委托文件中抽取风险要求，并严格从只读风险指标库中匹配正式指标，输出可审计 Markdown 报告"
+  }
+}
