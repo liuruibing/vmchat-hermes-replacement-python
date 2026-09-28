@@ -16,7 +16,13 @@ from app.compatibility.hermes_events import (
     code_point_chunks,
 )
 from app.mandate_risk.json_utils import extract_first_json_object
-from app.mandate_risk.matcher import build_candidates, infer_strategy_type, select_candidates
+from app.mandate_risk.matcher import (
+    build_candidates,
+    build_mandate_recall_candidates,
+    infer_strategy_type,
+    merge_candidate_sets,
+    select_candidates,
+)
 from app.mandate_risk.models import MetricCandidate
 from app.mandate_risk.prompts import SYSTEM_PROMPT, build_semantic_judge_prompt
 from app.mandate_risk.registry import RawRiskMetricRegistry
@@ -124,8 +130,17 @@ class MandateRiskLangGraphWorkflow:
                 return {"error": "没有可分析的投资策略文本"}
             strategy_type, confidence = infer_strategy_type(document_text)
             eligible = registry.eligible_for_strategy(strategy_type)
-            all_candidates = build_candidates(document_text, eligible)
-            candidates = select_candidates(all_candidates)
+
+            # Keep the original high-precision concept matcher as the primary
+            # pool. A separate fallback pool may add metrics only through
+            # distinctive, authoritative Mandate phrases. This raises recall
+            # without weakening the precision semantics of the primary matcher.
+            primary = select_candidates(build_candidates(document_text, eligible))
+            fallback = select_candidates(
+                build_mandate_recall_candidates(document_text, eligible)
+            )
+            candidates = merge_candidate_sets(primary, fallback)
+
             return {
                 "strategy_type": strategy_type,
                 "strategy_confidence": confidence,
