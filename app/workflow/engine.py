@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Callable, Optional, Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, AsyncGenerator, Callable, List, Optional, Protocol, runtime_checkable
 
 from app.compatibility.hermes_request import VmChatInput
 
@@ -12,6 +12,8 @@ class WorkflowContext:
 
     Long-lived conversation/knowledge/artifact state stays in the AI Runtime.
     A workflow only receives the bounded, current-run context it needs.
+    Uploaded document bodies are resolved lazily by document id so they are not
+    copied into chat history or generic run prompts.
     """
 
     input_val: VmChatInput
@@ -26,6 +28,8 @@ class WorkflowContext:
     message_chunk_chars: int = 256
     run_id: Optional[str] = None
     session_id: Optional[str] = None
+    document_ids: List[str] = field(default_factory=list)
+    document_loader: Optional[Callable[[str], Any]] = None
 
 
 @runtime_checkable
