@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 from app.compatibility.hermes_request import GlobalQueryParameters, VmChatInput
-from app.mandate_risk.matcher import build_candidates, infer_strategy_type, select_candidates
+from app.mandate_risk.matcher import (
+    build_candidates,
+    build_mandate_recall_candidates,
+    infer_strategy_type,
+    merge_candidate_sets,
+    select_candidates,
+)
 from app.mandate_risk.models import CandidateClauseHint, MetricCandidate, RawRiskMetric
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk.validator import validate_model_result
@@ -88,38 +94,44 @@ def test_latin_metric_names_use_token_boundaries():
     assert select_candidates([candidate]) == []
 
 
-def test_non_generic_mandate_text_can_recall_without_metric_name():
+def test_distinctive_mandate_fallback_can_recall_without_metric_name():
     registry = RawRiskMetricRegistry.from_path(METRICS)
     credit_spread = registry.get_by_name("信用利差（债券）")
     assert credit_spread is not None
 
-    candidate = build_candidates(
+    # Primary precision remains unchanged: no literal credit-spread concept.
+    primary = build_candidates(
         "The portfolio seeks reasonable credit risk exposure and adds value through relative value investment.",
         [credit_spread],
     )[0]
+    assert primary.deterministic_score == 0.0
 
-    assert candidate.deterministic_score >= 4.0
-    assert candidate.matched_clauses
-    selected = select_candidates([candidate])
+    fallback = build_mandate_recall_candidates(
+        "The portfolio seeks reasonable credit risk exposure and adds value through relative value investment.",
+        [credit_spread],
+    )[0]
+    assert fallback.deterministic_score >= 4.0
+    assert fallback.matched_clauses
+    selected = select_candidates([fallback])
     assert [item.raw_row_id for item in selected] == [credit_spread.row_id]
 
 
-def test_generic_mandate_only_match_stays_below_default_threshold():
+def test_generic_mandate_does_not_create_fallback_candidate():
     registry = RawRiskMetricRegistry.from_path(METRICS)
     var_metric = registry.get_by_name("VaR")
     assert var_metric is not None
 
-    candidate = build_candidates(
+    fallback = build_mandate_recall_candidates(
         "The strategy seeks long term capital growth.",
         [var_metric],
     )[0]
 
-    assert candidate.deterministic_score == 0.5
-    assert candidate.matched_clauses
-    assert select_candidates([candidate]) == []
+    assert fallback.deterministic_score == 0.0
+    assert fallback.matched_clauses == []
+    assert select_candidates([fallback]) == []
 
 
-def test_single_latin_mandate_fragment_is_weak_recall_evidence():
+def test_single_latin_mandate_fragment_does_not_create_fallback_candidate():
     metric = RawRiskMetric(
         row_id=999,
         source_row=999,
@@ -128,14 +140,39 @@ def test_single_latin_mandate_fragment_is_weak_recall_evidence():
         strategy_type="固收",
     )
 
-    candidate = build_candidates(
+    fallback = build_mandate_recall_candidates(
         "The portfolio may invest in Government Agency securities.",
         [metric],
     )[0]
 
-    assert candidate.deterministic_score == 0.5
-    assert candidate.matched_clauses
-    assert select_candidates([candidate]) == []
+    assert fallback.deterministic_score == 0.0
+    assert fallback.matched_clauses == []
+    assert select_candidates([fallback]) == []
+
+
+def test_shared_specific_mandate_does_not_independently_recall_multiple_metrics():
+    first = RawRiskMetric(
+        row_id=901,
+        source_row=901,
+        metric_name="Metric A",
+        mandate="reasonable credit risk exposure",
+        strategy_type="固收",
+    )
+    second = RawRiskMetric(
+        row_id=902,
+        source_row=902,
+        metric_name="Metric B",
+        mandate="reasonable credit risk exposure",
+        strategy_type="固收",
+    )
+
+    fallback = build_mandate_recall_candidates(
+        "The portfolio seeks reasonable credit risk exposure.",
+        [first, second],
+    )
+
+    assert all(item.deterministic_score == 0.0 for item in fallback)
+    assert select_candidates(fallback) == []
 
 
 def test_default_candidate_selection_has_no_hard_twelve_item_cap():
@@ -157,6 +194,26 @@ def test_default_candidate_selection_has_no_hard_twelve_item_cap():
 
     assert len(select_candidates(candidates)) == 20
     assert len(select_candidates(candidates, limit=12)) == 12
+
+
+def test_merge_candidate_sets_prefers_primary_by_row_id():
+    primary = MetricCandidate(
+        raw_row_id=7,
+        metric_name="metric",
+        deterministic_score=12.0,
+        matched_clauses=[CandidateClauseHint(clause_id="c0001", text="primary", score=12.0)],
+    )
+    fallback = MetricCandidate(
+        raw_row_id=7,
+        metric_name="metric",
+        deterministic_score=4.0,
+        matched_clauses=[CandidateClauseHint(clause_id="c0002", text="fallback", score=4.0)],
+    )
+
+    merged = merge_candidate_sets([primary], [fallback])
+    assert len(merged) == 1
+    assert merged[0].deterministic_score == 12.0
+    assert merged[0].matched_clauses[0].text == "primary"
 
 
 def test_validator_rejects_renamed_or_out_of_registry_metrics():
