@@ -5,7 +5,7 @@ import pytest
 
 from app.compatibility.hermes_request import GlobalQueryParameters, VmChatInput
 from app.mandate_risk.matcher import build_candidates, infer_strategy_type, select_candidates
-from app.mandate_risk.models import CandidateClauseHint, MetricCandidate
+from app.mandate_risk.models import CandidateClauseHint, MetricCandidate, RawRiskMetric
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk.validator import validate_model_result
 from app.workflow.engine import WorkflowContext
@@ -112,6 +112,25 @@ def test_generic_mandate_only_match_stays_below_default_threshold():
     candidate = build_candidates(
         "The strategy seeks long term capital growth.",
         [var_metric],
+    )[0]
+
+    assert candidate.deterministic_score == 0.5
+    assert candidate.matched_clauses
+    assert select_candidates([candidate]) == []
+
+
+def test_single_latin_mandate_fragment_is_weak_recall_evidence():
+    metric = RawRiskMetric(
+        row_id=999,
+        source_row=999,
+        metric_name="Synthetic Metric",
+        mandate="Government",
+        strategy_type="固收",
+    )
+
+    candidate = build_candidates(
+        "The portfolio may invest in Government Agency securities.",
+        [metric],
     )[0]
 
     assert candidate.deterministic_score == 0.5
