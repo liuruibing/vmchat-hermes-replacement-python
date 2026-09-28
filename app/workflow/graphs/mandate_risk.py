@@ -26,7 +26,7 @@ from app.workflow.engine import WorkflowContext
 from app.workflow.graphs.mandate_risk_state import MandateRiskGraphState
 
 
-DEFAULT_METRIC_XLSX = "agents/mandate_risk_ai/knowledge/raw/AI测试样例信息.xlsx"
+DEFAULT_METRIC_SOURCE = "agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv"
 
 
 def _is_aborted(signal: Any) -> bool:
@@ -65,16 +65,21 @@ def _usage_from_chunk(chunk: Any) -> Dict[str, int]:
 class MandateRiskLangGraphWorkflow:
     id = "mandate-risk-analysis"
 
-    def __init__(self, metric_xlsx_path: str | None = None) -> None:
-        configured = metric_xlsx_path or os.getenv("MANDATE_RISK_METRIC_XLSX") or DEFAULT_METRIC_XLSX
-        self.metric_xlsx_path = str(configured)
+    def __init__(self, metric_source_path: str | None = None) -> None:
+        configured = (
+            metric_source_path
+            or os.getenv("MANDATE_RISK_METRIC_SOURCE")
+            or os.getenv("MANDATE_RISK_METRIC_XLSX")
+            or DEFAULT_METRIC_SOURCE
+        )
+        self.metric_source_path = str(configured)
         self._checkpointer = InMemorySaver()
 
     def _load_registry(self) -> RawRiskMetricRegistry:
-        path = Path(self.metric_xlsx_path)
+        path = Path(self.metric_source_path)
         if not path.is_file():
             raise RuntimeError(f"MANDATE_RISK_METRIC_LIBRARY_NOT_FOUND: {path}")
-        registry = RawRiskMetricRegistry.from_xlsx(path)
+        registry = RawRiskMetricRegistry.from_path(path)
         if len(registry.all()) != 34:
             raise RuntimeError(
                 "MANDATE_RISK_METRIC_LIBRARY_INVALID: expected 34 rows, "
