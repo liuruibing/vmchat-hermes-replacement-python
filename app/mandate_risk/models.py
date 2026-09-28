@@ -34,6 +34,7 @@ class CandidateClauseHint(BaseModel):
     score: float = 0.0
     source_start: int = 0
     source_end: int = 0
+    page: int | None = None
 
 
 class MetricCandidate(BaseModel):
