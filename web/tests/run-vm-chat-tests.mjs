@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 const testsDir = path.dirname(fileURLToPath(import.meta.url))
 const testFiles = [
   'hermes-run-output.test.mjs',
+  'hermes-documents.test.mjs',
   'vm-api-response.test.mjs',
   'vm-chat-modern-protocol.test.mjs',
   'vm-combined-table-block.test.mjs',

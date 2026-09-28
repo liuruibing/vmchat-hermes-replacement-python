@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import hmac
 import json
 import logging
+import shutil
+import tempfile
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request
@@ -40,6 +42,10 @@ from app.artifacts.store import SqliteArtifactStore
 from app.knowledge.store import DuckDbKnowledgeStore, SqliteKnowledgeStore
 from app.knowledge.service import KnowledgeService
 from app.knowledge.embeddings import OpenAICompatibleEmbeddingProvider
+from app.documents.multipart import parse_single_file_multipart
+from app.documents.parser import PdfDocumentParser
+from app.documents.service import DocumentService
+from app.documents.store import SqliteDocumentStore
 
 logger = logging.getLogger("app")
 
@@ -90,6 +96,7 @@ class AppDependencies:
     context_manager: Any = None
     artifact_store: Any = None
     knowledge_service: Any = None
+    document_service: Any = None
     workflow_registry: Any = None
     workflow_engine: Any = None
 
@@ -173,6 +180,11 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
     default_knowledge_path = ":memory:" if isolated_runtime else getattr(
         config, "knowledge_db_path", ".runtime/knowledge.duckdb"
     )
+    isolated_document_root = tempfile.mkdtemp(prefix="vmchat-documents-") if isolated_runtime else None
+    default_document_root = isolated_document_root or getattr(config, "document_root", ".runtime/documents")
+    default_document_db_path = ":memory:" if isolated_runtime else getattr(
+        config, "document_db_path", ".runtime/ai-documents.sqlite3"
+    )
 
     session_store = (
         deps_override.get("session_store")
@@ -204,6 +216,17 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
         or deps_override.get("artifactStore")
         or SqliteArtifactStore(default_artifact_path)
     )
+
+    document_service = deps_override.get("document_service") or deps_override.get("documentService")
+    document_store = None
+    if document_service is None:
+        document_store = SqliteDocumentStore(default_document_db_path)
+        document_service = DocumentService(
+            root_dir=default_document_root,
+            store=document_store,
+            parser=PdfDocumentParser(),
+            max_document_bytes=getattr(config, "max_document_bytes", 20 * 1024 * 1024),
+        )
 
     knowledge_service = deps_override.get("knowledge_service") or deps_override.get("knowledgeService")
     knowledge_store = None
@@ -305,8 +328,12 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             session_store.close()
         if hasattr(artifact_store, "close") and callable(artifact_store.close):
             artifact_store.close()
+        if document_store is not None and hasattr(document_store, "close"):
+            document_store.close()
         if knowledge_store is not None and hasattr(knowledge_store, "close"):
             knowledge_store.close()
+        if isolated_document_root:
+            shutil.rmtree(isolated_document_root, ignore_errors=True)
 
     app = FastAPI(lifespan=lifespan)
 
@@ -326,6 +353,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             or request.url.path.startswith("/v1/agents")
             or request.url.path.startswith("/v1/knowledge")
             or request.url.path.startswith("/v1/artifacts")
+            or request.url.path.startswith("/v1/documents")
         )
         if is_run_or_wiki or is_template or is_runtime:
             if not verify_bearer_auth(request, config.service_api_key):
@@ -353,6 +381,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 "schemaLoaded": ready,
                 "modelConfigured": model_configured,
                 "sessionStore": "sqlite",
+                "documentStore": "sqlite" if document_store is not None else "custom",
+                "maxDocumentBytes": getattr(config, "max_document_bytes", 20 * 1024 * 1024),
                 "knowledgeReady": knowledge_service is not None,
                 "knowledgeBackend": knowledge_backend,
                 "knowledgeVectorEnabled": embedding_provider is not None,
@@ -362,6 +392,45 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 "langGraphEnabled": True,
             }
         )
+
+    @app.post("/v1/documents")
+    async def upload_document(request: Request):
+        max_document_bytes = getattr(config, "max_document_bytes", 20 * 1024 * 1024)
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > max_document_bytes + 1024 * 1024:
+                    return JSONResponse(status_code=413, content={"error": "DOCUMENT_TOO_LARGE"})
+            except ValueError:
+                pass
+        try:
+            body = await request.body()
+            if len(body) > max_document_bytes + 1024 * 1024:
+                return JSONResponse(status_code=413, content={"error": "DOCUMENT_TOO_LARGE"})
+            filename, mime_type, content = parse_single_file_multipart(
+                request.headers.get("content-type") or "",
+                body,
+            )
+            record = await asyncio.to_thread(
+                document_service.create_pdf,
+                filename=filename,
+                mime_type=mime_type,
+                content=content,
+            )
+            return JSONResponse(status_code=201, content={"document": record.public_dict()})
+        except ValueError as err:
+            status_code = 413 if "DOCUMENT_TOO_LARGE" in str(err) else 400
+            return JSONResponse(status_code=status_code, content={"error": str(err)})
+        except Exception as err:
+            logger.exception("[documents] upload failed")
+            return JSONResponse(status_code=500, content={"error": f"DOCUMENT_UPLOAD_FAILED: {err}"})
+
+    @app.get("/v1/documents/{documentId}")
+    async def get_document(documentId: str):
+        record = document_service.get(documentId)
+        if record is None:
+            return JSONResponse(status_code=404, content={"error": "DOCUMENT_NOT_FOUND"})
+        return JSONResponse(status_code=200, content={"document": record.public_dict()})
 
     @app.get("/v1/wiki/tree")
     async def get_wiki_tree_endpoint():
@@ -578,6 +647,9 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 role_id = agent.defaultRole
                 role = agent_registry.get_role(agent_id, role_id) if agent_registry else None
 
+            for document_id in normalized_req.documents:
+                document_service.require_ready(document_id)
+
             if normalized_req.skills:
                 allowed_skills = set(role.allowedSkills if role is not None else [])
                 denied = [skill for skill in normalized_req.skills if skill not in allowed_skills]
@@ -616,6 +688,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     "run_id": record.id,
                     "status": "queued",
                     "session_id": session_id,
+                    "documents": list(normalized_req.documents),
                     "context": {
                         "estimated_tokens": context_report.total_estimated_tokens,
                         "history_tokens": context_report.history_tokens,
@@ -748,6 +821,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     if resource_loader.is_ready()
                     else None
                 )
+                document_ids = list(getattr(vm_input, "documentIds", []) or [])
                 workflow_context = WorkflowContext(
                     input_val=vm_input,
                     provider=provider,
@@ -761,6 +835,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     message_chunk_chars=config.sse_chunk_chars,
                     run_id=runId,
                     session_id=getattr(getattr(record, "request", None), "session_id", None),
+                    document_ids=document_ids,
+                    document_loader=document_service.load_parsed if document_ids else None,
                 )
                 try:
                     stream_gen = workflow_engine.stream(
