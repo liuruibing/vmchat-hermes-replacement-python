@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Tuple
+from collections import Counter
+from typing import Iterable, List, Set, Tuple
 
 from app.mandate_risk.clauses import DocumentClause, split_document_clauses
 from app.mandate_risk.models import CandidateClauseHint, MetricCandidate, RawRiskMetric
@@ -110,14 +111,22 @@ def _english_words(value: str) -> set[str]:
     }
 
 
+def _is_specific_mandate_fragment(fragment: str) -> bool:
+    if fragment in _GENERIC_MANDATE:
+        return False
+    if re.search(r"[\u3400-\u9fff]", fragment):
+        return True
+    return len(_english_words(fragment)) >= 2
+
+
 def _phrase_in_text(text: str, phrase: str) -> bool:
     phrase_norm = normalize_text(phrase)
     if not phrase_norm:
         return False
     # A single Latin token must match a complete token. This is intentionally
     # generic rather than metric-specific: VaR must not match "varied", Beta
-    # must not match a longer identifier, and future short/long Latin metric
-    # names receive the same boundary semantics.
+    # must not match a longer identifier, and future Latin metric names receive
+    # the same boundary semantics.
     if re.fullmatch(r"[a-z0-9+.-]+", phrase_norm):
         return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase_norm)}(?![a-z0-9])", text))
     return phrase_norm in text
@@ -133,11 +142,7 @@ def _alias_hits(clause_norm: str, metric: RawRiskMetric) -> List[str]:
 
 def _fragment_score(clause_norm: str, fragment: str) -> float:
     frag_words = _english_words(fragment)
-    has_cjk = bool(re.search(r"[\u3400-\u9fff]", fragment))
-    # Slash-separated business metadata can contain low-information list items
-    # such as "Government". Treat generic phrases and single Latin words as weak
-    # evidence so they cannot independently cross the default recall threshold.
-    if fragment in _GENERIC_MANDATE or (not has_cjk and len(frag_words) <= 1):
+    if not _is_specific_mandate_fragment(fragment):
         return 0.5 if _phrase_in_text(clause_norm, fragment) else 0.0
     if fragment in clause_norm:
         return 4.0
@@ -152,29 +157,47 @@ def _fragment_score(clause_norm: str, fragment: str) -> float:
     return 0.0
 
 
-def _score_clause(clause: DocumentClause, metric: RawRiskMetric) -> tuple[float, List[str]]:
+def _score_clause(
+    clause: DocumentClause,
+    metric: RawRiskMetric,
+    *,
+    independent_mandate_fragments: Set[str] | None = None,
+) -> tuple[float, List[str]]:
     text = normalize_text(clause.text)
     score = 0.0
     hits: List[str] = []
+    concept_hit = False
 
     if _phrase_in_text(text, metric.metric_name):
         score += 10.0
         hits.append(metric.metric_name)
+        concept_hit = True
 
     aliases = _alias_hits(text, metric)
     if aliases:
         score += 8.0
         hits.extend(aliases[:3])
+        concept_hit = True
 
-    # Non-generic Mandate text is a first-class recall source. The metric
-    # library is the business source of truth, so a document clause that closely
-    # matches a metric's own Mandate field must be allowed into semantic review
-    # even when it does not literally contain the metric name. Broad/low-value
-    # Mandate phrases remain weak (0.5) and are filtered by the default candidate
-    # threshold below.
+    algorithm = normalize_text(metric.algorithm)
+    if algorithm and len(algorithm) <= 80 and algorithm in text:
+        score += 3.0
+        hits.append(metric.algorithm)
+        concept_hit = True
+
+    # Shared Mandate language is supporting evidence only. A Mandate fragment
+    # may independently recall a metric only when that fragment is specific and
+    # unique among the currently eligible metric set. This preserves recall for
+    # distinctive business requirements without letting one shared sentence
+    # pull in every metric that happens to carry the same Mandate wording.
+    fragments = list(_mandate_fragments(metric.mandate))
+    if not concept_hit:
+        independent = independent_mandate_fragments or set()
+        fragments = [fragment for fragment in fragments if fragment in independent]
+
     fragment_results = [
         (fragment, _fragment_score(text, fragment))
-        for fragment in _mandate_fragments(metric.mandate)
+        for fragment in fragments
     ]
     fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
     if fragment_results:
@@ -182,19 +205,23 @@ def _score_clause(clause: DocumentClause, metric: RawRiskMetric) -> tuple[float,
         score += value
         hits.append(fragment)
 
-    algorithm = normalize_text(metric.algorithm)
-    if algorithm and len(algorithm) <= 80 and algorithm in text:
-        score += 3.0
-        hits.append(metric.algorithm)
-
     return score, hits
 
 
-def score_metric(document_text: str, metric: RawRiskMetric) -> MetricCandidate:
+def score_metric(
+    document_text: str,
+    metric: RawRiskMetric,
+    *,
+    independent_mandate_fragments: Set[str] | None = None,
+) -> MetricCandidate:
     clauses = split_document_clauses(document_text)
     scored: List[tuple[float, DocumentClause, List[str]]] = []
     for clause in clauses:
-        score, hits = _score_clause(clause, metric)
+        score, hits = _score_clause(
+            clause,
+            metric,
+            independent_mandate_fragments=independent_mandate_fragments,
+        )
         if score > 0:
             scored.append((score, clause, hits))
     scored.sort(key=lambda item: (-item[0], item[1].clause_id))
@@ -227,24 +254,48 @@ def score_metric(document_text: str, metric: RawRiskMetric) -> MetricCandidate:
 
 
 def build_candidates(document_text: str, metrics: Iterable[RawRiskMetric]) -> List[MetricCandidate]:
-    candidates = [score_metric(document_text, metric) for metric in metrics]
+    metric_list = list(metrics)
+    fragments_by_row: dict[int, set[str]] = {}
+    fragment_counts: Counter[str] = Counter()
+
+    for metric in metric_list:
+        fragments = {
+            fragment
+            for fragment in _mandate_fragments(metric.mandate)
+            if _is_specific_mandate_fragment(fragment)
+        }
+        fragments_by_row[metric.row_id] = fragments
+        fragment_counts.update(fragments)
+
+    candidates = [
+        score_metric(
+            document_text,
+            metric,
+            independent_mandate_fragments={
+                fragment
+                for fragment in fragments_by_row.get(metric.row_id, set())
+                if fragment_counts[fragment] == 1
+            },
+        )
+        for metric in metric_list
+    ]
     return sorted(candidates, key=lambda item: (-item.deterministic_score, item.raw_row_id))
 
 
 def select_candidates(
     candidates: Iterable[MetricCandidate],
     *,
-    min_score: float = 1.0,
+    min_score: float = 4.0,
     limit: int | None = None,
 ) -> List[MetricCandidate]:
     """Return evidence-backed candidates for the LLM semantic judge.
 
-    Recall is intentionally favored over early precision because the validator
-    can reject unsupported model choices but cannot recover a metric that Python
-    removed before semantic review. Generic/low-information Mandate-only matches
-    score 0.5 and therefore stay out by default. With the current 34-row
-    authoritative library there is no default hard candidate cap; callers may
-    still provide ``limit`` if the library grows materially in the future.
+    Python remains a high-recall gate, but shared/generic Mandate language alone
+    cannot create a candidate. Distinctive authoritative Mandate fragments can
+    recall a metric even without its literal name, while the LLM and validator
+    remain responsible for semantic precision and final enforcement. There is no
+    default hard candidate cap for the current 34-row library; callers may set
+    ``limit`` if the library grows materially in the future.
     """
 
     selected = [item for item in candidates if item.deterministic_score >= min_score and item.matched_clauses]
