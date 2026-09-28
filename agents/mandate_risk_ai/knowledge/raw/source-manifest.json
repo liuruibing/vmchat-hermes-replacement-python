@@ -1,0 +1,9 @@
+{
+  "source_file": "AI测试样例信息.xlsx",
+  "source_sheet": "风险指标库",
+  "source_range": "A1:F35",
+  "metric_rows": 34,
+  "xlsx_sha256": "3c14c4fcb991f7d8876140cc2e95ce508b73b31092c9d7bf8e844ab2dd4e6871",
+  "policy": "immutable-source-values",
+  "note": "The XLSX is the authoritative raw source. Runtime code reads the 风险指标库 sheet directly and must not correct, fill, rename, or overwrite source values."
+}
