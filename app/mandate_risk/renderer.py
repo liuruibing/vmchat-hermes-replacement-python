@@ -57,7 +57,7 @@ def _render_summary_table(result: RiskAnalysisResult, registry: RawRiskMetricReg
         return ["暂无可展示的匹配指标。"]
 
     lines = [
-        "|  | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |",
+        "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
     lines.extend(_summary_rows(result.selected_metrics, registry))
