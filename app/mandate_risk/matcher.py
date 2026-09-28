@@ -114,9 +114,11 @@ def _phrase_in_text(text: str, phrase: str) -> bool:
     phrase_norm = normalize_text(phrase)
     if not phrase_norm:
         return False
-    # Short latin aliases such as VaR/Beta must match complete tokens rather than
-    # arbitrary substrings inside words such as "variable".
-    if re.fullmatch(r"[a-z0-9+.-]{2,5}", phrase_norm):
+    # A single Latin token must match a complete token. This is intentionally
+    # generic rather than metric-specific: VaR must not match "varied", Beta
+    # must not match a longer identifier, and future short/long Latin metric
+    # names receive the same boundary semantics.
+    if re.fullmatch(r"[a-z0-9+.-]+", phrase_norm):
         return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase_norm)}(?![a-z0-9])", text))
     return phrase_norm in text
 
@@ -151,8 +153,7 @@ def _score_clause(clause: DocumentClause, metric: RawRiskMetric) -> tuple[float,
     score = 0.0
     hits: List[str] = []
 
-    metric_name = normalize_text(metric.metric_name)
-    if metric_name and metric_name in text:
+    if _phrase_in_text(text, metric.metric_name):
         score += 10.0
         hits.append(metric.metric_name)
 
@@ -161,20 +162,21 @@ def _score_clause(clause: DocumentClause, metric: RawRiskMetric) -> tuple[float,
         score += 8.0
         hits.extend(aliases[:3])
 
-    # Mandate text is supporting evidence, not an independent reason to recall a
-    # metric. This prevents broad phrases such as "long term capital growth" or
-    # "actively managed" from pulling in VaR/Beta/Sortino without the document
-    # mentioning the metric's own concept.
-    if aliases or (metric_name and metric_name in text):
-        fragment_results = [
-            (fragment, _fragment_score(text, fragment))
-            for fragment in _mandate_fragments(metric.mandate)
-        ]
-        fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
-        if fragment_results:
-            fragment, value = max(fragment_results, key=lambda item: item[1])
-            score += value
-            hits.append(fragment)
+    # Non-generic Mandate text is a first-class recall source. The metric
+    # library is the business source of truth, so a document clause that closely
+    # matches a metric's own Mandate field must be allowed into semantic review
+    # even when it does not literally contain the metric name. Broad Mandate
+    # phrases remain deliberately weak (0.5) and are filtered by the default
+    # candidate threshold below.
+    fragment_results = [
+        (fragment, _fragment_score(text, fragment))
+        for fragment in _mandate_fragments(metric.mandate)
+    ]
+    fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
+    if fragment_results:
+        fragment, value = max(fragment_results, key=lambda item: item[1])
+        score += value
+        hits.append(fragment)
 
     algorithm = normalize_text(metric.algorithm)
     if algorithm and len(algorithm) <= 80 and algorithm in text:
@@ -227,11 +229,21 @@ def build_candidates(document_text: str, metrics: Iterable[RawRiskMetric]) -> Li
 def select_candidates(
     candidates: Iterable[MetricCandidate],
     *,
-    min_score: float = 4.0,
-    limit: int = 12,
+    min_score: float = 1.0,
+    limit: int | None = None,
 ) -> List[MetricCandidate]:
-    """Return the small, evidence-backed candidate set sent to the LLM judge."""
+    """Return evidence-backed candidates for the LLM semantic judge.
+
+    Recall is intentionally favored over early precision because the validator
+    can reject unsupported model choices but cannot recover a metric that Python
+    removed before semantic review. Generic Mandate-only matches score 0.5 and
+    therefore stay out by default. With the current 34-row authoritative library
+    there is no default hard candidate cap; callers may still provide ``limit``
+    if the library grows materially in the future.
+    """
 
     selected = [item for item in candidates if item.deterministic_score >= min_score and item.matched_clauses]
     selected.sort(key=lambda item: (-item.deterministic_score, item.raw_row_id))
+    if limit is None:
+        return selected
     return selected[: max(1, int(limit))]
