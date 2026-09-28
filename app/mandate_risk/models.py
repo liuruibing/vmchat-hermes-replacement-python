@@ -11,8 +11,9 @@ MatchLevel = Literal["DIRECT", "STRONG_INFERRED", "WEAK_INFERRED", "REJECTED"]
 class RawRiskMetric(BaseModel):
     """One immutable row from the authoritative risk-metric sheet.
 
-    ``raw_*`` values are stored exactly as read from the XLSX. Derived grouping
-    fields are separate so callers never have to mutate the source row.
+    ``raw_*`` values are stored exactly as read from the source snapshot.
+    Derived grouping fields are separate so callers never have to mutate the
+    source row.
     """
 
     row_id: int
@@ -27,12 +28,19 @@ class RawRiskMetric(BaseModel):
     effective_risk_type_2: str = ""
 
 
+class CandidateClauseHint(BaseModel):
+    clause_id: str
+    text: str
+    score: float = 0.0
+
+
 class MetricCandidate(BaseModel):
     raw_row_id: int
     metric_name: str
     strategy_match: bool = True
     deterministic_score: float = 0.0
     exact_hits: List[str] = Field(default_factory=list)
+    matched_clauses: List[CandidateClauseHint] = Field(default_factory=list)
 
 
 class EvidenceQuote(BaseModel):
