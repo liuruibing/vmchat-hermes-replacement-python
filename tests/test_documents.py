@@ -111,6 +111,23 @@ def test_document_upload_parses_pdf_and_hides_server_paths():
     assert "parsed_path" not in document
 
 
+def test_document_upload_accepts_octet_stream_when_pdf_signature_is_valid():
+    app = create_app({
+        "resource_loader": MockResourceLoader(),
+        "provider": DummyProvider(),
+    })
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/documents",
+            files={"file": ("mandate.pdf", _pdf_bytes(), "application/octet-stream")},
+        )
+
+    assert response.status_code == 201, response.text
+    document = response.json()["document"]
+    assert document["status"] == "ready"
+    assert document["mime_type"] == "application/pdf"
+
+
 def test_document_upload_rejects_non_pdf():
     app = create_app({
         "resource_loader": MockResourceLoader(),
