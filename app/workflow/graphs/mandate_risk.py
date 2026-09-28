@@ -16,7 +16,8 @@ from app.compatibility.hermes_events import (
     code_point_chunks,
 )
 from app.mandate_risk.json_utils import extract_first_json_object
-from app.mandate_risk.matcher import build_candidates, infer_strategy_type
+from app.mandate_risk.matcher import build_candidates, infer_strategy_type, select_candidates
+from app.mandate_risk.models import MetricCandidate
 from app.mandate_risk.prompts import SYSTEM_PROMPT, build_semantic_judge_prompt
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk.renderer import render_markdown
@@ -96,7 +97,8 @@ class MandateRiskLangGraphWorkflow:
                 return {"error": "没有可分析的投资策略文本"}
             strategy_type, confidence = infer_strategy_type(document_text)
             eligible = registry.eligible_for_strategy(strategy_type)
-            candidates = build_candidates(document_text, eligible)
+            all_candidates = build_candidates(document_text, eligible)
+            candidates = select_candidates(all_candidates)
             return {
                 "strategy_type": strategy_type,
                 "strategy_confidence": confidence,
@@ -110,11 +112,10 @@ class MandateRiskLangGraphWorkflow:
             if _is_aborted(context.signal):
                 return {"error": "客户端连接已中断"}
 
-            candidate_ids = [int(item) for item in state.get("candidate_row_ids") or []]
-            candidate_models = build_candidates(
-                str(state.get("document_text") or ""),
-                [registry.require(item) for item in candidate_ids],
-            )
+            candidate_models = [
+                MetricCandidate.model_validate(item)
+                for item in (state.get("candidates") or [])
+            ]
             user_prompt = build_semantic_judge_prompt(
                 document_text=str(state.get("document_text") or ""),
                 document_name=str(state.get("document_name") or ""),
@@ -188,6 +189,14 @@ class MandateRiskLangGraphWorkflow:
             if state.get("error"):
                 return {}
             try:
+                candidate_models = [
+                    MetricCandidate.model_validate(item)
+                    for item in (state.get("candidates") or [])
+                ]
+                clause_map = {
+                    item.raw_row_id: [hint.clause_id for hint in item.matched_clauses]
+                    for item in candidate_models
+                }
                 result = validate_model_result(
                     payload=state.get("model_payload") or {},
                     registry=registry,
@@ -195,6 +204,7 @@ class MandateRiskLangGraphWorkflow:
                     document_text=str(state.get("document_text") or ""),
                     document_name=str(state.get("document_name") or ""),
                     strategy_type=str(state.get("strategy_type") or "未知"),
+                    candidate_clause_ids=clause_map,
                 )
                 return {"result": result.model_dump()}
             except Exception as err:

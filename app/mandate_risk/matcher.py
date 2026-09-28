@@ -20,6 +20,55 @@ _GENERIC_MANDATE = {
     "actively managed",
     "active management",
     "capital management",
+    "trading strategy",
+    "trading strategies",
+    "bottom-up",
+    "top-down",
+}
+
+# Derived search aliases are intentionally separate from the immutable metric
+# library. They improve bilingual recall but never overwrite source values.
+_DERIVED_ALIASES: dict[str, tuple[str, ...]] = {
+    "基金收益率": ("fund return", "portfolio return", "基金收益率"),
+    "超额收益率（基准超额）": (
+        "excess return", "returns in excess", "return in excess", "outperformance", "超额收益",
+    ),
+    "Alpha": ("alpha",),
+    "股息贡献率": ("dividend contribution", "dividend yield", "stable dividend yield", "股息贡献"),
+    "Sortino索提诺": ("sortino", "索提诺"),
+    "信息比率": ("information ratio", "信息比率"),
+    "VaR": ("value at risk", "var"),
+    "最大回撤": ("maximum drawdown", "max drawdown", "最大回撤"),
+    "波动率": ("volatility", "波动率"),
+    "组合Beta贝塔": ("portfolio beta", "组合beta", "组合贝塔", "beta"),
+    "下行Beta": ("downside beta", "下行beta", "下行贝塔"),
+    "行业偏离度": ("industry deviation", "sector deviation", "行业偏离"),
+    "跟踪误差": ("tracking error", "跟踪误差"),
+    "久期": ("duration", "久期"),
+    "DV01": ("dv01",),
+    "股息支付率NII": ("dividend payout", "payout ratio", "nii", "股息支付"),
+    "股息增长率": ("dividend growth", "股息增长"),
+    "股息覆盖率": ("dividend coverage", "股息覆盖", "portfolio dividend yield benchmark dividend yield"),
+    "境内资产占比": (
+        "domestic asset", "chinese issuers", "mainland china listed equity", "china a-share market", "境内资产",
+    ),
+    "单一证券占比": ("single security", "single stock", "single name concentration", "单一证券"),
+    "可用融资余额": ("available financing", "financing balance", "repo capacity", "可用融资余额"),
+    "换手率(%)": ("turnover", "换手率"),
+    "剩余期限": ("remaining maturity", "remaining term", "剩余期限"),
+    "非标剩余期限": ("private credit remaining maturity", "private credit remaining term", "非标剩余期限"),
+    "债券资产变现天数": ("bond liquidation days", "days to liquidate bonds", "债券资产变现天数"),
+    "流通受限资产占比": ("restricted asset", "locked asset", "lock-up", "流通受限资产"),
+    "优质动性资产占比": ("high quality liquid asset", "hqlA", "优质流动性资产", "优质动性资产"),
+    "流动性上市权益资产占比": (
+        "liquid listed equity", "7 trading days", "10% participation rate", "流动性上市权益资产",
+    ),
+    "信用利差（债券）": ("credit spread", "bond credit spread", "信用利差"),
+    "信用利差（非标）": ("private credit spread", "non-standard credit spread", "非标信用利差"),
+    "加权平均信用评级": ("weighted average credit rating", "warf", "加权平均信用评级"),
+    "债券AA+及以下评级占比(%)": ("aa+ and below", "aa+ or below", "aa+及以下", "低评级债券占比"),
+    "单一发行人集中度": ("single issuer concentration", "issuer concentration", "单一发行人集中度"),
+    "区域分布": ("regional distribution", "geographic distribution", "regional allocation", "区域分布"),
 }
 
 
@@ -61,19 +110,39 @@ def _english_words(value: str) -> set[str]:
     }
 
 
+def _phrase_in_text(text: str, phrase: str) -> bool:
+    phrase_norm = normalize_text(phrase)
+    if not phrase_norm:
+        return False
+    # Short latin aliases such as VaR/Beta must match complete tokens rather than
+    # arbitrary substrings inside words such as "variable".
+    if re.fullmatch(r"[a-z0-9+.-]{2,5}", phrase_norm):
+        return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase_norm)}(?![a-z0-9])", text))
+    return phrase_norm in text
+
+
+def _alias_hits(clause_norm: str, metric: RawRiskMetric) -> List[str]:
+    hits: List[str] = []
+    for alias in _DERIVED_ALIASES.get(metric.metric_name, (metric.metric_name,)):
+        if _phrase_in_text(clause_norm, alias):
+            hits.append(alias)
+    return hits
+
+
 def _fragment_score(clause_norm: str, fragment: str) -> float:
-    weight = 0.45 if fragment in _GENERIC_MANDATE else 1.0
+    if fragment in _GENERIC_MANDATE:
+        return 0.5 if fragment in clause_norm else 0.0
     if fragment in clause_norm:
-        return 6.0 * weight
+        return 4.0
     frag_words = _english_words(fragment)
     if not frag_words:
         return 0.0
     clause_words = _english_words(clause_norm)
     overlap = len(clause_words & frag_words) / max(1, len(frag_words))
-    if overlap >= 0.75:
-        return 4.0 * overlap * weight
-    if overlap >= 0.45:
-        return 2.0 * overlap * weight
+    if overlap >= 0.8:
+        return 2.5 * overlap
+    if overlap >= 0.6:
+        return 1.5 * overlap
     return 0.0
 
 
@@ -84,19 +153,32 @@ def _score_clause(clause: DocumentClause, metric: RawRiskMetric) -> tuple[float,
 
     metric_name = normalize_text(metric.metric_name)
     if metric_name and metric_name in text:
-        score += 8.0
+        score += 10.0
         hits.append(metric.metric_name)
 
-    fragment_results = [(fragment, _fragment_score(text, fragment)) for fragment in _mandate_fragments(metric.mandate)]
-    fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
-    if fragment_results:
-        fragment, value = max(fragment_results, key=lambda item: item[1])
-        score += value
-        hits.append(fragment)
+    aliases = _alias_hits(text, metric)
+    if aliases:
+        score += 8.0
+        hits.extend(aliases[:3])
+
+    # Mandate text is supporting evidence, not an independent reason to recall a
+    # metric. This prevents broad phrases such as "long term capital growth" or
+    # "actively managed" from pulling in VaR/Beta/Sortino without the document
+    # mentioning the metric's own concept.
+    if aliases or (metric_name and metric_name in text):
+        fragment_results = [
+            (fragment, _fragment_score(text, fragment))
+            for fragment in _mandate_fragments(metric.mandate)
+        ]
+        fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
+        if fragment_results:
+            fragment, value = max(fragment_results, key=lambda item: item[1])
+            score += value
+            hits.append(fragment)
 
     algorithm = normalize_text(metric.algorithm)
     if algorithm and len(algorithm) <= 80 and algorithm in text:
-        score += 2.0
+        score += 3.0
         hits.append(metric.algorithm)
 
     return score, hits
@@ -118,7 +200,15 @@ def score_metric(document_text: str, metric: RawRiskMetric) -> MetricCandidate:
         for hit in clause_hits:
             if hit not in hits:
                 hits.append(hit)
-        hints.append(CandidateClauseHint(clause_id=clause.clause_id, text=clause.text, score=round(score, 4)))
+        hints.append(
+            CandidateClauseHint(
+                clause_id=clause.clause_id,
+                text=clause.text,
+                score=round(score, 4),
+                source_start=clause.source_start,
+                source_end=clause.source_end,
+            )
+        )
 
     return MetricCandidate(
         raw_row_id=metric.row_id,
@@ -132,3 +222,16 @@ def score_metric(document_text: str, metric: RawRiskMetric) -> MetricCandidate:
 def build_candidates(document_text: str, metrics: Iterable[RawRiskMetric]) -> List[MetricCandidate]:
     candidates = [score_metric(document_text, metric) for metric in metrics]
     return sorted(candidates, key=lambda item: (-item.deterministic_score, item.raw_row_id))
+
+
+def select_candidates(
+    candidates: Iterable[MetricCandidate],
+    *,
+    min_score: float = 4.0,
+    limit: int = 12,
+) -> List[MetricCandidate]:
+    """Return the small, evidence-backed candidate set sent to the LLM judge."""
+
+    selected = [item for item in candidates if item.deterministic_score >= min_score and item.matched_clauses]
+    selected.sort(key=lambda item: (-item.deterministic_score, item.raw_row_id))
+    return selected[: max(1, int(limit))]

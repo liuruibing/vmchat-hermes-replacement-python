@@ -32,6 +32,8 @@ class CandidateClauseHint(BaseModel):
     clause_id: str
     text: str
     score: float = 0.0
+    source_start: int = 0
+    source_end: int = 0
 
 
 class MetricCandidate(BaseModel):
@@ -46,6 +48,9 @@ class MetricCandidate(BaseModel):
 class EvidenceQuote(BaseModel):
     text: str
     page: int | None = None
+    clause_id: str | None = None
+    source_start: int | None = None
+    source_end: int | None = None
 
 
 class MetricMatch(BaseModel):
