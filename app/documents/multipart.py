@@ -37,7 +37,10 @@ def parse_single_file_multipart(content_type: str, body: bytes, field_name: str 
         payload = part.get_payload(decode=True)
         if payload is None:
             payload = b""
-        mime_type = str(part.get_content_type() or "application/octet-stream")
+        # get_content_type() defaults to text/plain when the part omitted the
+        # header. Preserve the actual transport header instead so callers can
+        # distinguish "no MIME supplied" from an explicit text/plain upload.
+        mime_type = str(part.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         return str(filename), mime_type, bytes(payload)
 
     raise ValueError(f"INVALID_MULTIPART: missing file field '{field_name}'")
