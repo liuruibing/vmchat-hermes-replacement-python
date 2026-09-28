@@ -112,11 +112,26 @@ def _english_words(value: str) -> set[str]:
 
 
 def _is_specific_mandate_fragment(fragment: str) -> bool:
-    if fragment in _GENERIC_MANDATE:
+    fragment = normalize_text(fragment)
+    if not fragment:
         return False
     if re.search(r"[\u3400-\u9fff]", fragment):
         return True
-    return len(_english_words(fragment)) >= 2
+
+    words = _english_words(fragment)
+    if len(words) <= 1:
+        return False
+
+    # Treat a generic phrase plus at most one low-information modifier as still
+    # generic (for example "achieve long term capital growth"). A fragment that
+    # adds several concrete terms (for example "proper active management and low
+    # tracking error") remains specific.
+    for generic in _GENERIC_MANDATE:
+        if generic in fragment:
+            residual = normalize_text(fragment.replace(generic, " "))
+            if len(_english_words(residual)) <= 1:
+                return False
+    return True
 
 
 def _phrase_in_text(text: str, phrase: str) -> bool:
@@ -150,6 +165,11 @@ def _fragment_score(clause_norm: str, fragment: str) -> float:
         return 0.0
     clause_words = _english_words(clause_norm)
     overlap = len(clause_words & frag_words) / max(1, len(frag_words))
+    # Full lexical coverage of a distinctive authoritative Mandate fragment is
+    # strong recall evidence even when the document inserts extra words or
+    # changes word order around it.
+    if overlap >= 1.0:
+        return 4.0
     if overlap >= 0.8:
         return 2.5 * overlap
     if overlap >= 0.6:
