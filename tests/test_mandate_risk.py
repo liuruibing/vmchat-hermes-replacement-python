@@ -12,7 +12,9 @@ from app.workflow.graphs.mandate_risk import MandateRiskLangGraphWorkflow
 
 
 ROOT = Path(__file__).resolve().parents[1]
-METRICS = ROOT / "agents" / "mandate_risk_ai" / "knowledge" / "raw" / "AI测试样例信息.xlsx"
+RAW_DIR = ROOT / "agents" / "mandate_risk_ai" / "knowledge" / "raw"
+METRICS = RAW_DIR / "risk_metrics.raw.csv"
+MANIFEST = RAW_DIR / "source-manifest.json"
 
 SAMPLE = """境内上市权益（高分红策略）
 Listed Equity; and Cash and Cash Equivalents </= 1 Year
@@ -27,9 +29,14 @@ The Sub-Portfolio should be managed under the enhanced index strategy with prope
 
 
 def test_raw_registry_preserves_source_values_and_separate_effective_grouping():
-    registry = RawRiskMetricRegistry.from_xlsx(METRICS)
+    registry = RawRiskMetricRegistry.from_path(METRICS)
     assert len(registry.all()) == 34
-    assert registry.source_sha256 == "3c14c4fcb991f7d8876140cc2e95ce508b73b31092c9d7bf8e844ab2dd4e6871"
+    assert registry.source_sha256 == "cd097edb49be7b73152292722db71d41e7f65d40444b35cd7fc3e96a071fc4d5"
+
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["xlsx_sha256"] == "3c14c4fcb991f7d8876140cc2e95ce508b73b31092c9d7bf8e844ab2dd4e6871"
+    assert manifest["source_sheet"] == "风险指标库"
+    assert manifest["metric_rows"] == 34
 
     excess = registry.get_by_name("超额收益率（基准超额）")
     assert excess is not None
@@ -46,7 +53,7 @@ def test_raw_registry_preserves_source_values_and_separate_effective_grouping():
 
 
 def test_equity_strategy_filters_fixed_income_rows():
-    registry = RawRiskMetricRegistry.from_xlsx(METRICS)
+    registry = RawRiskMetricRegistry.from_path(METRICS)
     strategy, confidence = infer_strategy_type(SAMPLE)
     assert strategy == "权益"
     assert confidence > 0.7
@@ -66,7 +73,7 @@ def test_equity_strategy_filters_fixed_income_rows():
 
 
 def test_validator_rejects_renamed_or_out_of_registry_metrics():
-    registry = RawRiskMetricRegistry.from_xlsx(METRICS)
+    registry = RawRiskMetricRegistry.from_path(METRICS)
     tracking = registry.get_by_name("跟踪误差")
     assert tracking is not None
 
