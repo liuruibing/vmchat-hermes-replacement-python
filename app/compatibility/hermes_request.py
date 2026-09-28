@@ -17,6 +17,7 @@ class HermesCreateRunRequest(BaseModel):
     skills: List[str]
     tools: List[Any] = Field(default_factory=list)
     context: Dict[str, Any] = Field(default_factory=dict)
+    documents: List[str] = Field(default_factory=list)
     agent_id: str = "performance-ai"
     role_id: str = "performance-analyst"
 
@@ -67,6 +68,7 @@ class VmChatInput(BaseModel):
     sessionSummary: str = ""
     agentId: str = "performance-ai"
     roleId: str = "performance-analyst"
+    documentIds: List[str] = Field(default_factory=list)
     resolvedMetrics: List[Dict[str, Any]] = Field(default_factory=list)
     semanticPlan: Dict[str, Any] = Field(default_factory=dict)
 
@@ -125,6 +127,32 @@ def extract_json_block(text: str, marker: str) -> str:
     raise ValueError("INVALID_VMCHAT_CONTEXT: Malformed JSON block")
 
 
+def _normalize_document_ids(raw_documents: Any) -> List[str]:
+    if raw_documents is None:
+        return []
+    if not isinstance(raw_documents, list):
+        raise ValueError("INVALID_REQUEST_FORMAT: documents must be an array")
+    if len(raw_documents) > 8:
+        raise ValueError("INVALID_REQUEST_FORMAT: too many documents")
+
+    result: List[str] = []
+    for item in raw_documents:
+        if isinstance(item, str):
+            document_id = item.strip()
+        elif isinstance(item, dict):
+            value = item.get("document_id") or item.get("documentId")
+            document_id = str(value or "").strip()
+        else:
+            raise ValueError("INVALID_REQUEST_FORMAT: document references must be strings or objects")
+        if not document_id:
+            continue
+        if len(document_id) > 128 or not re.fullmatch(r"doc_[A-Za-z0-9_-]+", document_id):
+            raise ValueError(f"INVALID_REQUEST_FORMAT: invalid document id '{document_id[:64]}'")
+        if document_id not in result:
+            result.append(document_id)
+    return result
+
+
 def normalize_create_run_request(raw: Any) -> HermesCreateRunRequest:
     if not isinstance(raw, dict):
         raise ValueError("INVALID_REQUEST_FORMAT: Request body must be a JSON object")
@@ -166,6 +194,8 @@ def normalize_create_run_request(raw: Any) -> HermesCreateRunRequest:
         if len(skills) > 16:
             raise ValueError("INVALID_REQUEST_FORMAT: too many skills")
 
+    documents = _normalize_document_ids(raw.get("documents"))
+
     raw_input = raw.get("input")
     if not isinstance(raw_input, list) or len(raw_input) == 0 or len(raw_input) > 20:
         raise ValueError("INVALID_REQUEST_FORMAT: input must be an array of 1 to 20 messages")
@@ -194,6 +224,7 @@ def normalize_create_run_request(raw: Any) -> HermesCreateRunRequest:
         skills=skills,
         tools=[],
         context=raw_context,
+        documents=documents,
         agent_id=agent_id or "performance-ai",
         role_id=role_id or "performance-analyst",
     )
@@ -303,6 +334,7 @@ def normalize_vm_chat_input(request: HermesCreateRunRequest) -> VmChatInput:
         sessionSummary="",
         agentId=request.agent_id,
         roleId=request.role_id,
+        documentIds=list(request.documents),
     )
 
 
