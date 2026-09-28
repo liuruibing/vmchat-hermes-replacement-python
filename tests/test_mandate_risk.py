@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from app.compatibility.hermes_request import GlobalQueryParameters, VmChatInput
-from app.mandate_risk.matcher import build_candidates, infer_strategy_type
+from app.mandate_risk.matcher import build_candidates, infer_strategy_type, select_candidates
+from app.mandate_risk.models import CandidateClauseHint, MetricCandidate
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk.validator import validate_model_result
 from app.workflow.engine import WorkflowContext
@@ -70,6 +71,73 @@ def test_equity_strategy_filters_fixed_income_rows():
     assert scores["跟踪误差"] > 0
     assert scores["超额收益率（基准超额）"] > 0
     assert scores["股息贡献率"] > 0
+
+
+def test_latin_metric_names_use_token_boundaries():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    var_metric = registry.get_by_name("VaR")
+    assert var_metric is not None
+
+    candidate = build_candidates(
+        "Risk policies may be varied from time to time.",
+        [var_metric],
+    )[0]
+
+    assert candidate.deterministic_score == 0.0
+    assert candidate.matched_clauses == []
+    assert select_candidates([candidate]) == []
+
+
+def test_non_generic_mandate_text_can_recall_without_metric_name():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    credit_spread = registry.get_by_name("信用利差（债券）")
+    assert credit_spread is not None
+
+    candidate = build_candidates(
+        "The portfolio seeks reasonable credit risk exposure and adds value through relative value investment.",
+        [credit_spread],
+    )[0]
+
+    assert candidate.deterministic_score >= 4.0
+    assert candidate.matched_clauses
+    selected = select_candidates([candidate])
+    assert [item.raw_row_id for item in selected] == [credit_spread.row_id]
+
+
+def test_generic_mandate_only_match_stays_below_default_threshold():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    var_metric = registry.get_by_name("VaR")
+    assert var_metric is not None
+
+    candidate = build_candidates(
+        "The strategy seeks long term capital growth.",
+        [var_metric],
+    )[0]
+
+    assert candidate.deterministic_score == 0.5
+    assert candidate.matched_clauses
+    assert select_candidates([candidate]) == []
+
+
+def test_default_candidate_selection_has_no_hard_twelve_item_cap():
+    candidates = [
+        MetricCandidate(
+            raw_row_id=index,
+            metric_name=f"metric-{index}",
+            deterministic_score=2.0,
+            matched_clauses=[
+                CandidateClauseHint(
+                    clause_id=f"c{index:04d}",
+                    text=f"evidence {index}",
+                    score=2.0,
+                )
+            ],
+        )
+        for index in range(1, 21)
+    ]
+
+    assert len(select_candidates(candidates)) == 20
+    assert len(select_candidates(candidates, limit=12)) == 12
 
 
 def test_validator_rejects_renamed_or_out_of_registry_metrics():
