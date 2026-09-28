@@ -1,0 +1,11 @@
+{
+  "source_file": "AI测试样例信息.xlsx",
+  "source_sheet": "风险指标库",
+  "source_range": "A1:F35",
+  "metric_rows": 34,
+  "xlsx_sha256": "3c14c4fcb991f7d8876140cc2e95ce508b73b31092c9d7bf8e844ab2dd4e6871",
+  "runtime_snapshot": "risk_metrics.raw.csv",
+  "runtime_snapshot_sha256": "cd097edb49be7b73152292722db71d41e7f65d40444b35cd7fc3e96a071fc4d5",
+  "policy": "immutable-source-values",
+  "note": "AI测试样例信息.xlsx#风险指标库 是业务事实源。risk_metrics.raw.csv 是该 Sheet A1:F35 的逐单元格原值快照，仅用于代码仓库/CI可靠读取；不纠错、不补空值、不改名、不回写原始工作簿。"
+}

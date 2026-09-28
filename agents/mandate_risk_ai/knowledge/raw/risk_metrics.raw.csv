@@ -1,0 +1,45 @@
+风险类型一级,风险类型二级,指标名称,指标算法,Mandate字段,适用策略种类
+收益风险（6）,收益率,基金收益率,Ri=(r1+1)*(r2+1)……(rn+1)-1,achieve long term capital growth/Provide stable cash flows,权益/固收
+,,超额收益率（基准超额）,Ri- Bi,"generate a total returns in excess of the Sub-Portfolio Benchmark Index/provide total return in excess of benchmark
+",权益/固收
+,收益能力评级,Alpha,α = Ri - (Rf + beta * (Rm - Rf)),"generate a total returns in excess of the Sub-Portfolio Benchmark Index/provide total return in excess of benchmark
+",权益
+,,股息贡献率,股息收益占整体收益比重,gain stable dividend yield,权益
+,超额收益能力,Sortino索提诺,Sortino Ratio = (Rp-Rf)/Downside Volatility, Long term capital growth/Total return in excess of benchmark/Actively Managed/ Proper active management and low Tracking Error,权益
+,,信息比率,（基金收益率-基准收益率）/(跟踪误差*sqrt(实际天数) ), Long term capital growth/Total return in excess of benchmark/Actively Managed/ Proper active management and low Tracking Error,权益
+市场风险（14）,绝对指标,VaR,"历史模拟法Var = PERCENTILE(对数日收益率,1-B)
+正态分布法VAR = 波动率 * Zα * sqrt(预测天数)
+VAR金额=ABS(Var*期末市值)
+B=置信度 99% 95% 90%
+Zα=标准正态分布下置信度α对应的分位数 NORMINV(1-B,0,1)
+对数日收益率= ln(今日收盘价/昨日收盘价)
+历史法日收益率= (当天-预测天数)到当天 EXP(sum(对数日收益率))-1
+波动率=STDEV(正态分布法日收益率)
+区间日期=(结束日期-样本天数)到结束日期区间的交易日", Long term capital growth,权益
+,,最大回撤,MDD = Max[(Peak-Value)/Peak], Long term capital growth,权益
+,,波动率,σp = STDEV(ri), Long term capital growth,权益
+,相对指标,组合Beta贝塔,beta=基金收益率基准收益率协方差/基准的方差, Long term capital growth,权益
+,,下行Beta,基金收益率与基准收益率的协方差 ( 基准日收益率 < 0 ) / 基准的方差( 基准日收益率 < 0 ), Long term capital growth,权益
+,,行业偏离度,组合行业占比-基准行业占比,Comparable return against benchmark/Actively Managed/ Proper active management and low Tracking Error/Top-down,权益
+,,跟踪误差,TE=σ(Rp−Rb),Comparable return against benchmark/Actively Managed/ Proper active management and low Tracking Error,权益
+,利率风险,久期,sum(债券全价市值*久期/债券全价市值合计）,Focus on CNY denominated long-term Public Credit Securities/Optimize Duration Gap Level/Mainly focus on purchasing long-term CNY denominated Local Sovereign / Government / Government Agency (Guaranteed)/Considering the long-term downward interest rate,固收
+,,DV01,DV01 = 修正久期 × 市值 × 0.0001,Focus on CNY denominated long-term Public Credit Securities/Optimize Duration Gap Level/Mainly focus on purchasing long-term CNY denominated Local Sovereign / Government / Government Agency (Guaranteed)/Considering the long-term downward interest rate,固收
+,分红指标,股息支付率NII, NII/账面余额净值,gain stable dividend yield,权益
+,,股息增长率,股息增长率=(本期每股股息－上期每股股息)÷上期每股股息×100%,gain stable dividend yield,权益
+,,股息覆盖率,组合股息率/基准股息率,gain stable dividend yield,权益
+,集中度,境内资产占比,,Chinese Issuers/Mainland China Listed Equity market is no less than 70%. ,权益
+,,单一证券占比,单一证券/组合资产总值,mainly investing into high-quality Common Shares/Bottom-up,权益
+流动性风险（8）,流动性缓冲,可用融资余额,受托组合规模*20%-已用正回购额度,,基金层
+,变现能力,换手率(%),(期间买入金额+期间卖出金额)/平均持仓市值,Trading Strategy/Actively Managed/gain stable dividend yield/Managed in a Buy and Maintain style,权益
+,,剩余期限,sum(债券全价市值*剩余期限/债券全价市值合计）,Managed in a Buy and Maintain style,固收
+,,非标剩余期限,非标剩余期限=Σ（资产余额 × 剩余期限）÷Σ资产余额,Private Credit Investments,固收
+,,债券资产变现天数,债券持仓量/ 3个月的平均日交易量并假设30%参与率,Capital Management,固收
+,集中度,流通受限资产占比,新股、封闭式基金等具有锁定期的资产,,权益
+,,优质动性资产占比,优质流动性资产/账户规模,Capital Management,固收
+,,流动性上市权益资产占比,可在7个交易日内完成清算的上市股权类证券的市场价值（计算依据为：该证券发行人在其主要上市地证券交易所过去3个月的平均日交易量，并假设10%参与率），占基金全部上市股权类投资组合市场价值之比例,trading strategies,权益
+信用风险（6）,利差,信用利差（债券）,信用债到期收益率 - 同期限国债收益率，对每只信用债，选取同评级、同期限的国债收益率；,Reasonable credit risk exposure/add value through relative value investment,固收
+,,信用利差（非标）,非标到期收益率 - 同期限国债收益率；非标到期收益率 - 30年国债收益率,Reasonable credit risk exposure,固收
+,评级指标,加权平均信用评级,WARF = Σ(评级因子 × 权重,Reasonable credit risk exposure/Investment Grade Strategies and High Yield Strategies,固收
+,,债券AA+及以下评级占比(%),AA+及以下评级债券合计比(%), Credit Selection,固收
+,集中度,单一发行人集中度,单一发行人敞口÷总资产,Private Credit/Managed in a Buy and Maintain style/high-quality companies,固收
+,,区域分布,,,固收
