@@ -143,12 +143,12 @@ def test_default_candidate_selection_has_no_hard_twelve_item_cap():
         MetricCandidate(
             raw_row_id=index,
             metric_name=f"metric-{index}",
-            deterministic_score=2.0,
+            deterministic_score=4.0,
             matched_clauses=[
                 CandidateClauseHint(
                     clause_id=f"c{index:04d}",
                     text=f"evidence {index}",
-                    score=2.0,
+                    score=4.0,
                 )
             ],
         )
