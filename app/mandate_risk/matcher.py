@@ -143,6 +143,26 @@ def _phrase_in_text(text: str, phrase: str) -> bool:
     return phrase_norm in text
 
 
+def phrase_in_text(text: str, phrase: str) -> bool:
+    """Public normalized phrase matcher used by validator guardrails."""
+
+    return _phrase_in_text(normalize_text(text), phrase)
+
+
+def metric_concept_phrases(metric: RawRiskMetric) -> tuple[str, ...]:
+    """Return stable metric-name/alias phrases, excluding Mandate prose."""
+
+    values = [metric.metric_name, *_DERIVED_ALIASES.get(metric.metric_name, ())]
+    seen: set[str] = set()
+    result: List[str] = []
+    for value in values:
+        normalized = normalize_text(value)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(value)
+    return tuple(result)
+
+
 def _alias_hits(clause_norm: str, metric: RawRiskMetric) -> List[str]:
     hits: List[str] = []
     for alias in _DERIVED_ALIASES.get(metric.metric_name, (metric.metric_name,)):
@@ -217,6 +237,8 @@ def _score_primary_clause(clause: DocumentClause, metric: RawRiskMetric) -> tupl
 def _candidate_from_scored_clauses(
     metric: RawRiskMetric,
     scored: List[tuple[float, DocumentClause, List[str]]],
+    *,
+    recall_source: str = "primary",
 ) -> MetricCandidate:
     scored.sort(key=lambda item: (-item[0], item[1].clause_id))
     best_score = scored[0][0] if scored else 0.0
@@ -243,6 +265,7 @@ def _candidate_from_scored_clauses(
         deterministic_score=round(best_score, 4),
         exact_hits=hits[:5],
         matched_clauses=hints,
+        recall_source=recall_source,
     )
 
 
@@ -253,7 +276,7 @@ def score_metric(document_text: str, metric: RawRiskMetric) -> MetricCandidate:
         score, hits = _score_primary_clause(clause, metric)
         if score > 0:
             scored.append((score, clause, hits))
-    return _candidate_from_scored_clauses(metric, scored)
+    return _candidate_from_scored_clauses(metric, scored, recall_source="primary")
 
 
 def build_candidates(document_text: str, metrics: Iterable[RawRiskMetric]) -> List[MetricCandidate]:
@@ -308,7 +331,13 @@ def build_mandate_recall_candidates(
                 continue
             fragment, score = max(fragment_results, key=lambda item: item[1])
             scored.append((score, clause, [fragment]))
-        result.append(_candidate_from_scored_clauses(metric, scored))
+        result.append(
+            _candidate_from_scored_clauses(
+                metric,
+                scored,
+                recall_source="mandate_fallback",
+            )
+        )
 
     return sorted(result, key=lambda item: (-item.deterministic_score, item.raw_row_id))
 
