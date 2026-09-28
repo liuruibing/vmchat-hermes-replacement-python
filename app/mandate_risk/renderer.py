@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import List
+import re
+from typing import Iterable, List
 
 from app.mandate_risk.models import MetricMatch, RiskAnalysisResult
 from app.mandate_risk.registry import RawRiskMetricRegistry
@@ -8,6 +9,67 @@ from app.mandate_risk.registry import RawRiskMetricRegistry
 
 def _clean(value: str) -> str:
     return str(value or "").strip()
+
+
+def _md_cell(value: str) -> str:
+    """Escape free text for a GitHub-flavoured Markdown table cell."""
+
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text.replace("|", "\\|") or "—"
+
+
+def _page_label(match: MetricMatch) -> str:
+    pages = sorted({item.page for item in match.evidence if item.page is not None})
+    if not pages:
+        return "—"
+    return ", ".join(str(page) for page in pages)
+
+
+def _summary_rows(
+    matches: Iterable[MetricMatch],
+    registry: RawRiskMetricRegistry,
+    *,
+    group: str,
+) -> List[str]:
+    rows: List[str] = []
+    for match in matches:
+        metric = registry.require(match.raw_row_id)
+        classification = " / ".join(
+            item
+            for item in [metric.effective_risk_type_1, metric.effective_risk_type_2]
+            if item
+        ) or "未填写"
+        interpretation = match.reason or metric.mandate or "—"
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _md_cell(group),
+                    _md_cell(metric.metric_name),
+                    _md_cell(interpretation),
+                    _md_cell(classification),
+                    _md_cell(match.match_level),
+                    _md_cell(_page_label(match)),
+                    f"{match.confidence:.0%}",
+                ]
+            )
+            + " |"
+        )
+    return rows
+
+
+def _render_summary_table(result: RiskAnalysisResult, registry: RawRiskMetricRegistry) -> List[str]:
+    matches = list(result.selected_metrics) + list(result.review_metrics)
+    if not matches:
+        return ["暂无可展示的匹配指标。"]
+
+    lines = [
+        "| 分组 | 名称 | Mandate解读 | 风险分类 | 匹配级别 | 页码 | 置信度 |",
+        "| --- | --- | --- | --- | --- | ---: | ---: |",
+    ]
+    lines.extend(_summary_rows(result.selected_metrics, registry, group="建议"))
+    lines.extend(_summary_rows(result.review_metrics, registry, group="待确认"))
+    return lines
 
 
 def _render_match(match: MetricMatch, registry: RawRiskMetricRegistry, index: int) -> List[str]:
@@ -45,6 +107,9 @@ def render_markdown(result: RiskAnalysisResult, registry: RawRiskMetricRegistry)
     if result.summary:
         lines.extend(["", f"> {result.summary}"])
 
+    lines.extend(["", "## 匹配摘要", ""])
+    lines.extend(_render_summary_table(result, registry))
+
     lines.extend(["", "## 建议匹配指标", ""])
     if not result.selected_metrics:
         lines.append("未找到达到 DIRECT / STRONG_INFERRED 的指标。")
@@ -78,6 +143,7 @@ def render_markdown(result: RiskAnalysisResult, registry: RawRiskMetricRegistry)
         "",
         "- 正式指标名称、算法、Mandate字段、适用策略种类均来自原始风险指标库；系统不会修改或补写原始库。",
         "- AI 不允许创建正式指标；库内无等价指标时只会进入“指标库缺口”。",
+        "- 表格中的“Mandate解读”来自经 Python 校验后的 AI 匹配理由；页码来自 Python 文档解析，不采用模型自报页码。",
         "- 本报告不自动生成 green / amber / red 阈值。",
     ])
     return "\n".join(lines).strip() + "\n"
