@@ -40,11 +40,9 @@ def _canonical_evidence(
     if isinstance(raw_quote, str):
         text = raw_quote
         clause_id = None
-        page = None
     elif isinstance(raw_quote, dict):
         text = str(raw_quote.get("text") or "")
         clause_id = str(raw_quote.get("clause_id") or "").strip() or None
-        page = raw_quote.get("page")
     else:
         return None
 
@@ -66,9 +64,12 @@ def _canonical_evidence(
     if allowed_clause_ids is not None and clause_id not in allowed_clause_ids:
         return None
 
+    # Page provenance is owned by Python's document runtime / clause splitter.
+    # Any page number supplied by the model is ignored so an otherwise valid
+    # quote cannot invent or alter its PDF location.
     return EvidenceQuote(
         text=clause.text,
-        page=page,
+        page=clause.page,
         clause_id=clause.clause_id,
         source_start=clause.source_start,
         source_end=clause.source_end,
