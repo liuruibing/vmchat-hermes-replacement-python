@@ -132,11 +132,15 @@ def _alias_hits(clause_norm: str, metric: RawRiskMetric) -> List[str]:
 
 
 def _fragment_score(clause_norm: str, fragment: str) -> float:
-    if fragment in _GENERIC_MANDATE:
-        return 0.5 if fragment in clause_norm else 0.0
+    frag_words = _english_words(fragment)
+    has_cjk = bool(re.search(r"[\u3400-\u9fff]", fragment))
+    # Slash-separated business metadata can contain low-information list items
+    # such as "Government". Treat generic phrases and single Latin words as weak
+    # evidence so they cannot independently cross the default recall threshold.
+    if fragment in _GENERIC_MANDATE or (not has_cjk and len(frag_words) <= 1):
+        return 0.5 if _phrase_in_text(clause_norm, fragment) else 0.0
     if fragment in clause_norm:
         return 4.0
-    frag_words = _english_words(fragment)
     if not frag_words:
         return 0.0
     clause_words = _english_words(clause_norm)
@@ -165,9 +169,9 @@ def _score_clause(clause: DocumentClause, metric: RawRiskMetric) -> tuple[float,
     # Non-generic Mandate text is a first-class recall source. The metric
     # library is the business source of truth, so a document clause that closely
     # matches a metric's own Mandate field must be allowed into semantic review
-    # even when it does not literally contain the metric name. Broad Mandate
-    # phrases remain deliberately weak (0.5) and are filtered by the default
-    # candidate threshold below.
+    # even when it does not literally contain the metric name. Broad/low-value
+    # Mandate phrases remain weak (0.5) and are filtered by the default candidate
+    # threshold below.
     fragment_results = [
         (fragment, _fragment_score(text, fragment))
         for fragment in _mandate_fragments(metric.mandate)
@@ -236,10 +240,10 @@ def select_candidates(
 
     Recall is intentionally favored over early precision because the validator
     can reject unsupported model choices but cannot recover a metric that Python
-    removed before semantic review. Generic Mandate-only matches score 0.5 and
-    therefore stay out by default. With the current 34-row authoritative library
-    there is no default hard candidate cap; callers may still provide ``limit``
-    if the library grows materially in the future.
+    removed before semantic review. Generic/low-information Mandate-only matches
+    score 0.5 and therefore stay out by default. With the current 34-row
+    authoritative library there is no default hard candidate cap; callers may
+    still provide ``limit`` if the library grows materially in the future.
     """
 
     selected = [item for item in candidates if item.deterministic_score >= min_score and item.matched_clauses]
