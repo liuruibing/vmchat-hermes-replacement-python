@@ -6,11 +6,16 @@ from typing import List
 from pydantic import BaseModel
 
 
+_PAGE_MARKER_RE = re.compile(r"(?m)^\[Page ([1-9]\d*)\][ \t]*(?:\r?\n|$)")
+_SENTENCE_END_RE = re.compile(r"[.!?。！？；;](?=\s|$)")
+
+
 class DocumentClause(BaseModel):
     clause_id: str
     text: str
     source_start: int = 0
     source_end: int = 0
+    page: int | None = None
 
 
 def _append_clause(
@@ -18,6 +23,8 @@ def _append_clause(
     source: str,
     start: int,
     end: int,
+    *,
+    page: int | None = None,
 ) -> None:
     """Append one exact source span after trimming only outer whitespace."""
 
@@ -33,8 +40,25 @@ def _append_clause(
             text=source[start:end],
             source_start=start,
             source_end=end,
+            page=page,
         )
     )
+
+
+def _split_span(
+    clauses: List[DocumentClause],
+    source: str,
+    start: int,
+    end: int,
+    *,
+    page: int | None,
+) -> None:
+    cursor = start
+    for match in _SENTENCE_END_RE.finditer(source, start, end):
+        clause_end = match.end()
+        _append_clause(clauses, source, cursor, clause_end, page=page)
+        cursor = clause_end
+    _append_clause(clauses, source, cursor, end, page=page)
 
 
 def split_document_clauses(document_text: str) -> List[DocumentClause]:
@@ -43,24 +67,32 @@ def split_document_clauses(document_text: str) -> List[DocumentClause]:
     PDF text extraction commonly inserts a newline at every visual line wrap. A
     single newline therefore must *not* be treated as a semantic boundary. We
     split at explicit sentence punctuation and preserve the exact source span,
-    including any soft line breaks inside the sentence. This lets matching use
-    whitespace-normalized text while validators/renderers can still point back
-    to verbatim source text.
+    including any soft line breaks inside the sentence.
+
+    ``PdfDocumentParser`` serializes pages into the canonical ``[Page N]`` text
+    form. When those markers are present, they are treated as provenance
+    boundaries rather than document content: clauses inherit the Python-derived
+    page number and never include a page marker or spill across pages. Legacy
+    plain-text input without markers keeps the previous behavior with ``page``
+    left unset.
     """
 
     source = str(document_text or "")
     clauses: List[DocumentClause] = []
-    start = 0
+    page_markers = list(_PAGE_MARKER_RE.finditer(source))
 
-    # A sentence terminator is a reliable boundary even when the following
-    # whitespace contains one or more PDF line wraps.
-    for match in re.finditer(r"[.!?。！？；;](?=\s|$)", source):
-        end = match.end()
-        _append_clause(clauses, source, start, end)
-        start = end
+    if page_markers:
+        prefix_end = page_markers[0].start()
+        if source[:prefix_end].strip():
+            _split_span(clauses, source, 0, prefix_end, page=None)
 
-    # Keep any trailing heading/text that has no terminal punctuation.
-    _append_clause(clauses, source, start, len(source))
+        for index, marker in enumerate(page_markers):
+            page = int(marker.group(1))
+            start = marker.end()
+            end = page_markers[index + 1].start() if index + 1 < len(page_markers) else len(source)
+            _split_span(clauses, source, start, end, page=page)
+    else:
+        _split_span(clauses, source, 0, len(source), page=None)
 
     if not clauses and source.strip():
         left = len(source) - len(source.lstrip())
@@ -71,6 +103,7 @@ def split_document_clauses(document_text: str) -> List[DocumentClause]:
                 text=source[left:right],
                 source_start=left,
                 source_end=right,
+                page=None,
             )
         )
     return clauses
