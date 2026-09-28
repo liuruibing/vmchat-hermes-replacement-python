@@ -4,16 +4,19 @@
     <!--    websocket组件-->
     <!--    <websocket/>-->
     <router-view v-if="isRouterAlive"/>
+    <VmChatDocumentUploader v-if="isVmChatRoute" />
   </div>
 </template>
 
 <script>
 // import websocket from './components/websocket/websocket'
 import changeTheme from './utils/theme'
+import VmChatDocumentUploader from './components/VmChatDocumentUploader.vue'
 
 export default {
   name: 'App',
   components: {
+    VmChatDocumentUploader
     // websocket
   },
   provide() {
@@ -36,6 +39,12 @@ export default {
         // 背景图片位置
         backgroundPosition: 'center top'
       }
+    }
+  },
+  computed: {
+    isVmChatRoute() {
+      const path = this.$route && this.$route.path
+      return /^\/vmChat(?:\/|$)/i.test(String(path || ''))
     }
   },
   watch: {
