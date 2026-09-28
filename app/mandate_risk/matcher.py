@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Iterable, List, Set, Tuple
+from typing import Iterable, List, Tuple
 
 from app.mandate_risk.clauses import DocumentClause, split_document_clauses
 from app.mandate_risk.models import CandidateClauseHint, MetricCandidate, RawRiskMetric
@@ -122,10 +122,8 @@ def _is_specific_mandate_fragment(fragment: str) -> bool:
     if len(words) <= 1:
         return False
 
-    # Treat a generic phrase plus at most one low-information modifier as still
-    # generic (for example "achieve long term capital growth"). A fragment that
-    # adds several concrete terms (for example "proper active management and low
-    # tracking error") remains specific.
+    # A generic phrase plus at most one modifier is still generic. Fragments
+    # that add several concrete terms remain eligible as recall evidence.
     for generic in _GENERIC_MANDATE:
         if generic in fragment:
             residual = normalize_text(fragment.replace(generic, " "))
@@ -138,10 +136,8 @@ def _phrase_in_text(text: str, phrase: str) -> bool:
     phrase_norm = normalize_text(phrase)
     if not phrase_norm:
         return False
-    # A single Latin token must match a complete token. This is intentionally
-    # generic rather than metric-specific: VaR must not match "varied", Beta
-    # must not match a longer identifier, and future Latin metric names receive
-    # the same boundary semantics.
+    # Any single Latin token uses token boundaries. This fixes substring false
+    # positives generically (for example VaR must not match "varied").
     if re.fullmatch(r"[a-z0-9+.-]+", phrase_norm):
         return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase_norm)}(?![a-z0-9])", text))
     return phrase_norm in text
@@ -165,9 +161,8 @@ def _fragment_score(clause_norm: str, fragment: str) -> float:
         return 0.0
     clause_words = _english_words(clause_norm)
     overlap = len(clause_words & frag_words) / max(1, len(frag_words))
-    # Full lexical coverage of a distinctive authoritative Mandate fragment is
-    # strong recall evidence even when the document inserts extra words or
-    # changes word order around it.
+    # Full lexical coverage of an authoritative phrase is strong recall evidence
+    # even when extra words are inserted in the document sentence.
     if overlap >= 1.0:
         return 4.0
     if overlap >= 0.8:
@@ -177,12 +172,9 @@ def _fragment_score(clause_norm: str, fragment: str) -> float:
     return 0.0
 
 
-def _score_clause(
-    clause: DocumentClause,
-    metric: RawRiskMetric,
-    *,
-    independent_mandate_fragments: Set[str] | None = None,
-) -> tuple[float, List[str]]:
+def _score_primary_clause(clause: DocumentClause, metric: RawRiskMetric) -> tuple[float, List[str]]:
+    """High-precision candidate scoring used by the original matcher."""
+
     text = normalize_text(clause.text)
     score = 0.0
     hits: List[str] = []
@@ -205,47 +197,28 @@ def _score_clause(
         hits.append(metric.algorithm)
         concept_hit = True
 
-    # Shared Mandate language is supporting evidence only. A Mandate fragment
-    # may independently recall a metric only when that fragment is specific and
-    # unique among the currently eligible metric set. This preserves recall for
-    # distinctive business requirements without letting one shared sentence
-    # pull in every metric that happens to carry the same Mandate wording.
-    fragments = list(_mandate_fragments(metric.mandate))
-    if not concept_hit:
-        independent = independent_mandate_fragments or set()
-        fragments = [fragment for fragment in fragments if fragment in independent]
-
-    fragment_results = [
-        (fragment, _fragment_score(text, fragment))
-        for fragment in fragments
-    ]
-    fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
-    if fragment_results:
-        fragment, value = max(fragment_results, key=lambda item: item[1])
-        score += value
-        hits.append(fragment)
+    # Preserve the original precision rule: Mandate text can strengthen an
+    # existing concept hit, but shared business wording cannot create a primary
+    # candidate by itself.
+    if concept_hit:
+        fragment_results = [
+            (fragment, _fragment_score(text, fragment))
+            for fragment in _mandate_fragments(metric.mandate)
+        ]
+        fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
+        if fragment_results:
+            fragment, value = max(fragment_results, key=lambda item: item[1])
+            score += value
+            hits.append(fragment)
 
     return score, hits
 
 
-def score_metric(
-    document_text: str,
+def _candidate_from_scored_clauses(
     metric: RawRiskMetric,
-    *,
-    independent_mandate_fragments: Set[str] | None = None,
+    scored: List[tuple[float, DocumentClause, List[str]]],
 ) -> MetricCandidate:
-    clauses = split_document_clauses(document_text)
-    scored: List[tuple[float, DocumentClause, List[str]]] = []
-    for clause in clauses:
-        score, hits = _score_clause(
-            clause,
-            metric,
-            independent_mandate_fragments=independent_mandate_fragments,
-        )
-        if score > 0:
-            scored.append((score, clause, hits))
     scored.sort(key=lambda item: (-item[0], item[1].clause_id))
-
     best_score = scored[0][0] if scored else 0.0
     hits: List[str] = []
     hints: List[CandidateClauseHint] = []
@@ -273,8 +246,37 @@ def score_metric(
     )
 
 
+def score_metric(document_text: str, metric: RawRiskMetric) -> MetricCandidate:
+    clauses = split_document_clauses(document_text)
+    scored: List[tuple[float, DocumentClause, List[str]]] = []
+    for clause in clauses:
+        score, hits = _score_primary_clause(clause, metric)
+        if score > 0:
+            scored.append((score, clause, hits))
+    return _candidate_from_scored_clauses(metric, scored)
+
+
 def build_candidates(document_text: str, metrics: Iterable[RawRiskMetric]) -> List[MetricCandidate]:
+    """Build the high-precision primary candidate set."""
+
+    candidates = [score_metric(document_text, metric) for metric in metrics]
+    return sorted(candidates, key=lambda item: (-item.deterministic_score, item.raw_row_id))
+
+
+def build_mandate_recall_candidates(
+    document_text: str,
+    metrics: Iterable[RawRiskMetric],
+) -> List[MetricCandidate]:
+    """Build a secondary high-recall pool from distinctive Mandate metadata.
+
+    Only specific Mandate fragments that occur on exactly one currently eligible
+    metric may independently recall a metric. Shared or generic fragments remain
+    excluded from this fallback pool. The LLM still has to judge these candidates
+    and Python validation still enforces the authoritative row and evidence.
+    """
+
     metric_list = list(metrics)
+    clauses = split_document_clauses(document_text)
     fragments_by_row: dict[int, set[str]] = {}
     fragment_counts: Counter[str] = Counter()
 
@@ -287,19 +289,28 @@ def build_candidates(document_text: str, metrics: Iterable[RawRiskMetric]) -> Li
         fragments_by_row[metric.row_id] = fragments
         fragment_counts.update(fragments)
 
-    candidates = [
-        score_metric(
-            document_text,
-            metric,
-            independent_mandate_fragments={
-                fragment
-                for fragment in fragments_by_row.get(metric.row_id, set())
-                if fragment_counts[fragment] == 1
-            },
-        )
-        for metric in metric_list
-    ]
-    return sorted(candidates, key=lambda item: (-item.deterministic_score, item.raw_row_id))
+    result: List[MetricCandidate] = []
+    for metric in metric_list:
+        independent = {
+            fragment
+            for fragment in fragments_by_row.get(metric.row_id, set())
+            if fragment_counts[fragment] == 1
+        }
+        scored: List[tuple[float, DocumentClause, List[str]]] = []
+        for clause in clauses:
+            text = normalize_text(clause.text)
+            fragment_results = [
+                (fragment, _fragment_score(text, fragment))
+                for fragment in independent
+            ]
+            fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
+            if not fragment_results:
+                continue
+            fragment, score = max(fragment_results, key=lambda item: item[1])
+            scored.append((score, clause, [fragment]))
+        result.append(_candidate_from_scored_clauses(metric, scored))
+
+    return sorted(result, key=lambda item: (-item.deterministic_score, item.raw_row_id))
 
 
 def select_candidates(
@@ -308,18 +319,24 @@ def select_candidates(
     min_score: float = 4.0,
     limit: int | None = None,
 ) -> List[MetricCandidate]:
-    """Return evidence-backed candidates for the LLM semantic judge.
-
-    Python remains a high-recall gate, but shared/generic Mandate language alone
-    cannot create a candidate. Distinctive authoritative Mandate fragments can
-    recall a metric even without its literal name, while the LLM and validator
-    remain responsible for semantic precision and final enforcement. There is no
-    default hard candidate cap for the current 34-row library; callers may set
-    ``limit`` if the library grows materially in the future.
-    """
+    """Return evidence-backed candidates above the deterministic threshold."""
 
     selected = [item for item in candidates if item.deterministic_score >= min_score and item.matched_clauses]
     selected.sort(key=lambda item: (-item.deterministic_score, item.raw_row_id))
     if limit is None:
         return selected
     return selected[: max(1, int(limit))]
+
+
+def merge_candidate_sets(
+    primary: Iterable[MetricCandidate],
+    fallback: Iterable[MetricCandidate],
+) -> List[MetricCandidate]:
+    """Merge candidate pools by row id, preferring the primary candidate."""
+
+    merged: dict[int, MetricCandidate] = {}
+    for item in primary:
+        merged[item.raw_row_id] = item
+    for item in fallback:
+        merged.setdefault(item.raw_row_id, item)
+    return sorted(merged.values(), key=lambda item: (-item.deterministic_score, item.raw_row_id))
