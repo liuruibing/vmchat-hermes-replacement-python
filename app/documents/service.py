@@ -12,7 +12,11 @@ from typing import Any
 from app.documents.models import DocumentRecord, ParsedDocument
 
 
-PDF_MIME_TYPES = {"application/pdf", "application/x-pdf", ""}
+# Browsers normally send application/pdf, but some environments upload an
+# otherwise valid PDF as application/octet-stream (or omit Content-Type).  The
+# service still verifies both the .pdf filename and the %PDF- file signature,
+# so accepting these transport-level MIME variants does not weaken type checks.
+PDF_MIME_TYPES = {"application/pdf", "application/x-pdf", "application/octet-stream", ""}
 
 
 class DocumentService:
