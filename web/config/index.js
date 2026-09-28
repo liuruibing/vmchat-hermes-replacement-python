@@ -18,7 +18,7 @@ module.exports = {
         }
       },
       '/hermes-api': {
-        target: process.env.HERMES_BACKEND_URL || 'https://basename-photographic-duck-share.trycloudflare.com',
+        target: process.env.HERMES_BACKEND_URL || 'https://making-detection-relevant-ethical.trycloudflare.com',
         changeOrigin: true,
         onProxyReq(proxyReq) {
           proxyReq.removeHeader('origin')
