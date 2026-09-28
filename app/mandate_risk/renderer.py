@@ -18,39 +18,32 @@ def _md_cell(value: str) -> str:
     return text.replace("|", "\\|") or "—"
 
 
-def _page_label(match: MetricMatch) -> str:
-    pages = sorted({item.page for item in match.evidence if item.page is not None})
-    if not pages:
-        return "—"
-    return ", ".join(str(page) for page in pages)
-
-
 def _summary_rows(
     matches: Iterable[MetricMatch],
     registry: RawRiskMetricRegistry,
-    *,
-    group: str,
 ) -> List[str]:
+    """Render rows using the fixed six-column UI contract.
+
+    Only fields currently backed by the mandate-risk result are populated.
+    Group/value/reference-portfolio/similarity deliberately stay as em dashes
+    until those concepts have authoritative upstream data. The renderer must not
+    invent them merely for presentation.
+    """
+
     rows: List[str] = []
     for match in matches:
         metric = registry.require(match.raw_row_id)
-        classification = " / ".join(
-            item
-            for item in [metric.effective_risk_type_1, metric.effective_risk_type_2]
-            if item
-        ) or "未填写"
         interpretation = match.reason or metric.mandate or "—"
         rows.append(
             "| "
             + " | ".join(
                 [
-                    _md_cell(group),
+                    "—",
                     _md_cell(metric.metric_name),
                     _md_cell(interpretation),
-                    _md_cell(classification),
-                    _md_cell(match.match_level),
-                    _md_cell(_page_label(match)),
-                    f"{match.confidence:.0%}",
+                    "—",
+                    "—",
+                    "—",
                 ]
             )
             + " |"
@@ -64,11 +57,11 @@ def _render_summary_table(result: RiskAnalysisResult, registry: RawRiskMetricReg
         return ["暂无可展示的匹配指标。"]
 
     lines = [
-        "| 分组 | 名称 | Mandate解读 | 风险分类 | 匹配级别 | 页码 | 置信度 |",
-        "| --- | --- | --- | --- | --- | ---: | ---: |",
+        "|  | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
-    lines.extend(_summary_rows(result.selected_metrics, registry, group="建议"))
-    lines.extend(_summary_rows(result.review_metrics, registry, group="待确认"))
+    lines.extend(_summary_rows(result.selected_metrics, registry))
+    lines.extend(_summary_rows(result.review_metrics, registry))
     return lines
 
 
@@ -143,7 +136,7 @@ def render_markdown(result: RiskAnalysisResult, registry: RawRiskMetricRegistry)
         "",
         "- 正式指标名称、算法、Mandate字段、适用策略种类均来自原始风险指标库；系统不会修改或补写原始库。",
         "- AI 不允许创建正式指标；库内无等价指标时只会进入“指标库缺口”。",
-        "- 表格中的“Mandate解读”来自经 Python 校验后的 AI 匹配理由；页码来自 Python 文档解析，不采用模型自报页码。",
+        "- 摘要表固定使用“分组 / 名称 / Mandate解读 / 值 / 参考组合 / 相似度”六列；当前没有权威数据来源的列统一显示为“—”。",
         "- 本报告不自动生成 green / amber / red 阈值。",
     ])
     return "\n".join(lines).strip() + "\n"
