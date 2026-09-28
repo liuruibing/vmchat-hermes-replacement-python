@@ -210,10 +210,11 @@ class LangChainVmChatProvider(VmChatModelProvider):
         )
 
     def build_model(self) -> Any:
+        retries = int(os.getenv("LLM_NETWORK_RETRIES", "3"))
         kwargs: Dict[str, Any] = {
             "model": self.model_name,
             "temperature": 0,
-            "max_retries": 0,
+            "max_retries": retries,
             "timeout": 120,
         }
         if self.base_url:
