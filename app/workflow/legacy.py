@@ -56,6 +56,7 @@ def build_default_workflow_registry(
 ):
     from app.workflow.registry import WorkflowRegistry
 
+    from app.workflow.graphs.mandate_risk import MandateRiskLangGraphWorkflow
     from app.workflow.graphs.performance_report import PerformanceReportLangGraphWorkflow
     from app.workflow.graphs.simple_chat import SimpleChatLangGraphWorkflow
 
@@ -63,5 +64,6 @@ def build_default_workflow_registry(
         [
             SimpleChatLangGraphWorkflow(),
             PerformanceReportLangGraphWorkflow(),
+            MandateRiskLangGraphWorkflow(),
         ]
     )
