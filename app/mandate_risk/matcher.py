@@ -213,6 +213,7 @@ def score_metric(document_text: str, metric: RawRiskMetric) -> MetricCandidate:
                 score=round(score, 4),
                 source_start=clause.source_start,
                 source_end=clause.source_end,
+                page=clause.page,
             )
         )
 
