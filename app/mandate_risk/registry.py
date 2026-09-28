@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import re
 import zipfile
@@ -112,8 +113,57 @@ def _read_sheet_values(path: Path, sheet_name: str) -> List[List[str]]:
         return [rows.get(index, [""] * 6) for index in range(1, max_row + 1)]
 
 
+def _read_csv_values(path: Path) -> List[List[str]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return [[_text(cell) for cell in row] for row in csv.reader(handle)]
+
+
+def _build_rows(values: List[List[str]]) -> List[RawRiskMetric]:
+    if not values:
+        raise ValueError("EMPTY_RISK_METRIC_SOURCE")
+    headers = values[0]
+    if headers != EXPECTED_HEADERS:
+        raise ValueError("INVALID_RISK_METRIC_HEADERS: " + ",".join(headers))
+
+    result: List[RawRiskMetric] = []
+    last_type_1 = ""
+    last_type_2 = ""
+    for source_row, raw_values in enumerate(values[1:], start=2):
+        padded = list(raw_values[:6]) + [""] * max(0, 6 - len(raw_values))
+        raw_type_1, raw_type_2, metric_name, algorithm, mandate, strategy_type = [
+            _text(value) for value in padded[:6]
+        ]
+        if raw_type_1:
+            last_type_1 = raw_type_1
+        if raw_type_2:
+            last_type_2 = raw_type_2
+        if not metric_name:
+            continue
+        result.append(
+            RawRiskMetric(
+                row_id=source_row,
+                source_row=source_row,
+                raw_risk_type_1=raw_type_1,
+                raw_risk_type_2=raw_type_2,
+                metric_name=metric_name,
+                algorithm=algorithm,
+                mandate=mandate,
+                strategy_type=strategy_type,
+                effective_risk_type_1=last_type_1,
+                effective_risk_type_2=last_type_2,
+            )
+        )
+    return result
+
+
 class RawRiskMetricRegistry:
-    """Read-only registry backed directly by the authoritative XLSX sheet."""
+    """Read-only registry backed by an immutable snapshot of the authoritative sheet.
+
+    The source workbook remains the business source of truth. The repository ships an
+    exact UTF-8 CSV snapshot of ``AI测试样例信息.xlsx#风险指标库`` so CI/deployments can
+    read source cell values without rewriting, correcting or forward-filling them.
+    Derived effective group labels live in separate fields only.
+    """
 
     def __init__(
         self,
@@ -142,46 +192,40 @@ class RawRiskMetricRegistry:
     ) -> "RawRiskMetricRegistry":
         source = Path(path)
         source_bytes = source.read_bytes()
-        rows = _read_sheet_values(source, sheet_name)
-        if not rows:
-            raise ValueError("EMPTY_RISK_METRIC_SHEET")
-        headers = rows[0]
-        if headers != EXPECTED_HEADERS:
-            raise ValueError("INVALID_RISK_METRIC_HEADERS: " + ",".join(headers))
-
-        result: List[RawRiskMetric] = []
-        last_type_1 = ""
-        last_type_2 = ""
-        for source_row, values in enumerate(rows[1:], start=2):
-            raw_type_1, raw_type_2, metric_name, algorithm, mandate, strategy_type = [
-                _text(value) for value in values
-            ]
-            if raw_type_1:
-                last_type_1 = raw_type_1
-            if raw_type_2:
-                last_type_2 = raw_type_2
-            if not metric_name:
-                continue
-            result.append(
-                RawRiskMetric(
-                    row_id=source_row,
-                    source_row=source_row,
-                    raw_risk_type_1=raw_type_1,
-                    raw_risk_type_2=raw_type_2,
-                    metric_name=metric_name,
-                    algorithm=algorithm,
-                    mandate=mandate,
-                    strategy_type=strategy_type,
-                    effective_risk_type_1=last_type_1,
-                    effective_risk_type_2=last_type_2,
-                )
-            )
         return cls(
-            result,
+            _build_rows(_read_sheet_values(source, sheet_name)),
             source_path=str(source),
             source_sha256=hashlib.sha256(source_bytes).hexdigest(),
             source_sheet=sheet_name,
         )
+
+    @classmethod
+    def from_csv(
+        cls,
+        path: str | Path,
+        sheet_name: str = "风险指标库",
+    ) -> "RawRiskMetricRegistry":
+        source = Path(path)
+        source_bytes = source.read_bytes()
+        return cls(
+            _build_rows(_read_csv_values(source)),
+            source_path=str(source),
+            source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+            source_sheet=sheet_name,
+        )
+
+    @classmethod
+    def from_path(
+        cls,
+        path: str | Path,
+        sheet_name: str = "风险指标库",
+    ) -> "RawRiskMetricRegistry":
+        source = Path(path)
+        if source.suffix.lower() == ".xlsx":
+            return cls.from_xlsx(source, sheet_name)
+        if source.suffix.lower() == ".csv":
+            return cls.from_csv(source, sheet_name)
+        raise ValueError(f"UNSUPPORTED_RISK_METRIC_SOURCE: {source.suffix}")
 
     def all(self) -> List[RawRiskMetric]:
         return list(self._rows)
