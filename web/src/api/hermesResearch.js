@@ -1,16 +1,4 @@
 import axios from 'axios'
-import {
-  clearPendingHermesDocument,
-  getPendingHermesDocument,
-  getPendingHermesDocumentIds,
-  setPendingHermesDocument
-} from '@/views/vmChat/vm-document-state'
-
-export {
-  clearPendingHermesDocument,
-  getPendingHermesDocument,
-  setPendingHermesDocument
-}
 
 export const HERMES_BASE_URL_STORAGE_KEY = 'fof-research-hermes-base-url'
 export const HERMES_API_KEY_STORAGE_KEY = 'fof-research-hermes-api-key'
@@ -184,27 +172,6 @@ function get(path) {
   })
 }
 
-export function uploadHermesDocument(file) {
-  if (!file) {
-    return Promise.reject(new Error('请选择 PDF 文件'))
-  }
-  const formData = new FormData()
-  formData.append('file', file)
-  return post('/v1/documents', formData).then(payload => {
-    const document = payload && payload.document ? payload.document : payload
-    if (!document || !(document.document_id || document.documentId)) {
-      throw new Error('PDF 上传成功但响应缺少 document_id')
-    }
-    return setPendingHermesDocument(document)
-  })
-}
-
-export function fetchHermesDocument(documentId) {
-  const normalizedId = String(documentId || '').trim()
-  if (!normalizedId) return Promise.reject(new Error('documentId 不能为空'))
-  return get('/v1/documents/' + encodeURIComponent(normalizedId))
-}
-
 export function fetchHermesPayload(payloadId) {
   const normalizedPayloadId = String(payloadId || '').trim()
   if (!normalizedPayloadId) {
@@ -297,20 +264,6 @@ function splitRunMessages(messages) {
   }
 }
 
-function normalizeRunDocumentIds(options) {
-  const explicitDocuments = Array.isArray(options && options.documents) ? options.documents : []
-  const source = explicitDocuments.length ? explicitDocuments : getPendingHermesDocumentIds()
-  const result = []
-  source.forEach(item => {
-    const value = typeof item === 'string'
-      ? item
-      : item && (item.document_id || item.documentId)
-    const id = String(value || '').trim()
-    if (id && result.indexOf(id) === -1) result.push(id)
-  })
-  return result
-}
-
 export function createHermesRun(messages, options) {
   const sessionId = options && options.sessionId
   const model = (options && options.model) || 'hermes-agent'
@@ -319,9 +272,6 @@ export function createHermesRun(messages, options) {
   const context = options && options.context && typeof options.context === 'object'
     ? options.context
     : null
-  const documentIds = normalizeRunDocumentIds(options)
-  const agentId = String((options && (options.agentId || options.agent_id)) || (documentIds.length ? 'mandate-risk-ai' : '')).trim()
-  const roleId = String((options && (options.roleId || options.role_id)) || (documentIds.length ? 'risk-analyst' : '')).trim()
   const splitMessages = splitRunMessages(messages)
   const payload = {
     model: model,
@@ -332,9 +282,6 @@ export function createHermesRun(messages, options) {
   if (skills.length) payload.skills = skills
   if (tools.length) payload.tools = tools
   if (context) payload.context = context
-  if (documentIds.length) payload.documents = documentIds
-  if (agentId) payload.agent_id = agentId
-  if (roleId) payload.role_id = roleId
   return post('/v1/runs', payload, {
     'Content-Type': 'application/json;charset=UTF-8'
   })
