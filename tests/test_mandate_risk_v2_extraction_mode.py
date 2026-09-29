@@ -40,7 +40,7 @@ def test_long_mandate_falls_back_to_overlapping_windows():
     assert windows[0][-1].clause_id == windows[1][1].clause_id
 
 
-def test_character_limit_can_force_chunking_even_with_few_clauses():
+def test_character_limit_can_force_chunking():
     clauses = split_document_clauses(
         "[Page 1]\n" + ("The portfolio shall maintain prudent liquidity. " * 100)
     )
@@ -48,9 +48,10 @@ def test_character_limit_can_force_chunking_even_with_few_clauses():
         clauses,
         batch_size=4,
         overlap=1,
-        full_document_max_clauses=20,
+        full_document_max_clauses=200,
         full_document_max_chars=100,
     )
 
-    assert mode == "chunked"
-    assert len(windows) == 1  # one oversized clause cannot be split without corrupting provenance
+    assert len(clauses) <= 200  # clause count alone would permit a full-document read
+    assert mode == "chunked"    # character limit independently forces the fallback
+    assert len(windows) > 1
