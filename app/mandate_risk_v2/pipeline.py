@@ -35,9 +35,15 @@ class RequirementCoverageIncomplete(RuntimeError):
         self.review = review
         missing = ", ".join(item.clause_id for item in review.missing_clauses) or "none"
         partial = ", ".join(item.requirement_id for item in review.partial_requirements) or "none"
+        unresolved_hints = ", ".join(
+            item.clause_id
+            for item in review.hint_assessments
+            if item.disposition in {"MISSING", "PARTIAL"}
+        ) or "none"
         super().__init__(
             "MANDATE_REQUIREMENT_COVERAGE_INCOMPLETE: "
-            f"missing_clauses={missing}; partial_requirements={partial}"
+            f"missing_clauses={missing}; partial_requirements={partial}; "
+            f"unresolved_hints={unresolved_hints}"
         )
 
 
@@ -157,12 +163,7 @@ def choose_extraction_windows(
     full_document_max_clauses: int = FULL_DOCUMENT_MAX_CLAUSES,
     full_document_max_chars: int = FULL_DOCUMENT_MAX_CHARS,
 ) -> Tuple[str, List[List[DocumentClause]]]:
-    """Prefer one global AI reading when the Mandate comfortably fits.
-
-    V2 should maximize document-level understanding instead of imposing chunk
-    boundaries unnecessarily. Chunking is a scale fallback for genuinely long
-    documents, not the default interpretation strategy.
-    """
+    """Prefer one global AI reading when the Mandate comfortably fits."""
 
     total_chars = sum(len(clause.text) for clause in clauses)
     if len(clauses) <= full_document_max_clauses and total_chars <= full_document_max_chars:
@@ -175,9 +176,9 @@ class RequirementExtractionPipeline:
 
     There is intentionally no metric catalogue dependency in this class. Normal
     sized Mandates are read globally in one semantic pass. Very long documents
-    fall back to overlapping windows. When coverage review finds an omission,
-    the document is re-read with reviewer feedback as a hint; Python never
-    patches business semantics into the IR.
+    fall back to overlapping windows. Coverage hints are generic recall signals,
+    and the reviewer must explicitly dispose every hint. When review finds an
+    omission, the document is re-read; Python never patches business semantics.
     """
 
     def __init__(
@@ -277,6 +278,8 @@ class RequirementExtractionPipeline:
             full_document_max_clauses=self.full_document_max_clauses,
             full_document_max_chars=self.full_document_max_chars,
         )
+        coverage_hints = build_coverage_hints(clauses)
+        expected_hint_clause_ids = [str(item["clause_id"]) for item in coverage_hints]
 
         extraction_usage: List[Dict[str, int]] = []
         coverage_usage: List[Dict[str, int]] = []
@@ -300,7 +303,7 @@ class RequirementExtractionPipeline:
                 document_name=document_name,
                 clauses=clauses,
                 requirement_ir=final_ir,
-                coverage_hints=build_coverage_hints(clauses),
+                coverage_hints=coverage_hints,
             )
             coverage_payload, coverage_usage_item = await self._call_model(
                 provider=provider,
@@ -314,6 +317,7 @@ class RequirementExtractionPipeline:
                 coverage_payload,
                 clauses=clauses,
                 requirement_ir=final_ir,
+                expected_hint_clause_ids=expected_hint_clause_ids,
             )
             if final_review.complete:
                 completed_attempts = attempt_index + 1
