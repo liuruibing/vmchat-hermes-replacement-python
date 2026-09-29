@@ -30,7 +30,9 @@ class Provider:
                 "evidence": {"clause_ids": [clauses[0]["clause_id"]]},
             }], "definitions": [], "contextual_facts": []}))
         elif "# Requirement coverage review" in prompt:
-            hints = json.loads(prompt.split("# Python coverage hints (JSON; every hint must be assessed exactly once)\n", 1)[1].split("\n", 1)[0])
+            hints = json.loads(prompt.split(
+                "# Python coverage hints (JSON; every canonical clause appears exactly once and must be assessed)\n", 1
+            )[1].split("\n", 1)[0])
             yield Chunk(json.dumps({"missing_clauses": [], "partial_requirements": [],
                 "hint_assessments": [{"clause_id": item["clause_id"],
                     "disposition": "COVERED", "requirement_ids": ["REQ-0001"], "reason": "covered"}
