@@ -10,8 +10,8 @@ from app.mandate_risk_v2.mapping_models import (
 )
 from app.mandate_risk_v2.models import RequirementIR
 
-
 _CORE_DIMENSION_SET = set(CORE_COMPATIBILITY_DIMENSIONS)
+_DIRECT_REQUIRED_EQUIVALENT = {"measurement_object", "algorithm_semantics"}
 
 
 def _requirements(ir: RequirementIR):
@@ -19,16 +19,11 @@ def _requirements(ir: RequirementIR):
 
 
 def _related_requirement_ids(ir: RequirementIR, requirement_id: str) -> set[str]:
-    """Return only explicitly linked Requirements, in either relation direction."""
-
     related: set[str] = set()
     for requirement in ir.requirements:
         if requirement.requirement_id == requirement_id:
             related.update(relation.target_requirement_id for relation in requirement.relations)
-        elif any(
-            relation.target_requirement_id == requirement_id
-            for relation in requirement.relations
-        ):
+        elif any(relation.target_requirement_id == requirement_id for relation in requirement.relations):
             related.add(requirement.requirement_id)
     return related
 
@@ -37,90 +32,46 @@ def _validate_evidence(ir: RequirementIR, requirement_id: str, clause_ids: list[
     requirement = _requirements(ir).get(requirement_id)
     if requirement is None:
         raise ValueError(f"unknown requirement_id: {requirement_id}")
-
     own = set(requirement.evidence.clause_ids)
-    definitions = {
-        clause_id
-        for item in ir.definitions
-        for clause_id in item.evidence.clause_ids
-    }
-    contextual = {
-        clause_id
-        for item in ir.contextual_facts
-        for clause_id in item.evidence.clause_ids
-    }
+    definitions = {cid for item in ir.definitions for cid in item.evidence.clause_ids}
+    contextual = {cid for item in ir.contextual_facts for cid in item.evidence.clause_ids}
     related_ids = _related_requirement_ids(ir, requirement_id)
-    related = {
-        clause_id
-        for item in ir.requirements
-        if item.requirement_id in related_ids
-        for clause_id in item.evidence.clause_ids
-    }
-    known = {
-        clause_id
-        for item in (*ir.requirements, *ir.definitions, *ir.contextual_facts)
-        for clause_id in item.evidence.clause_ids
-    }
-    allowed = own | definitions | contextual | related
-
+    related = {cid for item in ir.requirements if item.requirement_id in related_ids for cid in item.evidence.clause_ids}
+    known = {cid for item in (*ir.requirements, *ir.definitions, *ir.contextual_facts) for cid in item.evidence.clause_ids}
     cited = set(clause_ids)
     if len(cited) != len(clause_ids):
         raise ValueError(f"invalid evidence for {requirement_id}: duplicate clause_id")
     if not cited.issubset(known):
-        raise ValueError(
-            f"invalid evidence for {requirement_id}: unknown clause_ids={sorted(cited - known)}"
-        )
+        raise ValueError(f"invalid evidence for {requirement_id}: unknown clause_ids={sorted(cited-known)}")
     if not cited.intersection(own):
-        raise ValueError(
-            f"requirement {requirement_id} has no own evidence in citation: "
-            f"cited={sorted(cited)}, required_one_of={sorted(own)}"
-        )
-    unsupported = cited - allowed
+        raise ValueError(f"requirement {requirement_id} has no own evidence in citation")
+    unsupported = cited - (own | definitions | contextual | related)
     if unsupported:
-        raise ValueError(
-            f"invalid evidence for {requirement_id}: unrelated requirement clause_ids="
-            f"{sorted(unsupported)}"
-        )
+        raise ValueError(f"invalid evidence for {requirement_id}: unrelated requirement clause_ids={sorted(unsupported)}")
 
 
 def _validate_compatibility(link: MappingLink, *, registry: RawRiskMetricRegistry) -> None:
     dimensions = [item.dimension for item in link.compatibility]
     if len(set(dimensions)) != len(dimensions):
-        raise ValueError(
-            f"duplicate compatibility dimension: {(link.requirement_id, link.raw_row_id)}"
-        )
-
+        raise ValueError(f"duplicate compatibility dimension: {(link.requirement_id, link.raw_row_id)}")
     dimension_map = {item.dimension: item for item in link.compatibility}
     if link.level != "REJECTED":
         missing = _CORE_DIMENSION_SET - set(dimension_map)
         if missing:
-            raise ValueError(
-                f"{link.level} compatibility matrix missing core dimensions: "
-                + ", ".join(sorted(missing))
-            )
-
-    if link.level == "DIRECT" and any(
-        item.relation in {"INSUFFICIENT", "CONFLICT"}
-        for item in link.compatibility
-    ):
-        raise ValueError("DIRECT has incompatible compatibility dimension")
-
-    # This is a source-availability check, not a semantic inference.  If the
-    # authoritative row has no algorithm text, the model cannot claim that the
-    # row itself supplies an equivalent algorithm basis for a DIRECT mapping.
+            raise ValueError(f"{link.level} compatibility matrix missing core dimensions: " + ", ".join(sorted(missing)))
     if link.level == "DIRECT":
+        incompatible = [item.dimension for item in link.compatibility if item.relation in {"INSUFFICIENT", "CONFLICT"}]
+        if incompatible:
+            raise ValueError("DIRECT has incompatible compatibility dimension: " + ", ".join(incompatible))
+        non_equivalent = [d for d in sorted(_DIRECT_REQUIRED_EQUIVALENT) if dimension_map[d].relation != "EQUIVALENT"]
+        if non_equivalent:
+            raise ValueError("DIRECT requires EQUIVALENT core dimensions: " + ", ".join(non_equivalent))
         row = registry.require(link.raw_row_id)
-        algorithm_dimension = dimension_map["algorithm_semantics"]
-        if not (row.algorithm or "").strip() and algorithm_dimension.relation == "EQUIVALENT":
-            raise ValueError(
-                "DIRECT algorithm_semantics cannot be EQUIVALENT when metric algorithm is empty"
-            )
+        if not (row.algorithm or "").strip() and dimension_map["algorithm_semantics"].relation == "EQUIVALENT":
+            raise ValueError("DIRECT algorithm_semantics cannot be EQUIVALENT when metric algorithm is empty")
 
 
-def validate_batch(
-    payload: dict, *, ir: RequirementIR, registry: RawRiskMetricRegistry,
-    batch_row_ids: set[int],
-) -> MappingBatch:
+def validate_batch(payload: dict, *, ir: RequirementIR, registry: RawRiskMetricRegistry, batch_row_ids: set[int]) -> MappingBatch:
     batch = MappingBatch.model_validate(payload)
     actual = [item.raw_row_id for item in batch.row_assessments]
     if len(actual) != len(set(actual)) or set(actual) != batch_row_ids:
@@ -142,10 +93,7 @@ def validate_batch(
     return batch
 
 
-def validate_dispositions(
-    payload: dict, *, ir: RequirementIR, registry: RawRiskMetricRegistry,
-    links: list[MappingLink],
-) -> FinalMappingReview:
+def validate_dispositions(payload: dict, *, ir: RequirementIR, registry: RawRiskMetricRegistry, links: list[MappingLink]) -> FinalMappingReview:
     review = FinalMappingReview.model_validate(payload)
     expected = set(_requirements(ir))
     actual = [item.requirement_id for item in review.dispositions]
@@ -178,9 +126,7 @@ def validate_dispositions(
                 raise ValueError("MAIN_TABLE has no DIRECT link")
             if destination.destination in {"LIBRARY_GAP", "NON_METRIC"} and destination.raw_row_ids:
                 raise ValueError("non-metric destination cannot reference metric rows")
-    proposed_direct = {
-        (link.requirement_id, link.raw_row_id) for link in links if link.level == "DIRECT"
-    }
+    proposed_direct = {(link.requirement_id, link.raw_row_id) for link in links if link.level == "DIRECT"}
     if selected_direct != proposed_direct:
         raise ValueError("DIRECT links lack matching MAIN_TABLE destination")
     return review
@@ -192,13 +138,10 @@ def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMapp
         (item.requirement_id, dest.destination, row_id, dest.aspect)
         for item in dispositions.dispositions
         for dest in item.destinations
-        if dest.destination in {"MAIN_TABLE", "LIBRARY_GAP"}
+        if dest.destination in {"MAIN_TABLE", "LIBRARY_GAP", "NON_METRIC"}
         for row_id in (dest.raw_row_ids if dest.destination == "MAIN_TABLE" else [None])
     }
-    actual = [
-        (item.requirement_id, item.destination, item.raw_row_id, item.aspect)
-        for item in review.verdicts
-    ]
+    actual = [(item.requirement_id, item.destination, item.raw_row_id, item.aspect) for item in review.verdicts]
     if len(actual) != len(set(actual)) or set(actual) != expected:
         raise ValueError("critic verdicts missing, duplicated or unexpected")
     for verdict in review.verdicts:
