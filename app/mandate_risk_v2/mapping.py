@@ -7,8 +7,12 @@ from app.mandate_risk.clauses import DocumentClause
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk_v2.mapping_models import CriticReview, FinalMappingReview, MappingLink
 from app.mandate_risk_v2.mapping_prompts import (
-    CRITIC_SYSTEM_PROMPT, DESTINATION_SYSTEM_PROMPT, MAPPING_SYSTEM_PROMPT,
-    batch_prompt, critic_prompt, destinations_prompt,
+    CRITIC_SYSTEM_PROMPT,
+    DESTINATION_SYSTEM_PROMPT,
+    MAPPING_SYSTEM_PROMPT,
+    batch_prompt,
+    critic_prompt,
+    destinations_prompt,
 )
 from app.mandate_risk_v2.mapping_validator import validate_batch, validate_critic, validate_dispositions
 from app.mandate_risk_v2.models import RequirementIR
@@ -31,20 +35,17 @@ class MappingResult:
             if destination.destination == "MAIN_TABLE"
             for row_id in destination.raw_row_ids
         }
-        return [link for link in self.links if link.level == "DIRECT" and
-                (link.requirement_id, link.raw_row_id) in selected]
+        return [
+            link for link in self.links
+            if link.level == "DIRECT" and (link.requirement_id, link.raw_row_id) in selected
+        ]
 
 
 def _apply_unconfirmed_critic_verdicts(
     dispositions: FinalMappingReview,
     critic: CriticReview,
 ) -> FinalMappingReview:
-    """Downgrade only the exact row/aspect challenged by the independent Critic.
-
-    MAIN_TABLE destinations can contain more than one metric row.  A challenge
-    to one row must not demote its confirmed siblings.  LIBRARY_GAP has no row
-    id, so it is keyed by Requirement + aspect.
-    """
+    """Keep mapper proposals immutable and downgrade only final destinations."""
 
     result = dispositions.model_copy(deep=True)
     verdicts = {
@@ -90,13 +91,14 @@ def _apply_unconfirmed_critic_verdicts(
                     rewritten.append(pending)
                 continue
 
-            if destination.destination == "LIBRARY_GAP":
+            if destination.destination in {"LIBRARY_GAP", "NON_METRIC"}:
                 verdict = verdicts.get(
-                    (item.requirement_id, "LIBRARY_GAP", None, destination.aspect)
+                    (item.requirement_id, destination.destination, None, destination.aspect)
                 )
                 if verdict is not None and verdict.verdict != "CONFIRM":
                     pending = destination.model_copy(deep=True)
                     pending.destination = "PENDING_REVIEW"
+                    pending.raw_row_ids = []
                     pending.reason = (
                         f"Critic {verdict.verdict}: {verdict.reason}; "
                         f"原提案：{destination.reason}"
@@ -119,8 +121,15 @@ class MappingPipeline:
         self.max_critic_repairs = max_critic_repairs
         self._model = RequirementExtractionPipeline()
 
-    async def run(self, *, ir: RequirementIR, clauses: Sequence[DocumentClause],
-                  registry: RawRiskMetricRegistry, provider: Any, signal: Any = None) -> MappingResult:
+    async def run(
+        self,
+        *,
+        ir: RequirementIR,
+        clauses: Sequence[DocumentClause],
+        registry: RawRiskMetricRegistry,
+        provider: Any,
+        signal: Any = None,
+    ) -> MappingResult:
         rows = registry.all()
         if not rows:
             raise ValueError("MANDATE_RISK_METRIC_LIBRARY_INVALID: empty")
@@ -128,7 +137,10 @@ class MappingPipeline:
 
         async def call(system: str, prompt: str):
             payload, usage = await self._model._call_model(
-                provider=provider, system_prompt=system, user_prompt=prompt, signal=signal,
+                provider=provider,
+                system_prompt=system,
+                user_prompt=prompt,
+                signal=signal,
             )
             usage_reports.append(usage)
             return payload
@@ -140,47 +152,87 @@ class MappingPipeline:
                 batch_rows = rows[offset:offset + self.batch_size]
                 feedback: str | None = critic_feedback
                 for validation_attempt in range(2):
-                    payload = await call(MAPPING_SYSTEM_PROMPT,
-                                         batch_prompt(ir, clauses, batch_rows, feedback))
+                    payload = await call(
+                        MAPPING_SYSTEM_PROMPT,
+                        batch_prompt(ir, clauses, batch_rows, feedback),
+                    )
                     try:
-                        batch = validate_batch(payload, ir=ir, registry=registry,
-                                               batch_row_ids={x.row_id for x in batch_rows})
+                        batch = validate_batch(
+                            payload,
+                            ir=ir,
+                            registry=registry,
+                            batch_row_ids={x.row_id for x in batch_rows},
+                        )
                         links.extend(batch.links)
                         break
                     except (ValueError, TypeError) as exc:
                         if validation_attempt:
                             raise ValueError(f"MANDATE_MAPPING_BATCH_INVALID: {exc}") from exc
                         feedback = str(exc)
+
             for validation_attempt in range(2):
-                payload = await call(DESTINATION_SYSTEM_PROMPT,
-                                     destinations_prompt(ir, clauses, rows, links, critic_feedback))
+                payload = await call(
+                    DESTINATION_SYSTEM_PROMPT,
+                    destinations_prompt(ir, clauses, rows, links, critic_feedback),
+                )
                 try:
-                    dispositions = validate_dispositions(payload, ir=ir, registry=registry,
-                                                         links=links)
+                    dispositions = validate_dispositions(
+                        payload, ir=ir, registry=registry, links=links
+                    )
                     break
                 except (ValueError, TypeError) as exc:
                     if validation_attempt:
                         raise ValueError(f"MANDATE_MAPPING_DESTINATIONS_INVALID: {exc}") from exc
                     critic_feedback = str(exc)
-            payload = await call(CRITIC_SYSTEM_PROMPT,
-                                 critic_prompt(ir, clauses, rows, links, dispositions))
-            critic = validate_critic(payload, ir=ir, dispositions=dispositions)
+
+            critic_validation_feedback: str | None = None
+            for validation_attempt in range(2):
+                payload = await call(
+                    CRITIC_SYSTEM_PROMPT,
+                    critic_prompt(
+                        ir,
+                        clauses,
+                        rows,
+                        links,
+                        dispositions,
+                        critic_validation_feedback,
+                    ),
+                )
+                try:
+                    critic = validate_critic(payload, ir=ir, dispositions=dispositions)
+                    break
+                except (ValueError, TypeError) as exc:
+                    if validation_attempt:
+                        raise ValueError(f"MANDATE_MAPPING_CRITIC_INVALID: {exc}") from exc
+                    critic_validation_feedback = str(exc)[:2000]
+
             objections = [item for item in critic.verdicts if item.verdict != "CONFIRM"]
             if not objections or repair >= self.max_critic_repairs:
                 if objections:
                     dispositions = _apply_unconfirmed_critic_verdicts(dispositions, critic)
-                complete = all(report is not None and "total_tokens" in report
-                               for report in usage_reports)
+                complete = all(
+                    report is not None and "total_tokens" in report
+                    for report in usage_reports
+                )
                 usage: dict[str, Any] = {
-                    "complete": complete, "expected_calls": len(usage_reports),
+                    "complete": complete,
+                    "expected_calls": len(usage_reports),
                     "reported_calls": sum(report is not None for report in usage_reports),
                 }
                 if complete:
-                    usage["total_tokens"] = sum(report["total_tokens"] for report in usage_reports if report)
-                return MappingResult(links=links, dispositions=dispositions,
-                                     critic=critic, usage=usage)
+                    usage["total_tokens"] = sum(
+                        report["total_tokens"] for report in usage_reports if report
+                    )
+                return MappingResult(
+                    links=links,
+                    dispositions=dispositions,
+                    critic=critic,
+                    usage=usage,
+                )
+
             critic_feedback = "; ".join(
-                f"{item.requirement_id}/{item.aspect}/{item.raw_row_id}: {item.reason}"
+                f"{item.requirement_id}/{item.destination}/{item.aspect}/{item.raw_row_id}: {item.reason}"
                 for item in objections
             )[:4000]
+
         raise RuntimeError("mapping repair loop exhausted")
