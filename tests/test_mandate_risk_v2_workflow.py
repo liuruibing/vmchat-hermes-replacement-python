@@ -43,8 +43,28 @@ class Provider:
             )
             return
         if "# Requirement coverage review" in prompt:
+            hints = _json_line_after(
+                prompt,
+                "# Python coverage hints (JSON; every hint must be assessed exactly once)\n",
+            )
+            current_ir = _json_line_after(prompt, "# Current Requirement IR (JSON)\n")
+            requirement_id = current_ir["requirements"][0]["requirement_id"]
             yield Chunk(
-                content=json.dumps({"missing_clauses": [], "partial_requirements": []}),
+                content=json.dumps(
+                    {
+                        "missing_clauses": [],
+                        "partial_requirements": [],
+                        "hint_assessments": [
+                            {
+                                "clause_id": item["clause_id"],
+                                "disposition": "COVERED",
+                                "requirement_ids": [requirement_id],
+                                "reason": "The quantitative obligation is covered.",
+                            }
+                            for item in hints
+                        ],
+                    }
+                ),
                 usage={"total_tokens": 3},
             )
             return
