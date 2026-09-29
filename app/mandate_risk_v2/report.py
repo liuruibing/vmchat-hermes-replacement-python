@@ -169,8 +169,16 @@ def render_v2_report(
 
     for matched in analysis.matched_metrics:
         metric = matched.metric
+        # Preserve the original six-column contract: Mandate解读 remains
+        # verbatim Python-owned contract evidence. Multiple Requirements are
+        # shown as separate evidence snippets rather than collapsed into an AI
+        # summary; normalized constraints live in the detail section below.
         summaries = "<br>".join(
-            _cell(item.requirement.requirement.semantic_summary)
+            _cell(
+                item.requirement.evidence[0].text
+                if item.requirement.evidence
+                else item.requirement.requirement.semantic_summary
+            )
             for item in matched.requirements
         )
         lines.append(
