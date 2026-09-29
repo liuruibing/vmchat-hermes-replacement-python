@@ -72,7 +72,34 @@ class RepairingProvider:
             self.coverage_calls += 1
             clauses = _json_line_after(prompt, "# All canonical clauses (JSON)\n")
             current_ir = _json_line_after(prompt, "# Current Requirement IR (JSON)\n")
-            if len(current_ir["requirements"]) == 1:
+            requirements = current_ir["requirements"]
+            assessments = []
+            for clause in clauses:
+                matching = [
+                    item["requirement_id"]
+                    for item in requirements
+                    if clause["clause_id"] in item["evidence"]["clause_ids"]
+                ]
+                if matching:
+                    assessments.append(
+                        {
+                            "clause_id": clause["clause_id"],
+                            "disposition": "COVERED",
+                            "requirement_ids": matching,
+                            "reason": "The branch is represented by a Requirement.",
+                        }
+                    )
+                else:
+                    assessments.append(
+                        {
+                            "clause_id": clause["clause_id"],
+                            "disposition": "MISSING",
+                            "requirement_ids": [],
+                            "reason": "This conditional branch is missing.",
+                        }
+                    )
+
+            if len(requirements) == 1:
                 yield Chunk(
                     content=json.dumps(
                         {
@@ -83,13 +110,20 @@ class RepairingProvider:
                                 }
                             ],
                             "partial_requirements": [],
+                            "hint_assessments": assessments,
                         }
                     ),
                     usage={"total_tokens": 4},
                 )
                 return
             yield Chunk(
-                content=json.dumps({"missing_clauses": [], "partial_requirements": []}),
+                content=json.dumps(
+                    {
+                        "missing_clauses": [],
+                        "partial_requirements": [],
+                        "hint_assessments": assessments,
+                    }
+                ),
                 usage={"total_tokens": 4},
             )
             return
