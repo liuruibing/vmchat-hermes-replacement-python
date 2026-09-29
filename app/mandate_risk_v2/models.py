@@ -25,6 +25,13 @@ RelationType = Literal[
     "DEFINES_SCOPE_FOR",
     "DEPENDS_ON",
 ]
+CoverageHintDisposition = Literal[
+    "COVERED",
+    "DEFINITION_OR_CONTEXT",
+    "NOT_REQUIREMENT",
+    "MISSING",
+    "PARTIAL",
+]
 
 
 class StrictModel(BaseModel):
@@ -168,10 +175,23 @@ class PartialRequirement(StrictModel):
     related_clause_ids: List[str] = Field(default_factory=list)
 
 
+class CoverageHintAssessment(StrictModel):
+    clause_id: str
+    disposition: CoverageHintDisposition
+    requirement_ids: List[str] = Field(default_factory=list)
+    reason: str = ""
+
+
 class CoverageReview(StrictModel):
     missing_clauses: List[MissingClause] = Field(default_factory=list)
     partial_requirements: List[PartialRequirement] = Field(default_factory=list)
+    hint_assessments: List[CoverageHintAssessment] = Field(default_factory=list)
 
     @property
     def complete(self) -> bool:
-        return not self.missing_clauses and not self.partial_requirements
+        if self.missing_clauses or self.partial_requirements:
+            return False
+        return all(
+            item.disposition not in {"MISSING", "PARTIAL"}
+            for item in self.hint_assessments
+        )
