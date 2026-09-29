@@ -16,6 +16,7 @@ from app.mandate_risk_v2.extractor import canonical_evidence
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk_v2.mapping import MappingPipeline
 from app.mandate_risk_v2.report import render_v2_report
+from app.mandate_risk_v2.result import build_v2_analysis_result
 from app.mandate_risk_v2.pipeline import (
     RequirementCoverageIncomplete,
     RequirementExtractionPipeline,
@@ -93,14 +94,28 @@ class MandateRiskV2Workflow:
                     ir=result.requirement_ir, clauses=result.clauses,
                     registry=registry, provider=context.provider, signal=context.signal,
                 )
+                analysis = build_v2_analysis_result(
+                    ir=result.requirement_ir,
+                    clauses=result.clauses,
+                    registry=registry,
+                    mapping=mapping,
+                )
                 markdown = render_v2_report(
                     ir=result.requirement_ir, clauses=result.clauses,
-                    registry=registry, mapping=mapping,
+                    registry=registry, mapping=mapping, analysis=analysis,
                 )
                 usage = {
                     "complete": bool(result.usage.get("complete") and mapping.usage.get("complete")),
                     "requirement_phase": result.usage,
                     "mapping_phase": mapping.usage,
+                    "result_counts": {
+                        "requirements": len(analysis.requirements),
+                        "matched_metrics": len(analysis.matched_metrics),
+                        "pending_review": len(analysis.pending_review),
+                        "library_gaps": len(analysis.library_gaps),
+                        "non_metric_requirements": len(analysis.non_metric_requirements),
+                        "unresolved_requirements": len(analysis.unresolved_requirements),
+                    },
                 }
                 if usage["complete"]:
                     usage["total_tokens"] = (result.usage["total_tokens"] +
@@ -109,7 +124,7 @@ class MandateRiskV2Workflow:
                 yield RunFailedEvent(error=f"V2 指标映射或 Critic 复核失败: {err}")
                 return
             yield ReasoningDeltaEvent(
-                delta="Phase B 完成：指标映射及 DIRECT/库缺口的独立 Critic 复核均已闭合。",
+                delta="Phase B 完成：指标映射、结构化结果及 DIRECT/库缺口/非指标要求的独立 Critic 复核均已闭合。",
                 sequence=3,
             )
         for chunk in code_point_chunks(markdown, context.message_chunk_chars):
