@@ -7,6 +7,25 @@ from pydantic import Field
 from app.mandate_risk_v2.models import StrictModel
 
 
+# Every non-rejected semantic link must explicitly audit these dimensions.
+# Additional open-ended qualifier dimensions are allowed, but they cannot
+# replace any of these core checks.  This keeps DIRECT fail-closed when a
+# model simply forgets a difficult qualifier such as annualisation or
+# ex-ante/ex-post basis.
+CORE_COMPATIBILITY_DIMENSIONS = (
+    "measurement_object",
+    "scope",
+    "denominator",
+    "time_point",
+    "annualisation",
+    "estimation_basis",
+    "benchmark",
+    "conditions",
+    "strategy_applicability",
+    "algorithm_semantics",
+)
+
+
 class CompatibilityDimension(StrictModel):
     dimension: str = Field(min_length=1)
     requirement_basis: str = Field(min_length=1)
