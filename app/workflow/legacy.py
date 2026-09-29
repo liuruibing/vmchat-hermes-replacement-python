@@ -57,13 +57,18 @@ def build_default_workflow_registry(
     from app.workflow.registry import WorkflowRegistry
 
     from app.workflow.graphs.mandate_risk import MandateRiskLangGraphWorkflow
+    from app.workflow.graphs.mandate_risk_v2 import MandateRiskV2Workflow
     from app.workflow.graphs.performance_report import PerformanceReportLangGraphWorkflow
     from app.workflow.graphs.simple_chat import SimpleChatLangGraphWorkflow
 
+    # V2 is registered under a separate workflow id only. Existing agents stay
+    # on mandate-risk-analysis until the V2 accuracy gates are proven on real
+    # PDFs; registering it here merely makes explicit lab invocation possible.
     return WorkflowRegistry(
         [
             SimpleChatLangGraphWorkflow(),
             PerformanceReportLangGraphWorkflow(),
             MandateRiskLangGraphWorkflow(),
+            MandateRiskV2Workflow(),
         ]
     )
