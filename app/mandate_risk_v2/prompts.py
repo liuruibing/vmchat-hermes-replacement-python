@@ -38,10 +38,11 @@ COVERAGE_SYSTEM_PROMPT = """你是 Mandate Requirement Coverage Reviewer。
 4. missing_clauses 和 related_clause_ids 只能引用真实输入 clause_id。
 5. partial_requirements 只能引用真实 requirement_id。
 6. 对 Python coverage hints 中的每一个 clause_id，必须在 hint_assessments 中恰好返回一次处置，不得省略。disposition 只能是 COVERED、DEFINITION_OR_CONTEXT、NOT_REQUIREMENT、MISSING、PARTIAL。
-7. COVERED/PARTIAL 必须给出引用该 clause 的真实 requirement_ids；DEFINITION_OR_CONTEXT、NOT_REQUIREMENT、MISSING 不得填 requirement_ids。
+7. COVERED/PARTIAL 必须给出直接引用该 clause 的真实 requirement_ids，并且 requirement_ids 只能从“Deterministic requirement evidence map”中该 clause_id 对应的列表选择；如果该列表为空，不得标记 COVERED/PARTIAL。DEFINITION_OR_CONTEXT、NOT_REQUIREMENT、MISSING 不得填 requirement_ids。
 8. Python coverage hints 只是“值得重点检查”的线索，不是结论；你必须根据原文和当前 IR 独立判断。
-9. 不要创建或讨论正式风险指标。
-10. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
+9. 如果上一轮 Reviewer 输出因确定性校验失败，必须根据校验错误纠正引用关系或处置；不要重复同一个无效引用。
+10. 不要创建或讨论正式风险指标。
+11. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
 """
 
 
@@ -50,6 +51,18 @@ def _clause_payload(clauses: Iterable[DocumentClause]):
         {"clause_id": clause.clause_id, "page": clause.page, "text": clause.text}
         for clause in clauses
     ]
+
+
+def _requirements_by_hint_clause(
+    requirement_ir: RequirementIR,
+    coverage_hints: Sequence[dict],
+) -> dict[str, list[str]]:
+    result = {str(item["clause_id"]): [] for item in coverage_hints}
+    for requirement in requirement_ir.requirements:
+        for clause_id in requirement.evidence.clause_ids:
+            if clause_id in result:
+                result[clause_id].append(requirement.requirement_id)
+    return result
 
 
 def build_extraction_prompt(
@@ -138,6 +151,7 @@ def build_coverage_review_prompt(
     clauses: Sequence[DocumentClause],
     requirement_ir: RequirementIR,
     coverage_hints: list[dict],
+    validation_feedback: str | None = None,
 ) -> str:
     output_shape = {
         "missing_clauses": [
@@ -159,18 +173,35 @@ def build_coverage_review_prompt(
             }
         ],
     }
-    return "\n".join(
+    parts = [
+        "# Requirement coverage review",
+        json.dumps({"document_name": document_name}, ensure_ascii=False, separators=(",", ":")),
+        "# All canonical clauses (JSON)",
+        json.dumps(_clause_payload(clauses), ensure_ascii=False, separators=(",", ":")),
+        "# Current Requirement IR (JSON)",
+        json.dumps(requirement_ir.model_dump(), ensure_ascii=False, separators=(",", ":")),
+        "# Python coverage hints (JSON; every hint must be assessed exactly once)",
+        json.dumps(coverage_hints, ensure_ascii=False, separators=(",", ":")),
+        "# Deterministic requirement evidence map for hinted clauses (JSON)",
+        json.dumps(
+            _requirements_by_hint_clause(requirement_ir, coverage_hints),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    ]
+    if validation_feedback:
+        parts.extend(
+            [
+                "# Previous coverage review failed deterministic validation (JSON)",
+                json.dumps({"error": validation_feedback}, ensure_ascii=False, separators=(",", ":")),
+                "请纠正整个 coverage review。若某 hint 没有直接引用它的 Requirement，不要声称它已 COVERED；应依据原文改判为 MISSING、NOT_REQUIREMENT 或 DEFINITION_OR_CONTEXT。",
+            ]
+        )
+    parts.extend(
         [
-            "# Requirement coverage review",
-            json.dumps({"document_name": document_name}, ensure_ascii=False, separators=(",", ":")),
-            "# All canonical clauses (JSON)",
-            json.dumps(_clause_payload(clauses), ensure_ascii=False, separators=(",", ":")),
-            "# Current Requirement IR (JSON)",
-            json.dumps(requirement_ir.model_dump(), ensure_ascii=False, separators=(",", ":")),
-            "# Python coverage hints (JSON; every hint must be assessed exactly once)",
-            json.dumps(coverage_hints, ensure_ascii=False, separators=(",", ":")),
             "# Required output shape",
             json.dumps(output_shape, ensure_ascii=False, separators=(",", ":")),
             "即使没有遗漏，missing_clauses/partial_requirements 返回空数组，但 hint_assessments 仍必须逐条覆盖所有 Python coverage hints。",
         ]
     )
+    return "\n".join(parts)
