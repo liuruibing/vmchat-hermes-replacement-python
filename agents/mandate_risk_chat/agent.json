@@ -1,0 +1,12 @@
+{
+  "id": "mandate-risk-chat",
+  "name": "风险指标报告问答",
+  "version": "1.0.0",
+  "workflow": "simple-chat",
+  "knowledge_paths": [],
+  "roles_dir": "roles",
+  "default_role": "risk-assistant",
+  "metadata": {
+    "description": "仅依据当前风险指标匹配报告回答追问"
+  }
+}

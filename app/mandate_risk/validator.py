@@ -19,10 +19,61 @@ _DIRECT_REQUIREMENT_EN = re.compile(
 _DIRECT_REQUIREMENT_ZH = re.compile(
     r"(?:应当|应|必须|须|不得|不超过|不低于|至少|至多|目标|限额|限制|保持|维持)"
 )
+_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?")
+_NUMERIC_UNIT_RE = re.compile(
+    r"(?<![A-Za-z0-9])(\d+(?:\.\d+)?)\s*"
+    r"(bps|basis\s+points|%|million|billion|基点|万|亿)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_THRESHOLD_VALUE = r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>billion|million|%|bps|亿|万)(?![A-Za-z])"
+_CURRENCY_PREFIX = r"(?P<currency>(?-i:[A-Z]{3}))?\s*"
+_THRESHOLD_PREFIX_RE = re.compile(
+    rf"(?P<direction>no\s+less\s+than|not\s+less\s+than|no\s+more\s+than|"
+    rf"less\s+than|below|under|低于|小于|不足|"
+    rf"more\s+than|greater\s+than|at\s+least|at\s+most|不低于|不少于)\s*"
+    rf"{_CURRENCY_PREFIX}{_THRESHOLD_VALUE}",
+    re.IGNORECASE,
+)
+_THRESHOLD_SUFFIX_RE = re.compile(
+    rf"{_CURRENCY_PREFIX}{_THRESHOLD_VALUE}\s*(?P<direction>or\s+more|or\s+less|及以上|或以上|及以下|或以下)",
+    re.IGNORECASE,
+)
+_MEASUREMENT_EVIDENCE_TERMS = {
+    "基金收益率": ("return", "returns", "收益率", "总收益"),
+    "非标剩余期限": ("remaining maturity", "remaining term", "held-to-maturity", "buy and maintain", "剩余期限"),
+}
 
 
 def _normalize_evidence(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _numeric_units(value: str) -> Set[tuple[str, str]]:
+    return {
+        (
+            number,
+            "bps" if unit.lower().startswith("basis") else re.sub(r"\s+", "", unit.lower()),
+        )
+        for number, unit in _NUMERIC_UNIT_RE.findall(value)
+    }
+
+
+def _conditional_thresholds(value: str) -> Set[tuple[str, str, str, str]]:
+    thresholds: Set[tuple[str, str, str, str]] = set()
+    for pattern in (_THRESHOLD_PREFIX_RE, _THRESHOLD_SUFFIX_RE):
+        for match in pattern.finditer(value):
+            direction = re.sub(r"\s+", " ", match.group("direction").lower())
+            relation = "below" if direction in {
+                "less than", "below", "under", "低于", "小于", "不足",
+                "no more than", "at most", "or less", "及以下", "或以下",
+            } else "above"
+            thresholds.add((
+                match.group("number"),
+                match.group("unit").lower(),
+                relation,
+                match.group("currency") or "",
+            ))
+    return thresholds
 
 
 def _quote_exists(document_text: str, quote: str) -> bool:
@@ -173,6 +224,19 @@ def validate_model_result(
             level = "STRONG_INFERRED"
             downgraded_direct = True
 
+        measurement_terms = _MEASUREMENT_EVIDENCE_TERMS.get(metric.metric_name, ())
+        downgraded_measurement = bool(
+            measurement_terms
+            and level in {"DIRECT", "STRONG_INFERRED"}
+            and not any(
+                phrase_in_text(quote.text, term)
+                for quote in evidence
+                for term in measurement_terms
+            )
+        )
+        if downgraded_measurement:
+            level = "REJECTED" if metric.metric_name == "基金收益率" else "WEAK_INFERRED"
+
         confidence = item.get("confidence")
         try:
             confidence_float = max(0.0, min(1.0, float(confidence)))
@@ -180,11 +244,20 @@ def validate_model_result(
             confidence_float = 0.0
         if downgraded_direct:
             confidence_float = min(confidence_float, 0.85)
+        if downgraded_measurement:
+            confidence_float = min(confidence_float, 0.3 if level == "REJECTED" else 0.6)
 
         reason = str(item.get("reason") or "").strip()
-        if downgraded_direct:
+        if downgraded_direct and not downgraded_measurement:
             note = "Python校验：证据表明指标概念相关，但未形成明确的指标目标、约束、限额或监控要求，因此由 DIRECT 降为 STRONG_INFERRED。"
             reason = f"{reason} {note}".strip()
+        if downgraded_measurement:
+            note = (
+                "引用条款只说明现金流或增长意向，未支持组合收益率这一测量对象；不纳入结果。"
+                if metric.metric_name == "基金收益率"
+                else "引用条款只说明资产类别，未支持剩余期限这一测量对象；降为待确认。"
+            )
+            reason = f"{reason} Python校验：{note}".strip()
 
         match = MetricMatch(
             raw_row_id=row_id,
@@ -195,9 +268,9 @@ def validate_model_result(
             evidence=evidence,
         )
         seen.add(row_id)
-        if level in {"DIRECT", "STRONG_INFERRED"}:
+        if level == "DIRECT":
             selected.append(match)
-        elif level == "WEAK_INFERRED":
+        elif level in {"STRONG_INFERRED", "WEAK_INFERRED"}:
             review.append(match)
         else:
             rejected.append(match)
@@ -217,6 +290,26 @@ def validate_model_result(
             if canonical is not None and canonical not in evidence:
                 evidence.append(canonical)
         requirement = str(raw_gap.get("requirement") or "").strip()
+        numbers = set(_NUMBER_RE.findall(requirement))
+        units = _numeric_units(requirement)
+        quoted_numbers = set().union(*(set(_NUMBER_RE.findall(item.text)) for item in evidence))
+        quoted_units = set().union(*(_numeric_units(item.text) for item in evidence))
+        thresholds = _conditional_thresholds(requirement)
+        quoted_thresholds = set().union(*(_conditional_thresholds(item.text) for item in evidence))
+        missing_threshold = any(
+            not any(
+                required[:3] == quoted[:3]
+                and (not required[3] or required[3] == quoted[3])
+                for quoted in quoted_thresholds
+            )
+            for required in thresholds
+        )
+        if (
+            not numbers.issubset(quoted_numbers)
+            or not units.issubset(quoted_units)
+            or missing_threshold
+        ):
+            evidence = []
         if requirement and evidence:
             gaps.append(
                 LibraryGap(
@@ -233,5 +326,8 @@ def validate_model_result(
         review_metrics=review,
         rejected_metrics=rejected,
         library_gaps=gaps,
-        summary=str(payload.get("summary") or "").strip() if isinstance(payload, dict) else "",
+        summary=(
+            f"依据原文与指标库，识别出 {len(selected)} 项建议匹配指标、"
+            f"{len(review)} 项待确认指标和 {len(gaps)} 项指标库缺口。"
+        ),
     )

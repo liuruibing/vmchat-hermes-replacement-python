@@ -8,6 +8,10 @@ from pydantic import BaseModel
 
 _PAGE_MARKER_RE = re.compile(r"(?m)^\[Page ([1-9]\d*)\][ \t]*(?:\r?\n|$)")
 _SENTENCE_END_RE = re.compile(r"[.!?。！？；;](?=\s|$)")
+_SECTION_LABEL_RE = re.compile(r"\d+(?:\.\d+)*\.")
+_STRUCTURAL_BOUNDARY_RE = re.compile(
+    r"(?m)(?:\r?\n[ \t]*\r?\n|(?<=\n)(?=[ \t]*\d+\)[ \t]+))"
+)
 
 
 class DocumentClause(BaseModel):
@@ -30,6 +34,14 @@ def _append_clause(
 
     while start < end and source[start].isspace():
         start += 1
+    if page is not None:
+        # PDF headers sometimes leave the printed page number on its own line
+        # immediately before a continued clause. It is not contract text.
+        page_label = re.match(rf"{page}[ \t]*\r?\n", source[start:end])
+        if page_label:
+            start += page_label.end()
+            while start < end and source[start].isspace():
+                start += 1
     while end > start and source[end - 1].isspace():
         end -= 1
     if start >= end:
@@ -45,7 +57,7 @@ def _append_clause(
     )
 
 
-def _split_span(
+def _split_sentences(
     clauses: List[DocumentClause],
     source: str,
     start: int,
@@ -56,9 +68,26 @@ def _split_span(
     cursor = start
     for match in _SENTENCE_END_RE.finditer(source, start, end):
         clause_end = match.end()
+        if _SECTION_LABEL_RE.fullmatch(source[cursor:clause_end].strip()):
+            continue
         _append_clause(clauses, source, cursor, clause_end, page=page)
         cursor = clause_end
     _append_clause(clauses, source, cursor, end, page=page)
+
+
+def _split_span(
+    clauses: List[DocumentClause],
+    source: str,
+    start: int,
+    end: int,
+    *,
+    page: int | None,
+) -> None:
+    cursor = start
+    for boundary in _STRUCTURAL_BOUNDARY_RE.finditer(source, start, end):
+        _split_sentences(clauses, source, cursor, boundary.start(), page=page)
+        cursor = boundary.end()
+    _split_sentences(clauses, source, cursor, end, page=page)
 
 
 def split_document_clauses(document_text: str) -> List[DocumentClause]:
@@ -66,8 +95,8 @@ def split_document_clauses(document_text: str) -> List[DocumentClause]:
 
     PDF text extraction commonly inserts a newline at every visual line wrap. A
     single newline therefore must *not* be treated as a semantic boundary. We
-    split at explicit sentence punctuation and preserve the exact source span,
-    including any soft line breaks inside the sentence.
+    split at explicit sentence punctuation, blank paragraphs and numbered list
+    items, while preserving any soft line breaks inside a clause.
 
     ``PdfDocumentParser`` serializes pages into the canonical ``[Page N]`` text
     form. When those markers are present, they are treated as provenance

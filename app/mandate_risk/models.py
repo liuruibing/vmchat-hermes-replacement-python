@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 MatchLevel = Literal["DIRECT", "STRONG_INFERRED", "WEAK_INFERRED", "REJECTED"]
-CandidateRecallSource = Literal["primary", "mandate_fallback"]
+CandidateRecallSource = Literal["primary", "mandate_fallback", "coverage_audit"]
 
 
 class RawRiskMetric(BaseModel):

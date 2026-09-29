@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.compatibility.hermes_request import GlobalQueryParameters, VmChatInput
+from app.agents.registry import AgentRegistry
 from app.mandate_risk.matcher import (
     build_candidates,
     build_mandate_recall_candidates,
@@ -33,6 +34,16 @@ To ensure the Sub-Portfolio to generate a comparable return against the Benchmar
 The Sub-Portfolio shall deliver excess return over the designated Benchmark by executing geographic, Industry/Sector and trading strategies. The Sub-Portfolio shall be actively managed to achieve the Investment Objective, by investing in Funds or stocks, which are listed through China A-Share market.
 The Sub-Portfolio should be managed under the enhanced index strategy with proper active management and low Tracking Error. The investment strategy could be a blend of bottom-up and top-down approach. The Sub-Portfolio shall invest in listed stocks with solid fundamentals to gain stable dividend yield and achieve long term capital growth.
 """
+
+
+def test_report_chat_agent_is_registered_with_simple_chat_workflow():
+    agents = AgentRegistry(str(ROOT / "agents")).load()
+    agent = agents.require("mandate-risk-chat")
+    role = agents.get_role(agent.id, "risk-assistant")
+
+    assert agent.workflow == "simple-chat"
+    assert role is not None
+    assert "报告" in role.systemPrompt
 
 
 def test_raw_registry_preserves_source_values_and_separate_effective_grouping():
@@ -259,7 +270,11 @@ class Chunk:
 
 
 class Provider:
-    async def run_skill(self, _input):
+    async def run_skill(self, run_input):
+        audit_chunk = _empty_coverage_audit_chunk(run_input.user_prompt)
+        if audit_chunk:
+            yield audit_chunk
+            return
         payload = {
             "strategy_type": "权益",
             "summary": "高分红增强指数策略，核心约束是超额收益与低跟踪误差。",
@@ -291,9 +306,220 @@ class Provider:
             ],
             "gaps": [],
         }
+        matches_by_id = {item["raw_row_id"]: item for item in payload["matches"]}
+        for candidate in _candidate_rows_from_prompt(run_input.user_prompt):
+            row_id = candidate["raw_row_id"]
+            if row_id not in matches_by_id:
+                matches_by_id[row_id] = {
+                    "raw_row_id": row_id,
+                    "metric_name": candidate["metric_name"],
+                    "match_level": "REJECTED",
+                    "confidence": 0.0,
+                    "reason": "The document does not require this metric.",
+                    "evidence": [],
+                }
+        payload["matches"] = list(matches_by_id.values())
         yield Chunk(reasoning="matching")
         yield Chunk(content=json.dumps(payload, ensure_ascii=False))
         yield Chunk(usage={"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150})
+
+
+def _synthetic_metric_source(tmp_path, rows):
+    path = tmp_path / "metrics.csv"
+    path.write_text(
+        "风险类型一级,风险类型二级,指标名称,指标算法,Mandate字段,适用策略种类\n"
+        + "\n".join(rows)
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _synthetic_candidate_payload(candidate_rows):
+    return {
+        "strategy_type": "权益",
+        "summary": "synthetic candidate coverage",
+        "matches": [
+            {
+                "raw_row_id": row["raw_row_id"],
+                "metric_name": row["metric_name"],
+                "match_level": "REJECTED",
+                "confidence": 0.0,
+                "reason": "The document does not require this metric.",
+                "evidence": [],
+            }
+            for row in candidate_rows
+        ],
+        "gaps": [],
+    }
+
+
+def _candidate_rows_from_prompt(prompt):
+    marker = "# Candidate metrics from Python (only these rows may be selected as matches)\n"
+    rows_json = prompt.split(marker, 1)[1].split("\n\n# Strategy-eligible", 1)[0]
+    return json.loads(rows_json)
+
+
+def _empty_coverage_audit_chunk(prompt):
+    if "# Controlled coverage audit batch" not in prompt:
+        return None
+    marker = "# Audit batch metadata (JSON)\n"
+    metadata = json.loads(prompt.split(marker, 1)[1].split("\n", 1)[0])
+    return Chunk(content=json.dumps({"strategy_type": metadata["strategy_type"], "proposals": []}))
+
+
+@pytest.mark.anyio
+async def test_mandate_risk_retries_when_model_omits_a_candidate_row(tmp_path):
+    metric_source = _synthetic_metric_source(
+        tmp_path,
+        [
+            ",,跟踪误差,TE=σ(Rp−Rb),,权益",
+            ",,股息贡献率,股息收益占整体收益比重,,权益",
+        ],
+    )
+    document = "境内上市权益策略要求 low Tracking Error，并追求 stable dividend yield。"
+
+    class OmitThenCompleteProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def run_skill(self, run_input):
+            audit_chunk = _empty_coverage_audit_chunk(run_input.user_prompt)
+            if audit_chunk:
+                yield audit_chunk
+                return
+            self.calls += 1
+            candidates = _candidate_rows_from_prompt(run_input.user_prompt)
+            assert len(candidates) == 2
+            payload = _synthetic_candidate_payload(
+                candidates if self.calls == 2 else candidates[:1]
+            )
+            yield Chunk(content=json.dumps(payload, ensure_ascii=False))
+
+    provider = OmitThenCompleteProvider()
+    workflow = MandateRiskLangGraphWorkflow(str(metric_source))
+    context = WorkflowContext(
+        input_val=VmChatInput(
+            userMessage=f"<document_text>{document}</document_text>",
+            globalQueryParameters=GlobalQueryParameters(names=[], nonemptyFlags={}),
+        ),
+        provider=provider,
+        agent_id="mandate-risk-ai",
+        role_id="risk-analyst",
+    )
+
+    events = [event async for event in workflow.stream(context)]
+
+    assert provider.calls == 2
+    assert not [event for event in events if event.event == "run.failed"]
+    assert any(event.event == "run.completed" for event in events)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("invalid_case", "error_fragment"),
+    [
+        ("missing", "漏掉候选指标行"),
+        ("duplicate", "候选行重复"),
+        ("unknown", "未知指标行"),
+        ("wrong_metric_name", "metric_name 与指标库不符"),
+    ],
+)
+async def test_mandate_risk_fails_after_two_incomplete_or_invalid_candidate_lists(
+    tmp_path, invalid_case, error_fragment
+):
+    metric_source = _synthetic_metric_source(
+        tmp_path,
+        [
+            ",,跟踪误差,TE=σ(Rp−Rb),,权益",
+            ",,股息贡献率,股息收益占整体收益比重,,权益",
+        ],
+    )
+    document = "境内上市权益策略要求 low Tracking Error，并追求 stable dividend yield。"
+
+    class RepeatedlyInvalidProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def run_skill(self, run_input):
+            audit_chunk = _empty_coverage_audit_chunk(run_input.user_prompt)
+            if audit_chunk:
+                yield audit_chunk
+                return
+            self.calls += 1
+            candidates = _candidate_rows_from_prompt(run_input.user_prompt)
+            payload = _synthetic_candidate_payload(candidates)
+            if invalid_case == "missing":
+                payload["matches"].pop()
+            elif invalid_case == "duplicate":
+                payload["matches"].append(dict(payload["matches"][0]))
+            elif invalid_case == "unknown":
+                payload["matches"].append(
+                    {
+                        "raw_row_id": 999,
+                        "metric_name": "不存在的指标",
+                        "match_level": "REJECTED",
+                        "confidence": 0,
+                        "evidence": [],
+                    }
+                )
+            else:
+                payload["matches"][0]["metric_name"] = "错误指标名称"
+            yield Chunk(content=json.dumps(payload, ensure_ascii=False))
+
+    provider = RepeatedlyInvalidProvider()
+    workflow = MandateRiskLangGraphWorkflow(str(metric_source))
+    context = WorkflowContext(
+        input_val=VmChatInput(
+            userMessage=f"<document_text>{document}</document_text>",
+            globalQueryParameters=GlobalQueryParameters(names=[], nonemptyFlags={}),
+        ),
+        provider=provider,
+        agent_id="mandate-risk-ai",
+        role_id="risk-analyst",
+    )
+
+    events = [event async for event in workflow.stream(context)]
+
+    assert provider.calls == 2
+    failed = [event for event in events if event.event == "run.failed"]
+    assert len(failed) == 1
+    assert not [event for event in events if event.event == "run.completed"]
+    assert error_fragment in failed[0].error
+
+
+@pytest.mark.anyio
+async def test_mandate_risk_accepts_empty_matches_when_there_are_no_candidates(tmp_path):
+    metric_source = _synthetic_metric_source(
+        tmp_path,
+        [",,不存在于文本的指标,synthetic algorithm,,权益"],
+    )
+    document = "境内上市权益策略以长期资本增长为目标。"
+
+    class EmptyMatchesProvider:
+        async def run_skill(self, run_input):
+            audit_chunk = _empty_coverage_audit_chunk(run_input.user_prompt)
+            if audit_chunk:
+                yield audit_chunk
+                return
+            assert _candidate_rows_from_prompt(run_input.user_prompt) == []
+            yield Chunk(content=json.dumps({"matches": [], "gaps": []}))
+
+    workflow = MandateRiskLangGraphWorkflow(str(metric_source))
+    context = WorkflowContext(
+        input_val=VmChatInput(
+            userMessage=f"<document_text>{document}</document_text>",
+            globalQueryParameters=GlobalQueryParameters(names=[], nonemptyFlags={}),
+        ),
+        provider=EmptyMatchesProvider(),
+        agent_id="mandate-risk-ai",
+        role_id="risk-analyst",
+    )
+
+    events = [event async for event in workflow.stream(context)]
+
+    assert not [event for event in events if event.event == "run.failed"]
+    assert any(event.event == "run.completed" for event in events)
 
 
 @pytest.mark.anyio
@@ -326,4 +552,43 @@ async def test_mandate_risk_workflow_returns_validated_markdown():
     assert "股息贡献率" in completed.output
     assert "高股息股票占比" not in completed.output
     assert "34 条，只读匹配" in completed.output
-    assert completed.usage["total_tokens"] == 150
+    assert completed.usage["complete"] is False
+    assert completed.usage["coverage_audit"]["complete"] is False
+    assert completed.usage["semantic_judge"]["reported_usage"]["total_tokens"] == 150
+    assert "total_tokens" not in completed.usage
+
+
+@pytest.mark.anyio
+async def test_mandate_risk_retries_once_when_model_json_is_truncated():
+    class TruncatedThenValidProvider:
+        def __init__(self):
+            self.calls = 0
+
+        async def run_skill(self, _input):
+            audit_chunk = _empty_coverage_audit_chunk(_input.user_prompt)
+            if audit_chunk:
+                yield audit_chunk
+                return
+            self.calls += 1
+            if self.calls == 1:
+                yield Chunk(content='{"matches":[')
+            else:
+                candidates = _candidate_rows_from_prompt(_input.user_prompt)
+                yield Chunk(content=json.dumps(_synthetic_candidate_payload(candidates)))
+
+    provider = TruncatedThenValidProvider()
+    workflow = MandateRiskLangGraphWorkflow(str(METRICS))
+    context = WorkflowContext(
+        input_val=VmChatInput(
+            userMessage=f"<document_text>{SAMPLE}</document_text>",
+            globalQueryParameters=GlobalQueryParameters(names=[], nonemptyFlags={}),
+        ),
+        provider=provider,
+        agent_id="mandate-risk-ai",
+        role_id="risk-analyst",
+    )
+    events = [event async for event in workflow.stream(context)]
+
+    assert provider.calls == 2
+    assert not [event for event in events if event.event == "run.failed"]
+    assert any(event.event == "run.completed" for event in events)

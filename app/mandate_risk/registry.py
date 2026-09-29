@@ -34,6 +34,11 @@ def _strategy_tokens(raw: str) -> set[str]:
     return {item.strip() for item in normalized.split("/") if item.strip()}
 
 
+# The snapshot marks turnover as equity-only, although its Mandate field also
+# names the fixed-income Buy and Maintain strategy. Keep the source row intact.
+_DERIVED_STRATEGY_TYPES = {"换手率(%)": {"固收"}}
+
+
 def _col_index(cell_ref: str) -> int:
     match = re.match(r"([A-Z]+)", cell_ref or "")
     if not match:
@@ -250,6 +255,11 @@ class RawRiskMetricRegistry:
         result: List[RawRiskMetric] = []
         for row in self._rows:
             tokens = _strategy_tokens(row.strategy_type)
-            if not tokens or strategy in tokens or "基金层" in tokens:
+            if (
+                not tokens
+                or strategy in tokens
+                or "基金层" in tokens
+                or strategy in _DERIVED_STRATEGY_TYPES.get(row.metric_name, set())
+            ):
                 result.append(row)
         return result

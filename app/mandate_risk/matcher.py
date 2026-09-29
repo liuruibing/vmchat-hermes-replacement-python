@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Mapping, Tuple
 
 from app.mandate_risk.clauses import DocumentClause, split_document_clauses
 from app.mandate_risk.models import CandidateClauseHint, MetricCandidate, RawRiskMetric
@@ -72,6 +72,13 @@ _DERIVED_ALIASES: dict[str, tuple[str, ...]] = {
     "区域分布": ("regional distribution", "geographic distribution", "regional allocation", "区域分布"),
 }
 
+# Broader aliases may recall a candidate without proving that the document
+# directly requires its particular algorithm. Dividend yield, for example,
+# is not the same measure as dividend contribution to total return.
+_DIRECT_EQUIVALENT_ALIASES: dict[str, tuple[str, ...]] = {
+    "股息贡献率": ("dividend contribution", "dividend contribution to total return", "股息贡献率"),
+}
+
 
 def normalize_text(value: str) -> str:
     value = str(value or "").lower()
@@ -82,6 +89,13 @@ def normalize_text(value: str) -> str:
 
 def infer_strategy_type(document_text: str) -> Tuple[str, float]:
     text = normalize_text(document_text)
+    if (
+        "equity portfolio and fixed income portfolio" in text
+        or ("equity assets" in text and "fixed income assets" in text)
+    ):
+        return "混合", 0.95
+    if "private credit" in text and "listed equity" not in text:
+        return "固收", 0.9
     equity_score = sum(1 for term in _EQUITY_HINTS if term in text)
     fixed_score = sum(1 for term in _FIXED_HINTS if term in text)
     if equity_score and fixed_score:
@@ -152,7 +166,10 @@ def phrase_in_text(text: str, phrase: str) -> bool:
 def metric_concept_phrases(metric: RawRiskMetric) -> tuple[str, ...]:
     """Return stable metric-name/alias phrases, excluding Mandate prose."""
 
-    values = [metric.metric_name, *_DERIVED_ALIASES.get(metric.metric_name, ())]
+    aliases = _DIRECT_EQUIVALENT_ALIASES.get(
+        metric.metric_name, _DERIVED_ALIASES.get(metric.metric_name, ())
+    )
+    values = [metric.metric_name, *aliases]
     seen: set[str] = set()
     result: List[str] = []
     for value in values:
@@ -312,6 +329,13 @@ def build_mandate_recall_candidates(
         fragments_by_row[metric.row_id] = fragments
         fragment_counts.update(fragments)
 
+    fixed_income_context = infer_strategy_type(document_text)[0] == "固收"
+    contextual_phrases = {
+        "DV01": ("duration adjustment",),
+        "剩余期限": ("buy and maintain", "held-to-maturity"),
+        "债券资产变现天数": ("capital management",),
+        "换手率(%)": ("relative value trades", "buy and maintain"),
+    }
     result: List[MetricCandidate] = []
     for metric in metric_list:
         independent = {
@@ -328,6 +352,13 @@ def build_mandate_recall_candidates(
             ]
             fragment_results = [(fragment, value) for fragment, value in fragment_results if value > 0]
             if not fragment_results:
+                if fixed_income_context:
+                    triggers = [
+                        phrase for phrase in contextual_phrases.get(metric.metric_name, ())
+                        if _phrase_in_text(text, phrase)
+                    ]
+                    if triggers:
+                        scored.append((4.0, clause, triggers[:1]))
                 continue
             fragment, score = max(fragment_results, key=lambda item: item[1])
             scored.append((score, clause, [fragment]))
@@ -340,6 +371,48 @@ def build_mandate_recall_candidates(
         )
 
     return sorted(result, key=lambda item: (-item.deterministic_score, item.raw_row_id))
+
+
+def build_coverage_audit_candidates(
+    document_text: str,
+    proposals: Mapping[int, List[str]],
+    metrics: Iterable[RawRiskMetric],
+) -> List[MetricCandidate]:
+    """Rebuild audit proposals as candidates using only Python-owned evidence."""
+
+    metric_by_id = {metric.row_id: metric for metric in metrics}
+    clauses_by_id = {item.clause_id: item for item in split_document_clauses(document_text)}
+    result: List[MetricCandidate] = []
+    for raw_row_id, clause_ids in proposals.items():
+        metric = metric_by_id.get(raw_row_id)
+        if metric is None:
+            raise ValueError(f"COVERAGE_AUDIT_UNKNOWN_OR_INELIGIBLE_ROW: {raw_row_id}")
+        if not clause_ids:
+            raise ValueError(f"COVERAGE_AUDIT_EMPTY_CLAUSES: {raw_row_id}")
+        hints = []
+        for clause_id in clause_ids:
+            clause = clauses_by_id.get(clause_id)
+            if clause is None:
+                raise ValueError(f"COVERAGE_AUDIT_UNKNOWN_CLAUSE: {clause_id}")
+            hints.append(
+                CandidateClauseHint(
+                    clause_id=clause.clause_id,
+                    text=clause.text,
+                    source_start=clause.source_start,
+                    source_end=clause.source_end,
+                    page=clause.page,
+                )
+            )
+        result.append(
+            MetricCandidate(
+                raw_row_id=metric.row_id,
+                metric_name=metric.metric_name,
+                deterministic_score=0.0,
+                matched_clauses=hints,
+                recall_source="coverage_audit",
+            )
+        )
+    return result
 
 
 def select_candidates(

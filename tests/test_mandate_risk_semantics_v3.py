@@ -1,4 +1,7 @@
 from pathlib import Path
+import json
+
+import pytest
 
 from app.mandate_risk.clauses import split_document_clauses
 from app.mandate_risk.matcher import (
@@ -13,6 +16,7 @@ from app.mandate_risk.prompts import SYSTEM_PROMPT, build_semantic_judge_prompt
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk.renderer import render_markdown
 from app.mandate_risk.validator import validate_model_result
+from app.workflow.graphs.mandate_risk import MandateRiskLangGraphWorkflow
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +80,68 @@ def test_fixed_income_regression_recalls_credit_metrics_without_sample_rules():
     assert "信用利差（非标）" not in by_name
 
 
+def test_new_metric_library_row_loads_and_reaches_candidate_search(tmp_path):
+    source = tmp_path / "metrics.csv"
+    source.write_text(
+        "风险类型一级,风险类型二级,指标名称,指标算法,Mandate字段,适用策略种类\n"
+        "流动性风险,流动性,组合流动性缓冲率,高流动性资产/组合净值,liquidity buffer,固收\n",
+        encoding="utf-8",
+    )
+    registry = MandateRiskLangGraphWorkflow(str(source))._load_registry()
+    candidates = select_candidates(
+        build_candidates("组合应维持组合流动性缓冲率不低于10%。", registry.eligible_for_strategy("固收"))
+    )
+    english_candidates = select_candidates(
+        build_mandate_recall_candidates(
+            "The fund shall maintain a liquidity buffer of at least 25%.",
+            registry.eligible_for_strategy("固收"),
+        )
+    )
+
+    assert len(registry.all()) == 1
+    assert [item.metric_name for item in candidates] == ["组合流动性缓冲率"]
+    assert [item.metric_name for item in english_candidates] == ["组合流动性缓冲率"]
+
+
+def test_empty_metric_library_is_rejected(tmp_path):
+    source = tmp_path / "empty.csv"
+    source.write_text(
+        "风险类型一级,风险类型二级,指标名称,指标算法,Mandate字段,适用策略种类\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="MANDATE_RISK_METRIC_LIBRARY_INVALID"):
+        MandateRiskLangGraphWorkflow(str(source))._load_registry()
+
+
+def test_fixed_income_contract_reaches_related_duration_maturity_liquidity_metrics():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    turnover = registry.get_by_name("换手率(%)")
+    assert turnover is not None
+    assert turnover.strategy_type == "权益"
+    eligible = registry.eligible_for_strategy("固收")
+    assert turnover in eligible
+
+    _registry, candidates = _merged_candidates(FIXED_INCOME_EXTRACT, "固收")
+    names = {item.metric_name for item in candidates}
+    assert {"久期", "DV01", "剩余期限", "债券资产变现天数", "换手率(%)"} <= names
+    assert "VaR" not in names
+    assert "信用利差（非标）" not in names
+
+
+def test_strategy_inference_uses_explicit_asset_class_for_private_and_mixed_portfolios():
+    private_credit = (
+        "Private Credit; Cash and Cash Equivalents. "
+        "Invest in CNY denominated Private Credit Investments and privately issued Fixed Income securities. "
+        "The Benchmark Index is China (10- Years). Optimize Duration gap level."
+    )
+    mixed = (
+        "The Fund implements asset allocation between its Equity Portfolio and Fixed Income Portfolio. "
+        "Equity assets: Listed Equity. Fixed income assets: Bonds."
+    )
+    assert infer_strategy_type(private_credit)[0] == "固收"
+    assert infer_strategy_type(mixed)[0] == "混合"
+
+
 def test_equity_regression_keeps_direct_concepts_and_excludes_generic_risk_metrics():
     strategy, confidence = infer_strategy_type(EQUITY_EXTRACT)
     assert strategy == "权益"
@@ -115,6 +181,39 @@ def test_prompt_exposes_full_strategy_catalogue_for_gap_checks():
     assert "测量对象" in SYSTEM_PROMPT
     assert "稳定现金流" in SYSTEM_PROMPT
     assert "REJECTED" in SYSTEM_PROMPT
+    assert "每个 Candidate" in SYSTEM_PROMPT
+    assert "每项明确数值目标或限额" in SYSTEM_PROMPT
+    assert "数字必须出现在引用条款" in SYSTEM_PROMPT
+    assert "复合限额" in SYSTEM_PROMPT
+    assert '"clause_id":"c0003"' in prompt
+    assert '"text":"逐字原文引文"' not in prompt
+
+
+def test_gap_prompt_exposes_canonical_clause_ids_without_metric_candidates():
+    document = (
+        "[Page 6]\n"
+        "If a fund is below RMB 1 billion, investment shall not exceed RMB 100 million;\n\n"
+        "[Page 7]\n"
+        "Holdings in a single MMF shall not exceed 100% of its assets."
+    )
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    prompt = build_semantic_judge_prompt(
+        document_text=document,
+        document_name="new-mandate.pdf",
+        strategy_type="权益",
+        registry=registry,
+        candidates=[],
+    )
+
+    for clause in split_document_clauses(document):
+        canonical = json.dumps(
+            {"clause_id": clause.clause_id, "page": clause.page, "text": clause.text},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        assert canonical in prompt
+    assert '"clause_id":"c0003"' not in prompt
+    assert '"clause_id":"c0008"' not in prompt
 
 
 def test_validator_downgrades_definition_or_allowed_adjustment_from_direct():
@@ -156,8 +255,9 @@ def test_validator_downgrades_definition_or_allowed_adjustment_from_direct():
         candidate_clause_ids={duration.row_id: [item.clause_id for item in evidence_clauses]},
     )
 
-    assert len(result.selected_metrics) == 1
-    match = result.selected_metrics[0]
+    assert result.selected_metrics == []
+    assert len(result.review_metrics) == 1
+    match = result.review_metrics[0]
     assert match.match_level == "STRONG_INFERRED"
     assert match.confidence <= 0.85
     assert "Python校验" in match.reason
@@ -204,6 +304,255 @@ def test_validator_preserves_direct_when_metric_has_explicit_limit():
     assert match.evidence[0].page == 6
 
 
+def test_dividend_yield_goal_does_not_directly_require_contribution_ratio():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    contribution = registry.get_by_name("股息贡献率")
+    assert contribution is not None
+    document = "[Page 4]\nThe Sub-Portfolio shall aim to gain stable dividend yield."
+    clause = split_document_clauses(document)[0]
+    payload = {
+        "matches": [
+            {
+                "raw_row_id": contribution.row_id,
+                "metric_name": contribution.metric_name,
+                "match_level": "DIRECT",
+                "confidence": 0.95,
+                "evidence": [{"clause_id": clause.clause_id}],
+            }
+        ]
+    }
+
+    result = validate_model_result(
+        payload=payload,
+        registry=registry,
+        allowed_row_ids=[contribution.row_id],
+        document_text=document,
+        document_name="equity.pdf",
+        strategy_type="权益",
+        candidate_clause_ids={contribution.row_id: [clause.clause_id]},
+    )
+
+    assert result.selected_metrics == []
+    assert result.review_metrics[0].match_level == "STRONG_INFERRED"
+
+
+def test_private_credit_asset_name_alone_does_not_prove_remaining_maturity():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    maturity = registry.get_by_name("非标剩余期限")
+    assert maturity is not None
+    document = "[Page 4]\nThe Sub-Portfolio shall invest in Private Credit Investments."
+    clause = split_document_clauses(document)[0]
+    payload = {
+        "matches": [
+            {
+                "raw_row_id": maturity.row_id,
+                "metric_name": maturity.metric_name,
+                "match_level": "STRONG_INFERRED",
+                "confidence": 0.9,
+                "evidence": [{"clause_id": clause.clause_id}],
+            }
+        ]
+    }
+
+    result = validate_model_result(
+        payload=payload,
+        registry=registry,
+        allowed_row_ids=[maturity.row_id],
+        document_text=document,
+        document_name="private-credit.pdf",
+        strategy_type="固收",
+        candidate_clause_ids={maturity.row_id: [clause.clause_id]},
+    )
+
+    assert result.selected_metrics == []
+    assert result.review_metrics[0].match_level == "WEAK_INFERRED"
+
+
+def test_stable_cash_flows_do_not_support_fund_return_metric():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    fund_return = registry.get_by_name("基金收益率")
+    assert fund_return is not None
+    document = "[Page 4]\nThe primary investment objective is to provide stable cash flows."
+    clause = split_document_clauses(document)[0]
+    payload = {
+        "matches": [
+            {
+                "raw_row_id": fund_return.row_id,
+                "metric_name": fund_return.metric_name,
+                "match_level": "STRONG_INFERRED",
+                "confidence": 0.91,
+                "reason": "Stable cash flows imply returns.",
+                "evidence": [{"clause_id": clause.clause_id}],
+            }
+        ]
+    }
+
+    result = validate_model_result(
+        payload=payload,
+        registry=registry,
+        allowed_row_ids=[fund_return.row_id],
+        document_text=document,
+        document_name="fixed-income.pdf",
+        strategy_type="固收",
+        candidate_clause_ids={fund_return.row_id: [clause.clause_id]},
+    )
+
+    assert result.selected_metrics == []
+    assert result.rejected_metrics[0].match_level == "REJECTED"
+
+
+def test_explicit_total_return_goal_supports_fund_return_metric():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    fund_return = registry.get_by_name("基金收益率")
+    assert fund_return is not None
+    document = "[Page 4]\nThe primary investment objective is to generate total return."
+    clause = split_document_clauses(document)[0]
+    payload = {
+        "matches": [
+            {
+                "raw_row_id": fund_return.row_id,
+                "metric_name": fund_return.metric_name,
+                "match_level": "DIRECT",
+                "confidence": 0.9,
+                "evidence": [{"clause_id": clause.clause_id}],
+            }
+        ]
+    }
+
+    result = validate_model_result(
+        payload=payload,
+        registry=registry,
+        allowed_row_ids=[fund_return.row_id],
+        document_text=document,
+        document_name="equity.pdf",
+        strategy_type="权益",
+        candidate_clause_ids={fund_return.row_id: [clause.clause_id]},
+    )
+
+    assert len(result.selected_metrics + result.review_metrics) == 1
+    assert (result.selected_metrics + result.review_metrics)[0].match_level in {"DIRECT", "STRONG_INFERRED"}
+
+
+def test_gap_threshold_condition_must_match_quoted_clause():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    document = (
+        "[Page 6]\n"
+        "If total market value of Third-Party Managed Fund is less than RMB 1 billion, "
+        "the aggregate investment shall not exceed the lower of 100% and RMB 100 million.\n\n"
+        "If total market value of Third-Party Managed Fund is RMB 1 billion or more, "
+        "the aggregate investment shall not exceed 100% of its total market value."
+    )
+    clauses = split_document_clauses(document)
+    lower_clause = next(item for item in clauses if "less than RMB 1 billion" in item.text)
+    higher_clause = next(item for item in clauses if "RMB 1 billion or more" in item.text)
+    requirement = "若基金市值低于RMB 1 billion，投资不得超过100%。"
+
+    def validate(quote):
+        return validate_model_result(
+            payload={"matches": [], "gaps": [{"requirement": requirement, "evidence": [{"clause_id": quote.clause_id}]}]},
+            registry=registry,
+            allowed_row_ids=[],
+            document_text=document,
+            document_name="equity.pdf",
+            strategy_type="权益",
+        )
+
+    assert validate(higher_clause).library_gaps == []
+    assert len(validate(lower_clause).library_gaps) == 1
+
+
+def test_gap_numeric_unit_survives_adjacent_chinese_text():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    document = "[Page 6]\nThe investment shall not exceed 100% of its total market value."
+    clause = split_document_clauses(document)[0]
+    result = validate_model_result(
+        payload={
+            "matches": [],
+            "gaps": [{
+                "requirement": "投资上限为RMB 100 million中的较低者。",
+                "evidence": [{"clause_id": clause.clause_id}],
+            }],
+        },
+        registry=registry,
+        allowed_row_ids=[],
+        document_text=document,
+        document_name="equity.pdf",
+        strategy_type="权益",
+    )
+
+    assert result.library_gaps == []
+
+
+def test_gap_threshold_direction_is_not_tied_to_sample_currency_or_value():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    document = (
+        "[Page 2]\nIf fund assets are USD 2 million or more, "
+        "the allocation shall not exceed 50% of net assets."
+    )
+    clause = split_document_clauses(document)[0]
+    result = validate_model_result(
+        payload={
+            "matches": [],
+            "gaps": [{
+                "requirement": "若基金资产低于USD 2 million，配置不得超过50%。",
+                "evidence": [{"clause_id": clause.clause_id}],
+            }],
+        },
+        registry=registry,
+        allowed_row_ids=[],
+        document_text=document,
+        document_name="another-contract.pdf",
+        strategy_type="权益",
+    )
+
+    assert result.library_gaps == []
+
+
+@pytest.mark.parametrize(
+    "requirement, clause_text",
+    [
+        ("基金资产不低于USD 2 million。", "The fund shall hold no less than USD 2 million."),
+        ("基金资产低于USD 2 million。", "If assets are USD 2 million or  less."),
+    ],
+)
+def test_gap_threshold_parses_negation_and_pdf_whitespace(requirement, clause_text):
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    document = f"[Page 2]\n{clause_text}"
+    clause = split_document_clauses(document)[0]
+    result = validate_model_result(
+        payload={"matches": [], "gaps": [{
+            "requirement": requirement,
+            "evidence": [{"clause_id": clause.clause_id}],
+        }]},
+        registry=registry,
+        allowed_row_ids=[],
+        document_text=document,
+        document_name="another-contract.pdf",
+        strategy_type="固收",
+    )
+
+    assert len(result.library_gaps) == 1
+
+
+def test_gap_threshold_rejects_same_amount_in_wrong_currency():
+    registry = RawRiskMetricRegistry.from_path(METRICS)
+    document = "[Page 2]\nIf fund assets are below EUR 2 million, allocation is limited to 50%."
+    clause = split_document_clauses(document)[0]
+    result = validate_model_result(
+        payload={"matches": [], "gaps": [{
+            "requirement": "若基金资产低于USD 2 million，配置限额为50%。",
+            "evidence": [{"clause_id": clause.clause_id}],
+        }]},
+        registry=registry,
+        allowed_row_ids=[],
+        document_text=document,
+        document_name="another-contract.pdf",
+        strategy_type="固收",
+    )
+
+    assert result.library_gaps == []
+
+
 def test_summary_markdown_uses_fixed_named_six_columns():
     registry = RawRiskMetricRegistry.from_path(METRICS)
     duration = registry.get_by_name("久期")
@@ -225,4 +574,4 @@ def test_summary_markdown_uses_fixed_named_six_columns():
     markdown = render_markdown(result, registry)
 
     assert "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in markdown
-    assert "| — | 久期 | Duration is strongly related. | — | — | — |" in markdown
+    assert "| key（直观判断组合运行情况） | 久期 | — | — | — | — |" in markdown
