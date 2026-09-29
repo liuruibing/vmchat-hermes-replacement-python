@@ -1,0 +1,13 @@
+{
+  "id": "mandate-risk-v2-lab",
+  "name": "Mandate Requirement IR V2 Lab",
+  "version": "0.1.0",
+  "workflow": "mandate-risk-analysis-v2",
+  "knowledge_paths": [],
+  "roles_dir": "roles",
+  "default_role": "requirement-analyst",
+  "metadata": {
+    "description": "实验性 Phase A：仅从 Mandate PDF 提取并审计 Requirement IR，不读取风险指标库、不执行正式指标匹配",
+    "experimental": true
+  }
+}
