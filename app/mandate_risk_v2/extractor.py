@@ -4,6 +4,7 @@ import re
 from typing import Dict, Iterable, List, Sequence, Tuple
 
 from app.mandate_risk.clauses import DocumentClause
+from app.mandate_risk_v2.constraint_validator import validate_requirement_constraints
 from app.mandate_risk_v2.models import (
     CanonicalEvidence,
     ContextFact,
@@ -108,6 +109,8 @@ def validate_extraction_payload(
             known_clause_ids=known,
             owner=f"context fact {item.local_id}",
         )
+
+    validate_requirement_constraints(batch.requirements, clauses=allowed_clauses)
     return batch
 
 
