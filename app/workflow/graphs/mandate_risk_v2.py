@@ -79,9 +79,16 @@ class MandateRiskV2Workflow:
             yield RunFailedEvent(error=f"V2 Requirement IR 分析失败: {err}")
             return
 
+        completion_metadata: dict[str, Any] | None = None
         if self.phase_a_only:
             markdown = _render_requirement_ir(result)
             usage = result.usage
+            completion_metadata = {
+                "mandate_risk_v2": {
+                    "phase": "requirement_ir",
+                    "requirement_ir": result.requirement_ir.model_dump(mode="json"),
+                }
+            }
         else:
             yield ReasoningDeltaEvent(
                 delta=(f"Phase A 完成：识别 {len(result.requirement_ir.requirements)} 条 Requirement；"
@@ -104,6 +111,12 @@ class MandateRiskV2Workflow:
                     ir=result.requirement_ir, clauses=result.clauses,
                     registry=registry, mapping=mapping, analysis=analysis,
                 )
+                completion_metadata = {
+                    "mandate_risk_v2": {
+                        "phase": "complete",
+                        "result": analysis.model_dump(mode="json"),
+                    }
+                }
                 usage = {
                     "complete": bool(result.usage.get("complete") and mapping.usage.get("complete")),
                     "requirement_phase": result.usage,
@@ -129,7 +142,11 @@ class MandateRiskV2Workflow:
             )
         for chunk in code_point_chunks(markdown, context.message_chunk_chars):
             yield MessageDeltaEvent(delta=chunk)
-        yield RunCompletedEvent(output=markdown, usage=usage)
+        yield RunCompletedEvent(
+            output=markdown,
+            usage=usage,
+            metadata=completion_metadata,
+        )
 
 
 def _extract_document_payload(user_message: str) -> Tuple[str, str]:
