@@ -23,8 +23,10 @@ from app.provider.fixed_provider import ModelSkillRunInput
 
 
 MODEL_TIMEOUT_SECONDS = 120
-EXTRACTION_BATCH_SIZE = 24
-EXTRACTION_BATCH_OVERLAP = 2
+EXTRACTION_BATCH_SIZE = 32
+EXTRACTION_BATCH_OVERLAP = 6
+FULL_DOCUMENT_MAX_CLAUSES = 120
+FULL_DOCUMENT_MAX_CHARS = 60_000
 MAX_REPAIR_ROUNDS = 2
 
 
@@ -46,6 +48,7 @@ class RequirementPipelineResult:
     coverage_review: CoverageReview
     usage: Dict[str, Any]
     extraction_attempts: int
+    extraction_mode: str
 
 
 def _is_aborted(signal: Any) -> bool:
@@ -146,13 +149,35 @@ def _aggregate_usage(
     return result
 
 
+def choose_extraction_windows(
+    clauses: Sequence[DocumentClause],
+    *,
+    batch_size: int = EXTRACTION_BATCH_SIZE,
+    overlap: int = EXTRACTION_BATCH_OVERLAP,
+    full_document_max_clauses: int = FULL_DOCUMENT_MAX_CLAUSES,
+    full_document_max_chars: int = FULL_DOCUMENT_MAX_CHARS,
+) -> Tuple[str, List[List[DocumentClause]]]:
+    """Prefer one global AI reading when the Mandate comfortably fits.
+
+    V2 should maximize document-level understanding instead of imposing chunk
+    boundaries unnecessarily. Chunking is a scale fallback for genuinely long
+    documents, not the default interpretation strategy.
+    """
+
+    total_chars = sum(len(clause.text) for clause in clauses)
+    if len(clauses) <= full_document_max_clauses and total_chars <= full_document_max_chars:
+        return "full_document", [list(clauses)]
+    return "chunked", chunk_clauses(clauses, max_clauses=batch_size, overlap=overlap)
+
+
 class RequirementExtractionPipeline:
     """Phase A: PDF text -> Requirement IR -> explicit coverage gate.
 
-    There is intentionally no metric catalogue dependency in this class. When
-    the reviewer finds an omission, the whole document is re-read with the
-    review feedback as a hint. The previous IR is discarded rather than patched
-    by Python, so semantic repair remains an AI responsibility.
+    There is intentionally no metric catalogue dependency in this class. Normal
+    sized Mandates are read globally in one semantic pass. Very long documents
+    fall back to overlapping windows. When coverage review finds an omission,
+    the document is re-read with reviewer feedback as a hint; Python never
+    patches business semantics into the IR.
     """
 
     def __init__(
@@ -162,11 +187,15 @@ class RequirementExtractionPipeline:
         overlap: int = EXTRACTION_BATCH_OVERLAP,
         timeout_seconds: int = MODEL_TIMEOUT_SECONDS,
         max_repair_rounds: int = MAX_REPAIR_ROUNDS,
+        full_document_max_clauses: int = FULL_DOCUMENT_MAX_CLAUSES,
+        full_document_max_chars: int = FULL_DOCUMENT_MAX_CHARS,
     ) -> None:
         self.batch_size = batch_size
         self.overlap = overlap
         self.timeout_seconds = timeout_seconds
         self.max_repair_rounds = max_repair_rounds
+        self.full_document_max_clauses = full_document_max_clauses
+        self.full_document_max_chars = full_document_max_chars
         if max_repair_rounds < 0:
             raise ValueError("max_repair_rounds must be >= 0")
 
@@ -241,13 +270,18 @@ class RequirementExtractionPipeline:
         clauses = split_document_clauses(raw)
         if not clauses:
             raise ValueError("MANDATE_REQUIREMENT_NO_CLAUSES")
-        windows = chunk_clauses(clauses, max_clauses=self.batch_size, overlap=self.overlap)
+        extraction_mode, windows = choose_extraction_windows(
+            clauses,
+            batch_size=self.batch_size,
+            overlap=self.overlap,
+            full_document_max_clauses=self.full_document_max_clauses,
+            full_document_max_chars=self.full_document_max_chars,
+        )
 
         extraction_usage: List[Dict[str, int]] = []
         coverage_usage: List[Dict[str, int]] = []
         review_feedback: dict | None = None
         final_review: CoverageReview | None = None
-        final_ir: RequirementIR | None = None
         attempts = self.max_repair_rounds + 1
 
         for attempt_index in range(attempts):
@@ -295,6 +329,7 @@ class RequirementExtractionPipeline:
                     coverage_review=final_review,
                     usage=usage,
                     extraction_attempts=completed_attempts,
+                    extraction_mode=extraction_mode,
                 )
 
             review_feedback = final_review.model_dump()
