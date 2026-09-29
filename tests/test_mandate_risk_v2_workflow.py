@@ -32,7 +32,7 @@ class Provider:
                                 "requirement_type": "QUANTITATIVE_LIMIT",
                                 "semantic_summary": "The portfolio must maintain at least 7% liquidity.",
                                 "constraint": {"operator": ">=", "value": 7, "unit": "%"},
-                                "evidence": {"clause_ids": [target["clause_id"]},
+                                "evidence": {"clause_ids": [target["clause_id"]]},
                             }
                         ],
                         "definitions": [],
