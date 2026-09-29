@@ -42,27 +42,29 @@ class EvidenceRef(StrictModel):
     clause_ids: List[str] = Field(min_length=1)
 
 
-class RequirementSubject(BaseModel):
+class RequirementSubject(StrictModel):
     text: str = ""
     normalized_type: str | None = None
 
 
-class RequirementMeasurement(BaseModel):
+class RequirementMeasurement(StrictModel):
     concept: str | None = None
     object: str | List[str] | None = None
     qualifiers: Dict[str, Any] = Field(default_factory=dict)
 
 
-class RequirementConstraint(BaseModel):
+class RequirementConstraint(StrictModel):
     operator: str | None = None
     value: Any = None
+    value_to: Any = None
     unit: str | None = None
+    raw_value_text: str | None = None
     formula: str | None = None
     benchmark: str | None = None
     attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
-class RequirementCondition(BaseModel):
+class RequirementCondition(StrictModel):
     left: str | None = None
     operator: str | None = None
     right: Any = None
