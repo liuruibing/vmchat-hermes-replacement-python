@@ -35,6 +35,82 @@ class MappingResult:
                 (link.requirement_id, link.raw_row_id) in selected]
 
 
+def _apply_unconfirmed_critic_verdicts(
+    dispositions: FinalMappingReview,
+    critic: CriticReview,
+) -> FinalMappingReview:
+    """Downgrade only the exact row/aspect challenged by the independent Critic.
+
+    MAIN_TABLE destinations can contain more than one metric row.  A challenge
+    to one row must not demote its confirmed siblings.  LIBRARY_GAP has no row
+    id, so it is keyed by Requirement + aspect.
+    """
+
+    result = dispositions.model_copy(deep=True)
+    verdicts = {
+        (item.requirement_id, item.destination, item.raw_row_id, item.aspect): item
+        for item in critic.verdicts
+    }
+
+    for item in result.dispositions:
+        rewritten = []
+        for destination in item.destinations:
+            if destination.destination == "MAIN_TABLE":
+                confirmed_rows: list[int] = []
+                objections = []
+                for row_id in destination.raw_row_ids:
+                    verdict = verdicts.get(
+                        (item.requirement_id, "MAIN_TABLE", row_id, destination.aspect)
+                    )
+                    if verdict is not None and verdict.verdict != "CONFIRM":
+                        objections.append(verdict)
+                    else:
+                        confirmed_rows.append(row_id)
+
+                if confirmed_rows:
+                    confirmed = destination.model_copy(deep=True)
+                    confirmed.raw_row_ids = confirmed_rows
+                    rewritten.append(confirmed)
+
+                if objections:
+                    pending = destination.model_copy(deep=True)
+                    pending.destination = "PENDING_REVIEW"
+                    pending.raw_row_ids = [
+                        verdict.raw_row_id
+                        for verdict in objections
+                        if verdict.raw_row_id is not None
+                    ]
+                    if confirmed_rows:
+                        pending.aspect = f"{destination.aspect} / Critic待确认"
+                    details = "; ".join(
+                        f"row {verdict.raw_row_id} {verdict.verdict}: {verdict.reason}"
+                        for verdict in objections
+                    )
+                    pending.reason = f"Critic {details}; 原提案：{destination.reason}"
+                    rewritten.append(pending)
+                continue
+
+            if destination.destination == "LIBRARY_GAP":
+                verdict = verdicts.get(
+                    (item.requirement_id, "LIBRARY_GAP", None, destination.aspect)
+                )
+                if verdict is not None and verdict.verdict != "CONFIRM":
+                    pending = destination.model_copy(deep=True)
+                    pending.destination = "PENDING_REVIEW"
+                    pending.reason = (
+                        f"Critic {verdict.verdict}: {verdict.reason}; "
+                        f"原提案：{destination.reason}"
+                    )
+                    rewritten.append(pending)
+                else:
+                    rewritten.append(destination)
+                continue
+
+            rewritten.append(destination)
+        item.destinations = rewritten
+    return result
+
+
 class MappingPipeline:
     def __init__(self, *, batch_size: int = 8, max_critic_repairs: int = 1) -> None:
         if batch_size < 1 or max_critic_repairs < 0:
@@ -92,22 +168,7 @@ class MappingPipeline:
             objections = [item for item in critic.verdicts if item.verdict != "CONFIRM"]
             if not objections or repair >= self.max_critic_repairs:
                 if objections:
-                    dispositions = dispositions.model_copy(deep=True)
-                    by_aspect = {
-                        (item.requirement_id, item.destination, item.aspect): item
-                        for item in objections
-                    }
-                    for item in dispositions.dispositions:
-                        for destination in item.destinations:
-                            objection = by_aspect.get(
-                                (item.requirement_id, destination.destination, destination.aspect)
-                            )
-                            if objection is not None:
-                                destination.destination = "PENDING_REVIEW"
-                                destination.reason = (
-                                    f"Critic {objection.verdict}: {objection.reason}; "
-                                    f"原提案：{destination.reason}"
-                                )
+                    dispositions = _apply_unconfirmed_critic_verdicts(dispositions, critic)
                 complete = all(report is not None and "total_tokens" in report
                                for report in usage_reports)
                 usage: dict[str, Any] = {
