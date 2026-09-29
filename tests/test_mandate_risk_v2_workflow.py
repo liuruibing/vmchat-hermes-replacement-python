@@ -7,6 +7,7 @@ from app.workflow.engine import WorkflowContext
 from app.workflow.graphs.mandate_risk_v2 import MandateRiskV2Workflow
 from app.mandate_risk.models import RawRiskMetric
 from app.mandate_risk.registry import RawRiskMetricRegistry
+from app.mandate_risk_v2.mapping_models import CORE_COMPATIBILITY_DIMENSIONS
 
 
 class Chunk:
@@ -17,6 +18,15 @@ class Chunk:
 
 def _json_line_after(prompt: str, marker: str):
     return json.loads(prompt.split(marker, 1)[1].split("\n", 1)[0])
+
+
+def _matrix():
+    return [
+        {"dimension": dimension, "requirement_basis": f"requirement {dimension}",
+         "metric_basis": f"metric {dimension}", "relation": "EQUIVALENT",
+         "reason": "audited"}
+        for dimension in CORE_COMPATIBILITY_DIMENSIONS
+    ]
 
 
 class Provider:
@@ -109,8 +119,7 @@ class FullProvider(Provider):
         if "# V2 mapping batch" in prompt:
             yield Chunk(content=json.dumps({"links": [{
                 "requirement_id": "REQ-0001", "raw_row_id": 2, "level": "DIRECT",
-                "compatibility": [{"dimension": "denominator", "requirement_basis": "NAV",
-                                   "metric_basis": "NAV", "relation": "EQUIVALENT", "reason": "same"}],
+                "compatibility": _matrix(),
                 "evidence_clause_ids": ["c0001"], "reason": "direct",
             }], "row_assessments": [{"raw_row_id": 2, "outcome": "LINKED", "reason": "direct"}]}),
                 usage={"total_tokens": 7})
