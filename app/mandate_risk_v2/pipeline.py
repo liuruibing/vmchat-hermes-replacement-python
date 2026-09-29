@@ -25,15 +25,14 @@ from app.provider.fixed_provider import ModelSkillRunInput
 MODEL_TIMEOUT_SECONDS = 120
 EXTRACTION_BATCH_SIZE = 24
 EXTRACTION_BATCH_OVERLAP = 2
+MAX_REPAIR_ROUNDS = 2
 
 
 class RequirementCoverageIncomplete(RuntimeError):
     def __init__(self, review: CoverageReview) -> None:
         self.review = review
         missing = ", ".join(item.clause_id for item in review.missing_clauses) or "none"
-        partial = ", ".join(
-            item.requirement_id for item in review.partial_requirements
-        ) or "none"
+        partial = ", ".join(item.requirement_id for item in review.partial_requirements) or "none"
         super().__init__(
             "MANDATE_REQUIREMENT_COVERAGE_INCOMPLETE: "
             f"missing_clauses={missing}; partial_requirements={partial}"
@@ -46,6 +45,7 @@ class RequirementPipelineResult:
     requirement_ir: RequirementIR
     coverage_review: CoverageReview
     usage: Dict[str, Any]
+    extraction_attempts: int
 
 
 def _is_aborted(signal: Any) -> bool:
@@ -117,9 +117,7 @@ def _aggregate_usage(
     coverage_expected: int,
 ) -> Dict[str, Any]:
     def phase(reports: Sequence[Dict[str, int]], expected: int):
-        complete = len(reports) == expected and all(
-            "total_tokens" in report for report in reports
-        )
+        complete = len(reports) == expected and all("total_tokens" in report for report in reports)
         reported = {
             key: sum(report.get(key, 0) for report in reports)
             for key in ("prompt_tokens", "completion_tokens", "total_tokens")
@@ -151,7 +149,10 @@ def _aggregate_usage(
 class RequirementExtractionPipeline:
     """Phase A: PDF text -> Requirement IR -> explicit coverage gate.
 
-    There is intentionally no metric catalogue dependency in this class.
+    There is intentionally no metric catalogue dependency in this class. When
+    the reviewer finds an omission, the whole document is re-read with the
+    review feedback as a hint. The previous IR is discarded rather than patched
+    by Python, so semantic repair remains an AI responsibility.
     """
 
     def __init__(
@@ -160,10 +161,14 @@ class RequirementExtractionPipeline:
         batch_size: int = EXTRACTION_BATCH_SIZE,
         overlap: int = EXTRACTION_BATCH_OVERLAP,
         timeout_seconds: int = MODEL_TIMEOUT_SECONDS,
+        max_repair_rounds: int = MAX_REPAIR_ROUNDS,
     ) -> None:
         self.batch_size = batch_size
         self.overlap = overlap
         self.timeout_seconds = timeout_seconds
+        self.max_repair_rounds = max_repair_rounds
+        if max_repair_rounds < 0:
+            raise ValueError("max_repair_rounds must be >= 0")
 
     async def _call_model(
         self,
@@ -189,6 +194,36 @@ class RequirementExtractionPipeline:
         )
         return extract_first_json_object(content), usage if usage_reported else None
 
+    async def _extract_attempt(
+        self,
+        *,
+        document_name: str,
+        windows: Sequence[Sequence[DocumentClause]],
+        provider: Any,
+        signal: Any,
+        review_feedback: dict | None,
+        extraction_usage: List[Dict[str, int]],
+    ) -> RequirementIR:
+        batches = []
+        for index, window in enumerate(windows, start=1):
+            prompt = build_extraction_prompt(
+                document_name=document_name,
+                clauses=window,
+                batch_index=index,
+                batch_count=len(windows),
+                review_feedback=review_feedback,
+            )
+            payload, usage = await self._call_model(
+                provider=provider,
+                system_prompt=EXTRACTION_SYSTEM_PROMPT,
+                user_prompt=prompt,
+                signal=signal,
+            )
+            batches.append(validate_extraction_payload(payload, allowed_clauses=window))
+            if usage is not None:
+                extraction_usage.append(usage)
+        return build_requirement_ir(document_name=document_name, batches=batches)
+
     async def run(
         self,
         *,
@@ -206,71 +241,63 @@ class RequirementExtractionPipeline:
         clauses = split_document_clauses(raw)
         if not clauses:
             raise ValueError("MANDATE_REQUIREMENT_NO_CLAUSES")
-        windows = chunk_clauses(
-            clauses,
-            max_clauses=self.batch_size,
-            overlap=self.overlap,
-        )
+        windows = chunk_clauses(clauses, max_clauses=self.batch_size, overlap=self.overlap)
 
-        batches = []
         extraction_usage: List[Dict[str, int]] = []
-        for index, window in enumerate(windows, start=1):
-            prompt = build_extraction_prompt(
+        coverage_usage: List[Dict[str, int]] = []
+        review_feedback: dict | None = None
+        final_review: CoverageReview | None = None
+        final_ir: RequirementIR | None = None
+        attempts = self.max_repair_rounds + 1
+
+        for attempt_index in range(attempts):
+            if _is_aborted(signal):
+                raise RuntimeError("客户端连接已中断")
+
+            final_ir = await self._extract_attempt(
                 document_name=document_name,
-                clauses=window,
-                batch_index=index,
-                batch_count=len(windows),
-            )
-            payload, usage = await self._call_model(
+                windows=windows,
                 provider=provider,
-                system_prompt=EXTRACTION_SYSTEM_PROMPT,
-                user_prompt=prompt,
+                signal=signal,
+                review_feedback=review_feedback,
+                extraction_usage=extraction_usage,
+            )
+            coverage_prompt = build_coverage_review_prompt(
+                document_name=document_name,
+                clauses=clauses,
+                requirement_ir=final_ir,
+                coverage_hints=build_coverage_hints(clauses),
+            )
+            coverage_payload, coverage_usage_item = await self._call_model(
+                provider=provider,
+                system_prompt=COVERAGE_SYSTEM_PROMPT,
+                user_prompt=coverage_prompt,
                 signal=signal,
             )
-            batches.append(
-                validate_extraction_payload(payload, allowed_clauses=window)
+            if coverage_usage_item is not None:
+                coverage_usage.append(coverage_usage_item)
+            final_review = validate_coverage_review(
+                coverage_payload,
+                clauses=clauses,
+                requirement_ir=final_ir,
             )
-            if usage is not None:
-                extraction_usage.append(usage)
+            if final_review.complete:
+                completed_attempts = attempt_index + 1
+                usage = _aggregate_usage(
+                    extraction_usage,
+                    len(windows) * completed_attempts,
+                    coverage_usage,
+                    completed_attempts,
+                )
+                return RequirementPipelineResult(
+                    clauses=clauses,
+                    requirement_ir=final_ir,
+                    coverage_review=final_review,
+                    usage=usage,
+                    extraction_attempts=completed_attempts,
+                )
 
-        requirement_ir = build_requirement_ir(
-            document_name=document_name,
-            batches=batches,
-        )
+            review_feedback = final_review.model_dump()
 
-        coverage_prompt = build_coverage_review_prompt(
-            document_name=document_name,
-            clauses=clauses,
-            requirement_ir=requirement_ir,
-            coverage_hints=build_coverage_hints(clauses),
-        )
-        coverage_payload, coverage_usage_item = await self._call_model(
-            provider=provider,
-            system_prompt=COVERAGE_SYSTEM_PROMPT,
-            user_prompt=coverage_prompt,
-            signal=signal,
-        )
-        coverage_review = validate_coverage_review(
-            coverage_payload,
-            clauses=clauses,
-            requirement_ir=requirement_ir,
-        )
-        coverage_usage = (
-            [coverage_usage_item] if coverage_usage_item is not None else []
-        )
-        usage = _aggregate_usage(
-            extraction_usage,
-            len(windows),
-            coverage_usage,
-            1,
-        )
-
-        if not coverage_review.complete:
-            raise RequirementCoverageIncomplete(coverage_review)
-
-        return RequirementPipelineResult(
-            clauses=clauses,
-            requirement_ir=requirement_ir,
-            coverage_review=coverage_review,
-            usage=usage,
-        )
+        assert final_review is not None
+        raise RequirementCoverageIncomplete(final_review)
