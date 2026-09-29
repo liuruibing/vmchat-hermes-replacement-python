@@ -218,11 +218,22 @@ class RequirementExtractionPipeline:
             search_knowledge=None,
             signal=signal,
         )
-        content, usage, usage_reported = await asyncio.wait_for(
-            _collect_skill_output(run_skill, run_input, signal),
-            timeout=self.timeout_seconds,
-        )
-        return extract_first_json_object(content), usage if usage_reported else None
+        last_err = None
+        for attempt in range(3):
+            try:
+                content, usage, usage_reported = await asyncio.wait_for(
+                    _collect_skill_output(run_skill, run_input, signal),
+                    timeout=self.timeout_seconds,
+                )
+                return extract_first_json_object(content), usage if usage_reported else None
+            except Exception as e:
+                last_err = e
+                err_msg = str(e)
+                if ("503" in err_msg or "UNAVAILABLE" in err_msg or "high demand" in err_msg or "502" in err_msg) and attempt < 2:
+                    await asyncio.sleep(2.0 * (attempt + 1))
+                    continue
+                raise e
+        raise last_err or RuntimeError("Model call failed after retries")
 
     async def _extract_attempt(
         self,
