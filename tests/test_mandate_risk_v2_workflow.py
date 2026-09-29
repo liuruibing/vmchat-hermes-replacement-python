@@ -61,6 +61,8 @@ async def test_v2_workflow_can_be_invoked_without_touching_metric_catalogue():
     assert events[0].event == "reasoning.delta" and "不读取风险指标库" in events[0].delta
     assert events[-1].event == "run.completed" and "REQ-0001" in events[-1].output and "7%" in events[-1].output
     assert events[-1].usage["total_tokens"] == 8
+    assert events[-1].metadata["mandate_risk_v2"]["phase"] == "requirement_ir"
+    assert events[-1].metadata["mandate_risk_v2"]["requirement_ir"]["requirements"][0]["requirement_id"] == "REQ-0001"
 
 
 class FullProvider(Provider):
@@ -96,4 +98,10 @@ async def test_v2_workflow_outputs_critic_confirmed_six_column_report():
     assert any(event.event == "reasoning.delta" and "Phase A 完成" in event.delta for event in events)
     assert "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in events[-1].output
     assert "Unseen Liquidity Metric" in events[-1].output
+    assert "结构化约束：`>= 7%`" in events[-1].output
     assert events[-1].usage["total_tokens"] == 29
+    assert events[-1].usage["result_counts"]["requirements"] == 1
+    structured = events[-1].metadata["mandate_risk_v2"]
+    assert structured["phase"] == "complete"
+    assert structured["result"]["matched_metrics"][0]["metric"]["metric_name"] == "Unseen Liquidity Metric"
+    assert structured["result"]["requirements"][0]["requirement"]["constraint"]["value"] == 7
