@@ -20,7 +20,8 @@ EXTRACTION_SYSTEM_PROMPT = """你是投资委托文件（Mandate）的文档理�
 6. 不得跨页拼接成输入中不存在的单条原文。需要多个条款共同支持时列出多个 clause_id。
 7. measurement / qualifiers / scope / conditions / attributes 是开放语义字段。只填写原文能够支持的信息，不要为了填满 schema 猜测。
 8. local_id 只需在当前批次唯一，例如 r1、r2、d1、c1。
-9. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
+9. Coverage Reviewer 的反馈只是重新检查线索。必须重新依据原始 clauses 判断，不能无条件接受反馈。
+10. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
 """
 
 
@@ -42,11 +43,7 @@ COVERAGE_SYSTEM_PROMPT = """你是 Mandate Requirement Coverage Reviewer。
 
 def _clause_payload(clauses: Iterable[DocumentClause]):
     return [
-        {
-            "clause_id": clause.clause_id,
-            "page": clause.page,
-            "text": clause.text,
-        }
+        {"clause_id": clause.clause_id, "page": clause.page, "text": clause.text}
         for clause in clauses
     ]
 
@@ -57,6 +54,7 @@ def build_extraction_prompt(
     clauses: Sequence[DocumentClause],
     batch_index: int = 1,
     batch_count: int = 1,
+    review_feedback: dict | None = None,
 ) -> str:
     metadata = {
         "document_name": document_name,
@@ -106,17 +104,28 @@ def build_extraction_prompt(
             }
         ],
     }
-    return "\n".join(
+    parts = [
+        "# Requirement extraction batch",
+        json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
+        "# Input clauses (JSON)",
+        json.dumps(_clause_payload(clauses), ensure_ascii=False, separators=(",", ":")),
+    ]
+    if review_feedback:
+        parts.extend(
+            [
+                "# Previous coverage review feedback (JSON; review hints only)",
+                json.dumps(review_feedback, ensure_ascii=False, separators=(",", ":")),
+                "请重新独立阅读本批 clauses，并重点检查反馈指出的遗漏/不完整点；若反馈不被原文支持，不要照抄。",
+            ]
+        )
+    parts.extend(
         [
-            "# Requirement extraction batch",
-            json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
-            "# Input clauses (JSON)",
-            json.dumps(_clause_payload(clauses), ensure_ascii=False, separators=(",", ":")),
             "# Required output shape (example only; do not copy example values)",
             json.dumps(schema_example, ensure_ascii=False, separators=(",", ":")),
             "请从 Input clauses 中完整提取 Requirements / Definitions / Contextual facts。",
         ]
     )
+    return "\n".join(parts)
 
 
 def build_coverage_review_prompt(
