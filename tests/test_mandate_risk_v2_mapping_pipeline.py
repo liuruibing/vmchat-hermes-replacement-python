@@ -6,6 +6,7 @@ from app.mandate_risk.clauses import DocumentClause
 from app.mandate_risk.models import RawRiskMetric
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk_v2.mapping import MappingPipeline
+from app.mandate_risk_v2.mapping_models import CORE_COMPATIBILITY_DIMENSIONS
 from app.mandate_risk_v2.mapping_prompts import MAPPING_SYSTEM_PROMPT, batch_prompt
 from app.mandate_risk_v2.models import Definition, EvidenceRef, Requirement, RequirementIR
 
@@ -14,6 +15,15 @@ class Chunk:
     def __init__(self, content):
         self.contentDelta = content
         self.usage = {"total_tokens": 7}
+
+
+def _matrix():
+    return [
+        {"dimension": dimension, "requirement_basis": f"requirement {dimension}",
+         "metric_basis": f"metric {dimension}", "relation": "EQUIVALENT",
+         "reason": "audited"}
+        for dimension in CORE_COMPATIBILITY_DIMENSIONS
+    ]
 
 
 class Provider:
@@ -28,9 +38,7 @@ class Provider:
             rows = json.loads(prompt.split("# Raw metric rows (JSON)\n", 1)[1].split("\n", 1)[0])
             yield Chunk(json.dumps({"links": [
                 {"requirement_id": "REQ-0001", "raw_row_id": rows[0]["row_id"],
-                 "level": "DIRECT", "compatibility": [
-                     {"dimension": "denominator", "requirement_basis": "NAV",
-                      "metric_basis": "NAV", "relation": "EQUIVALENT", "reason": "same"}],
+                 "level": "DIRECT", "compatibility": _matrix(),
                  "evidence_clause_ids": ["c0001"], "reason": "direct"}],
                  "row_assessments": [
                      {"raw_row_id": row["row_id"],
@@ -65,12 +73,16 @@ def _data():
     return ir, clauses, registry
 
 
-def test_mapping_prompt_gives_exact_relation_enum_not_generic_synonyms():
+def test_mapping_prompt_gives_exact_relation_enum_and_required_dimensions():
     ir, clauses, registry = _data()
     prompt = MAPPING_SYSTEM_PROMPT + batch_prompt(ir, clauses, registry.all())
     assert '"relation":"EQUIVALENT"' in prompt
     assert "MISMATCH" in prompt
     assert "PARTIAL" in prompt
+    assert "strategy_applicability" in prompt
+    assert "algorithm_semantics" in prompt
+    for dimension in CORE_COMPATIBILITY_DIMENSIONS:
+        assert dimension in prompt
 
 
 def test_mapping_prompt_includes_definition_source_without_turning_it_into_requirement():
@@ -105,3 +117,54 @@ async def test_critic_challenge_moves_unconfirmed_direct_to_pending_not_main_tab
     destination = result.dispositions.dispositions[0].destinations[0]
     assert destination.destination == "PENDING_REVIEW"
     assert "Critic" in destination.reason
+
+
+class MixedCriticProvider:
+    async def run_skill(self, run_input):
+        prompt = run_input.user_prompt
+        if "# V2 mapping batch" in prompt:
+            rows = json.loads(prompt.split("# Raw metric rows (JSON)\n", 1)[1].split("\n", 1)[0])
+            yield Chunk(json.dumps({
+                "links": [
+                    {"requirement_id": "REQ-0001", "raw_row_id": row["row_id"],
+                     "level": "DIRECT", "compatibility": _matrix(),
+                     "evidence_clause_ids": ["c0001"], "reason": "direct"}
+                    for row in rows
+                ],
+                "row_assessments": [
+                    {"raw_row_id": row["row_id"], "outcome": "LINKED", "reason": "audited"}
+                    for row in rows
+                ],
+            }))
+        elif "# V2 final destinations" in prompt:
+            yield Chunk(json.dumps({"dispositions": [{
+                "requirement_id": "REQ-0001", "reason": "same aspect, two rows",
+                "destinations": [{"destination": "MAIN_TABLE", "raw_row_ids": [2, 3],
+                    "evidence_clause_ids": ["c0001"], "aspect": "portfolio exposure",
+                    "reason": "both proposed"}],
+            }]}))
+        elif "# V2 independent critic" in prompt:
+            yield Chunk(json.dumps({"verdicts": [
+                {"requirement_id": "REQ-0001", "destination": "MAIN_TABLE", "raw_row_id": 2,
+                 "aspect": "portfolio exposure", "verdict": "CONFIRM", "reason": "row 2 verified",
+                 "evidence_clause_ids": ["c0001"]},
+                {"requirement_id": "REQ-0001", "destination": "MAIN_TABLE", "raw_row_id": 3,
+                 "aspect": "portfolio exposure", "verdict": "CHALLENGE", "reason": "row 3 differs",
+                 "evidence_clause_ids": ["c0001"]},
+            ]}))
+        else:
+            pytest.fail("unexpected prompt")
+
+
+@pytest.mark.anyio
+async def test_critic_challenge_is_applied_to_exact_metric_row_not_whole_aspect():
+    ir, clauses, registry = _data()
+    result = await MappingPipeline(batch_size=2, max_critic_repairs=0).run(
+        ir=ir, clauses=clauses, registry=registry, provider=MixedCriticProvider(),
+    )
+    assert [link.raw_row_id for link in result.direct_links] == [2]
+    destinations = result.dispositions.dispositions[0].destinations
+    assert destinations[0].destination == "MAIN_TABLE"
+    assert destinations[0].raw_row_ids == [2]
+    assert destinations[1].destination == "PENDING_REVIEW"
+    assert destinations[1].raw_row_ids == [3]
