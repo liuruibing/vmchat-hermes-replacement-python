@@ -157,14 +157,15 @@ def validate_coverage_review(
                     f"coverage hint {assessment.clause_id} disposition {assessment.disposition} "
                     "requires at least one requirement_id"
                 )
-            if not any(
-                assessment.clause_id in requirement.evidence.clause_ids
+            cited_by = {
+                requirement.requirement_id
                 for requirement in requirement_ir.requirements
-                if requirement.requirement_id in assessment.requirement_ids
-            ):
+                if assessment.clause_id in requirement.evidence.clause_ids
+            }
+            if not set(assessment.requirement_ids).issubset(cited_by):
                 raise ValueError(
                     f"coverage hint {assessment.clause_id} is marked {assessment.disposition} "
-                    "but referenced requirements do not cite that clause"
+                    "but some referenced requirements do not cite that clause"
                 )
         if assessment.disposition in {"DEFINITION_OR_CONTEXT", "NOT_REQUIREMENT", "MISSING"}:
             if assessment.requirement_ids:

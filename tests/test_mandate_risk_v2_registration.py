@@ -22,7 +22,8 @@ def test_v2_lab_agent_is_separate_from_production_v1_agent():
     assert role is not None
     assert role.allowedSkills == []
     assert role.allowedTools == []
-    assert "不得读取或猜测正式风险指标库" in role.systemPrompt
+    assert "覆盖审计完成后才读取原始指标库" in role.systemPrompt
+    assert "独立 Critic 复核" in role.systemPrompt
 
 
 def test_default_workflow_registry_exposes_v2_without_replacing_v1():

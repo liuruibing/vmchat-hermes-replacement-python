@@ -32,6 +32,37 @@ def test_extraction_prompt_is_document_understanding_first():
     assert "不要猜测、发明或推荐正式指标名称" in EXTRACTION_SYSTEM_PROMPT
 
 
+def test_covered_hint_rejects_any_referenced_requirement_without_its_clause():
+    clauses = split_document_clauses(
+        "[Page 1]\nA shall not exceed 10%.\n\nB shall not exceed 20%."
+    )
+    payload = {
+        "requirements": [
+            {"local_id": "r1", "requirement_type": "QUANTITATIVE_LIMIT",
+             "semantic_summary": "A limit", "evidence": {"clause_ids": [clauses[0].clause_id]}},
+            {"local_id": "r2", "requirement_type": "QUANTITATIVE_LIMIT",
+             "semantic_summary": "B limit", "evidence": {"clause_ids": [clauses[1].clause_id]}},
+        ],
+        "definitions": [], "contextual_facts": [],
+    }
+    ir = build_requirement_ir(
+        document_name="synthetic.pdf",
+        batches=[validate_extraction_payload(payload, allowed_clauses=clauses)],
+    )
+    review = {
+        "missing_clauses": [], "partial_requirements": [],
+        "hint_assessments": [
+            {"clause_id": clauses[0].clause_id, "disposition": "COVERED",
+             "requirement_ids": ["REQ-0001", "REQ-0002"], "reason": "mixed references"},
+        ],
+    }
+    with pytest.raises(ValueError, match="do not cite that clause"):
+        validate_coverage_review(
+            review, clauses=clauses, requirement_ir=ir,
+            expected_hint_clause_ids=[clauses[0].clause_id],
+        )
+
+
 def test_extraction_rejects_unknown_clause_id():
     clauses = split_document_clauses(
         "[Page 1]\nThe portfolio shall keep liquidity above 8% of NAV."
@@ -51,6 +82,21 @@ def test_extraction_rejects_unknown_clause_id():
 
     with pytest.raises(ValueError, match="unknown clause_id"):
         validate_extraction_payload(payload, allowed_clauses=clauses)
+
+
+def test_measurement_object_preserves_multiple_objects_without_python_merge():
+    clauses = split_document_clauses(
+        "[Page 1]\nAssets may include public credit and cash equivalents."
+    )
+    payload = {"requirements": [{
+        "local_id": "r1", "requirement_type": "SCOPE",
+        "semantic_summary": "Permitted assets", "measurement": {
+            "concept": "asset exposure", "object": ["public credit", "cash equivalents"],
+            "qualifiers": {},
+        }, "evidence": {"clause_ids": [clauses[0].clause_id]},
+    }], "definitions": [], "contextual_facts": []}
+    batch = validate_extraction_payload(payload, allowed_clauses=clauses)
+    assert batch.requirements[0].measurement.object == ["public credit", "cash equivalents"]
 
 
 def test_definition_remains_definition_and_evidence_is_python_owned():

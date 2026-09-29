@@ -247,26 +247,37 @@ class RequirementExtractionPipeline:
         signal: Any,
         review_feedback: dict | None,
         extraction_usage: List[Dict[str, int]],
-    ) -> RequirementIR:
+    ) -> Tuple[RequirementIR, int]:
         batches = []
+        call_count = 0
         for index, window in enumerate(windows, start=1):
-            prompt = build_extraction_prompt(
-                document_name=document_name,
-                clauses=window,
-                batch_index=index,
-                batch_count=len(windows),
-                review_feedback=review_feedback,
-            )
-            payload, usage = await self._call_model(
-                provider=provider,
-                system_prompt=EXTRACTION_SYSTEM_PROMPT,
-                user_prompt=prompt,
-                signal=signal,
-            )
-            batches.append(validate_extraction_payload(payload, allowed_clauses=window))
-            if usage is not None:
-                extraction_usage.append(usage)
-        return build_requirement_ir(document_name=document_name, batches=batches)
+            validation_feedback: str | None = None
+            for validation_attempt in range(2):
+                prompt = build_extraction_prompt(
+                    document_name=document_name,
+                    clauses=window,
+                    batch_index=index,
+                    batch_count=len(windows),
+                    review_feedback=review_feedback,
+                    validation_feedback=validation_feedback,
+                )
+                payload, usage = await self._call_model(
+                    provider=provider,
+                    system_prompt=EXTRACTION_SYSTEM_PROMPT,
+                    user_prompt=prompt,
+                    signal=signal,
+                )
+                call_count += 1
+                if usage is not None:
+                    extraction_usage.append(usage)
+                try:
+                    batches.append(validate_extraction_payload(payload, allowed_clauses=window))
+                    break
+                except ValueError as exc:
+                    if validation_attempt:
+                        raise ValueError(f"MANDATE_EXTRACTION_INVALID: {exc}") from exc
+                    validation_feedback = str(exc)[:2000]
+        return build_requirement_ir(document_name=document_name, batches=batches), call_count
 
     async def _review_coverage(
         self,
@@ -344,6 +355,7 @@ class RequirementExtractionPipeline:
         expected_hint_clause_ids = [str(item["clause_id"]) for item in coverage_hints]
 
         extraction_usage: List[Dict[str, int]] = []
+        extraction_expected_calls = 0
         coverage_usage: List[Dict[str, int]] = []
         coverage_expected_calls = 0
         review_feedback: dict | None = None
@@ -354,7 +366,7 @@ class RequirementExtractionPipeline:
             if _is_aborted(signal):
                 raise RuntimeError("客户端连接已中断")
 
-            final_ir = await self._extract_attempt(
+            final_ir, extraction_calls = await self._extract_attempt(
                 document_name=document_name,
                 windows=windows,
                 provider=provider,
@@ -362,6 +374,7 @@ class RequirementExtractionPipeline:
                 review_feedback=review_feedback,
                 extraction_usage=extraction_usage,
             )
+            extraction_expected_calls += extraction_calls
             final_review, coverage_calls = await self._review_coverage(
                 document_name=document_name,
                 clauses=clauses,
@@ -377,7 +390,7 @@ class RequirementExtractionPipeline:
                 completed_attempts = attempt_index + 1
                 usage = _aggregate_usage(
                     extraction_usage,
-                    len(windows) * completed_attempts,
+                    extraction_expected_calls,
                     coverage_usage,
                     coverage_expected_calls,
                 )

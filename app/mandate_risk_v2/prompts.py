@@ -72,6 +72,7 @@ def build_extraction_prompt(
     batch_index: int = 1,
     batch_count: int = 1,
     review_feedback: dict | None = None,
+    validation_feedback: str | None = None,
 ) -> str:
     metadata = {
         "document_name": document_name,
@@ -135,6 +136,12 @@ def build_extraction_prompt(
                 "请重新独立阅读本批 clauses，并重点检查反馈指出的遗漏/不完整点；若反馈不被原文支持，不要照抄。",
             ]
         )
+    if validation_feedback:
+        parts.extend([
+            "# Previous extraction failed deterministic validation",
+            validation_feedback,
+            "请重新基于相同 clauses 输出完整合法的 JSON；不要让 Python 猜测或修补字段。",
+        ])
     parts.extend(
         [
             "# Required output shape (example only; do not copy example values)",

@@ -49,7 +49,7 @@ class RequirementSubject(BaseModel):
 
 class RequirementMeasurement(BaseModel):
     concept: str | None = None
-    object: str | None = None
+    object: str | List[str] | None = None
     qualifiers: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -1,12 +1,12 @@
 {
   "id": "requirement-analyst",
   "name": "Mandate Requirement Analyst V2",
-  "system_prompt": "你负责实验性 Mandate Requirement IR 提取。必须先忠实理解 PDF 中的目标、限制、许可、禁止、条件分支、定义和上下文；当前阶段不得读取或猜测正式风险指标库，不得把 Definition 当作监控要求，不得发明阈值或证据。",
+  "system_prompt": "你负责实验性 Mandate V2 分析。必须先独立忠实理解 PDF 的目标、限制、许可、禁止、条件分支、定义和上下文；仅在 Requirement IR 覆盖审计完成后才读取原始指标库做语义映射。不得把 Definition 当作监控要求，不得发明指标、阈值或证据。DIRECT 与指标库缺口必须经独立 Critic 复核。",
   "allowed_skills": [],
   "allowed_tools": [],
   "knowledge_scopes": [],
   "metadata": {
-    "output": "requirement-ir-markdown",
+    "output": "mandate-risk-v2-report-markdown",
     "experimental": true
   }
 }

@@ -5,6 +5,8 @@ import pytest
 from app.compatibility.hermes_request import GlobalQueryParameters, VmChatInput
 from app.workflow.engine import WorkflowContext
 from app.workflow.graphs.mandate_risk_v2 import MandateRiskV2Workflow
+from app.mandate_risk.models import RawRiskMetric
+from app.mandate_risk.registry import RawRiskMetricRegistry
 
 
 class Chunk:
@@ -91,7 +93,7 @@ async def test_v2_workflow_can_be_invoked_without_touching_metric_catalogue():
         role_id="requirement-analyst",
     )
 
-    events = [event async for event in MandateRiskV2Workflow().stream(context)]
+    events = [event async for event in MandateRiskV2Workflow(phase_a_only=True).stream(context)]
 
     assert events[0].event == "reasoning.delta"
     assert "不读取风险指标库" in events[0].delta
@@ -99,3 +101,52 @@ async def test_v2_workflow_can_be_invoked_without_touching_metric_catalogue():
     assert "REQ-0001" in events[-1].output
     assert "7%" in events[-1].output
     assert events[-1].usage["total_tokens"] == 8
+
+
+class FullProvider(Provider):
+    async def run_skill(self, run_input):
+        prompt = run_input.user_prompt
+        if "# V2 mapping batch" in prompt:
+            yield Chunk(content=json.dumps({"links": [{
+                "requirement_id": "REQ-0001", "raw_row_id": 2, "level": "DIRECT",
+                "compatibility": [{"dimension": "denominator", "requirement_basis": "NAV",
+                                   "metric_basis": "NAV", "relation": "EQUIVALENT", "reason": "same"}],
+                "evidence_clause_ids": ["c0001"], "reason": "direct",
+            }], "row_assessments": [{"raw_row_id": 2, "outcome": "LINKED", "reason": "direct"}]}),
+                usage={"total_tokens": 7})
+        elif "# V2 final destinations" in prompt:
+            yield Chunk(content=json.dumps({"dispositions": [{"requirement_id": "REQ-0001",
+                "reason": "complete", "destinations": [{"destination": "MAIN_TABLE", "raw_row_ids": [2],
+                "evidence_clause_ids": ["c0001"], "aspect": "liquidity", "reason": "direct"}]}]}),
+                usage={"total_tokens": 7})
+        elif "# V2 independent critic" in prompt:
+            yield Chunk(content=json.dumps({"verdicts": [{"requirement_id": "REQ-0001",
+                "destination": "MAIN_TABLE", "raw_row_id": 2, "aspect": "liquidity",
+                "verdict": "CONFIRM", "reason": "verified", "evidence_clause_ids": ["c0001"]}]}),
+                usage={"total_tokens": 7})
+        else:
+            async for chunk in super().run_skill(run_input):
+                yield chunk
+
+
+@pytest.mark.anyio
+async def test_v2_workflow_outputs_critic_confirmed_six_column_report():
+    input_val = VmChatInput(
+        userMessage=("<document_name>new.pdf</document_name><document_text>[Page 1]\n"
+                     "The portfolio shall maintain at least 7% liquidity.</document_text>"),
+        globalQueryParameters=GlobalQueryParameters(), agentId="mandate-risk-v2-lab",
+        roleId="requirement-analyst",
+    )
+    context = WorkflowContext(input_val=input_val, provider=FullProvider(),
+                              agent_id="mandate-risk-v2-lab", role_id="requirement-analyst")
+    registry = RawRiskMetricRegistry([RawRiskMetric(
+        row_id=2, source_row=2, metric_name="Unseen Liquidity Metric",
+        algorithm="liquid assets / NAV",
+    )])
+    events = [event async for event in MandateRiskV2Workflow(metric_registry=registry).stream(context)]
+    assert events[-1].event == "run.completed"
+    assert any(event.event == "reasoning.delta" and "Phase A 完成" in event.delta
+               for event in events)
+    assert "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in events[-1].output
+    assert "Unseen Liquidity Metric" in events[-1].output
+    assert events[-1].usage["total_tokens"] == 29

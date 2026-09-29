@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import os
+from pathlib import Path
 from typing import Any, AsyncGenerator, Tuple
 
 from app.compatibility.hermes_events import (
@@ -11,6 +13,9 @@ from app.compatibility.hermes_events import (
     code_point_chunks,
 )
 from app.mandate_risk_v2.extractor import canonical_evidence
+from app.mandate_risk.registry import RawRiskMetricRegistry
+from app.mandate_risk_v2.mapping import MappingPipeline
+from app.mandate_risk_v2.report import render_v2_report
 from app.mandate_risk_v2.pipeline import (
     RequirementCoverageIncomplete,
     RequirementExtractionPipeline,
@@ -19,17 +24,31 @@ from app.workflow.engine import WorkflowContext
 
 
 class MandateRiskV2Workflow:
-    """Dormant Phase-A workflow for validating the AI-first Requirement IR path.
-
-    It is intentionally not registered as the production mandate-risk workflow
-    yet. V1 remains untouched while Phase A is proven against Gold fixtures and
-    real PDFs.
-    """
+    """Experimental V2: independent Requirement IR, catalogue mapping and critic."""
 
     id = "mandate-risk-analysis-v2"
 
-    def __init__(self, pipeline: RequirementExtractionPipeline | None = None) -> None:
+    def __init__(self, pipeline: RequirementExtractionPipeline | None = None,
+                 mapping_pipeline: MappingPipeline | None = None,
+                 metric_registry: RawRiskMetricRegistry | None = None,
+                 phase_a_only: bool = False) -> None:
         self.pipeline = pipeline or RequirementExtractionPipeline()
+        self.mapping_pipeline = mapping_pipeline or MappingPipeline()
+        self.metric_registry = metric_registry
+        self.phase_a_only = phase_a_only
+
+    def _load_registry(self) -> RawRiskMetricRegistry:
+        if self.metric_registry is not None:
+            return self.metric_registry
+        configured = (os.getenv("MANDATE_RISK_METRIC_SOURCE") or
+                      os.getenv("MANDATE_RISK_METRIC_XLSX") or
+                      "agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv")
+        path = Path(configured)
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parents[3] / path
+        if not path.is_file():
+            raise RuntimeError(f"MANDATE_RISK_METRIC_LIBRARY_NOT_FOUND: {path}")
+        return RawRiskMetricRegistry.from_path(path)
 
     async def stream(self, context: WorkflowContext) -> AsyncGenerator[Any, None]:
         try:
@@ -39,7 +58,9 @@ class MandateRiskV2Workflow:
             return
 
         yield ReasoningDeltaEvent(
-            delta="V2 Phase A：先独立理解 Mandate Requirement，再做完整性审计；本阶段不读取风险指标库。",
+            delta=("V2 Phase A：先独立理解 Mandate Requirement，再做完整性审计；本阶段不读取风险指标库。"
+                   if self.phase_a_only else
+                   "V2 Phase A：先独立理解 Mandate Requirement，再做完整性审计；随后进行指标库映射与独立 Critic 复核。"),
             sequence=1,
         )
 
@@ -57,10 +78,43 @@ class MandateRiskV2Workflow:
             yield RunFailedEvent(error=f"V2 Requirement IR 分析失败: {err}")
             return
 
-        markdown = _render_requirement_ir(result)
+        if self.phase_a_only:
+            markdown = _render_requirement_ir(result)
+            usage = result.usage
+        else:
+            yield ReasoningDeltaEvent(
+                delta=(f"Phase A 完成：识别 {len(result.requirement_ir.requirements)} 条 Requirement；"
+                       "开始审计完整指标库并独立复核。"),
+                sequence=2,
+            )
+            try:
+                registry = self._load_registry()
+                mapping = await self.mapping_pipeline.run(
+                    ir=result.requirement_ir, clauses=result.clauses,
+                    registry=registry, provider=context.provider, signal=context.signal,
+                )
+                markdown = render_v2_report(
+                    ir=result.requirement_ir, clauses=result.clauses,
+                    registry=registry, mapping=mapping,
+                )
+                usage = {
+                    "complete": bool(result.usage.get("complete") and mapping.usage.get("complete")),
+                    "requirement_phase": result.usage,
+                    "mapping_phase": mapping.usage,
+                }
+                if usage["complete"]:
+                    usage["total_tokens"] = (result.usage["total_tokens"] +
+                                             mapping.usage["total_tokens"])
+            except Exception as err:
+                yield RunFailedEvent(error=f"V2 指标映射或 Critic 复核失败: {err}")
+                return
+            yield ReasoningDeltaEvent(
+                delta="Phase B 完成：指标映射及 DIRECT/库缺口的独立 Critic 复核均已闭合。",
+                sequence=3,
+            )
         for chunk in code_point_chunks(markdown, context.message_chunk_chars):
             yield MessageDeltaEvent(delta=chunk)
-        yield RunCompletedEvent(output=markdown, usage=result.usage)
+        yield RunCompletedEvent(output=markdown, usage=usage)
 
 
 def _extract_document_payload(user_message: str) -> Tuple[str, str]:
