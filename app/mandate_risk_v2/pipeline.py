@@ -28,6 +28,7 @@ EXTRACTION_BATCH_OVERLAP = 6
 FULL_DOCUMENT_MAX_CLAUSES = 120
 FULL_DOCUMENT_MAX_CHARS = 60_000
 MAX_REPAIR_ROUNDS = 2
+MAX_COVERAGE_VALIDATION_REPAIRS = 2
 
 
 class RequirementCoverageIncomplete(RuntimeError):
@@ -179,6 +180,8 @@ class RequirementExtractionPipeline:
     fall back to overlapping windows. Coverage hints are generic recall signals,
     and the reviewer must explicitly dispose every hint. When review finds an
     omission, the document is re-read; Python never patches business semantics.
+    Invalid reviewer bookkeeping is retried separately so a malformed COVERED
+    reference cannot abort the semantic repair loop.
     """
 
     def __init__(
@@ -265,6 +268,54 @@ class RequirementExtractionPipeline:
                 extraction_usage.append(usage)
         return build_requirement_ir(document_name=document_name, batches=batches)
 
+    async def _review_coverage(
+        self,
+        *,
+        document_name: str,
+        clauses: Sequence[DocumentClause],
+        requirement_ir: RequirementIR,
+        coverage_hints: list[dict],
+        expected_hint_clause_ids: Sequence[str],
+        provider: Any,
+        signal: Any,
+        coverage_usage: List[Dict[str, int]],
+    ) -> Tuple[CoverageReview, int]:
+        """Retry only invalid reviewer bookkeeping, without changing Requirement semantics."""
+
+        validation_feedback: str | None = None
+        call_count = 0
+        for repair_index in range(MAX_COVERAGE_VALIDATION_REPAIRS + 1):
+            prompt = build_coverage_review_prompt(
+                document_name=document_name,
+                clauses=clauses,
+                requirement_ir=requirement_ir,
+                coverage_hints=coverage_hints,
+                validation_feedback=validation_feedback,
+            )
+            payload, usage = await self._call_model(
+                provider=provider,
+                system_prompt=COVERAGE_SYSTEM_PROMPT,
+                user_prompt=prompt,
+                signal=signal,
+            )
+            call_count += 1
+            if usage is not None:
+                coverage_usage.append(usage)
+            try:
+                review = validate_coverage_review(
+                    payload,
+                    clauses=clauses,
+                    requirement_ir=requirement_ir,
+                    expected_hint_clause_ids=expected_hint_clause_ids,
+                )
+            except ValueError as exc:
+                if repair_index >= MAX_COVERAGE_VALIDATION_REPAIRS:
+                    raise ValueError(f"MANDATE_COVERAGE_REVIEW_INVALID: {exc}") from exc
+                validation_feedback = str(exc)[:2000]
+                continue
+            return review, call_count
+        raise RuntimeError("MANDATE_COVERAGE_REVIEW_REPAIR_UNREACHABLE")
+
     async def run(
         self,
         *,
@@ -294,6 +345,7 @@ class RequirementExtractionPipeline:
 
         extraction_usage: List[Dict[str, int]] = []
         coverage_usage: List[Dict[str, int]] = []
+        coverage_expected_calls = 0
         review_feedback: dict | None = None
         final_review: CoverageReview | None = None
         attempts = self.max_repair_rounds + 1
@@ -310,33 +362,24 @@ class RequirementExtractionPipeline:
                 review_feedback=review_feedback,
                 extraction_usage=extraction_usage,
             )
-            coverage_prompt = build_coverage_review_prompt(
+            final_review, coverage_calls = await self._review_coverage(
                 document_name=document_name,
                 clauses=clauses,
                 requirement_ir=final_ir,
                 coverage_hints=coverage_hints,
-            )
-            coverage_payload, coverage_usage_item = await self._call_model(
-                provider=provider,
-                system_prompt=COVERAGE_SYSTEM_PROMPT,
-                user_prompt=coverage_prompt,
-                signal=signal,
-            )
-            if coverage_usage_item is not None:
-                coverage_usage.append(coverage_usage_item)
-            final_review = validate_coverage_review(
-                coverage_payload,
-                clauses=clauses,
-                requirement_ir=final_ir,
                 expected_hint_clause_ids=expected_hint_clause_ids,
+                provider=provider,
+                signal=signal,
+                coverage_usage=coverage_usage,
             )
+            coverage_expected_calls += coverage_calls
             if final_review.complete:
                 completed_attempts = attempt_index + 1
                 usage = _aggregate_usage(
                     extraction_usage,
                     len(windows) * completed_attempts,
                     coverage_usage,
-                    completed_attempts,
+                    coverage_expected_calls,
                 )
                 return RequirementPipelineResult(
                     clauses=clauses,
