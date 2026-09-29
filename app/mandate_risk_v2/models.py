@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -88,8 +88,8 @@ class RequirementDraft(StrictModel):
     measurement: RequirementMeasurement = Field(default_factory=RequirementMeasurement)
     constraint: RequirementConstraint | None = None
     scope: Dict[str, Any] = Field(default_factory=dict)
-    conditions: List[RequirementCondition] = Field(default_factory=list)
-    exceptions: List[Dict[str, Any]] = Field(default_factory=list)
+    conditions: List[Union[RequirementCondition, Dict[str, Any], str]] = Field(default_factory=list)
+    exceptions: List[Union[Dict[str, Any], str]] = Field(default_factory=list)
     relations: List[DraftRelation] = Field(default_factory=list)
     evidence: EvidenceRef
     attributes: Dict[str, Any] = Field(default_factory=dict)
@@ -125,8 +125,8 @@ class Requirement(StrictModel):
     measurement: RequirementMeasurement = Field(default_factory=RequirementMeasurement)
     constraint: RequirementConstraint | None = None
     scope: Dict[str, Any] = Field(default_factory=dict)
-    conditions: List[RequirementCondition] = Field(default_factory=list)
-    exceptions: List[Dict[str, Any]] = Field(default_factory=list)
+    conditions: List[Union[RequirementCondition, Dict[str, Any], str]] = Field(default_factory=list)
+    exceptions: List[Union[Dict[str, Any], str]] = Field(default_factory=list)
     relations: List[RequirementRelation] = Field(default_factory=list)
     evidence: EvidenceRef
     attributes: Dict[str, Any] = Field(default_factory=dict)
