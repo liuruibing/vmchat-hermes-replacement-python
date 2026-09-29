@@ -9,17 +9,18 @@ from app.mandate_risk_v2.models import StrictModel
 
 # Every non-rejected semantic link must explicitly audit these dimensions.
 # Additional open-ended qualifier dimensions are allowed, but they cannot
-# replace any of these core checks.  This keeps DIRECT fail-closed when a
-# model simply forgets a difficult qualifier such as annualisation or
-# ex-ante/ex-post basis.
+# replace any of these core checks. This keeps DIRECT fail-closed when a model
+# forgets a difficult qualifier such as aggregation level or ex-ante basis.
 CORE_COMPATIBILITY_DIMENSIONS = (
     "measurement_object",
+    "aggregation_level",
     "scope",
     "denominator",
     "time_point",
     "annualisation",
     "estimation_basis",
     "benchmark",
+    "unit_semantics",
     "conditions",
     "strategy_applicability",
     "algorithm_semantics",
@@ -74,7 +75,7 @@ class FinalMappingReview(StrictModel):
 
 class CriticVerdict(StrictModel):
     requirement_id: str
-    destination: Literal["MAIN_TABLE", "LIBRARY_GAP"]
+    destination: Literal["MAIN_TABLE", "LIBRARY_GAP", "NON_METRIC"]
     raw_row_id: int | None
     aspect: str
     verdict: Literal["CONFIRM", "CHALLENGE", "UNRESOLVED"]
