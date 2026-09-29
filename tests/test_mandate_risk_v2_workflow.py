@@ -1,0 +1,81 @@
+import json
+
+import pytest
+
+from app.compatibility.hermes_request import GlobalQueryParameters, VmChatInput
+from app.workflow.engine import WorkflowContext
+from app.workflow.graphs.mandate_risk_v2 import MandateRiskV2Workflow
+
+
+class Chunk:
+    def __init__(self, content=None, usage=None):
+        self.contentDelta = content
+        self.usage = usage
+
+
+def _json_line_after(prompt: str, marker: str):
+    return json.loads(prompt.split(marker, 1)[1].split("\n", 1)[0])
+
+
+class Provider:
+    async def run_skill(self, run_input):
+        prompt = run_input.user_prompt
+        if "# Requirement extraction batch" in prompt:
+            clauses = _json_line_after(prompt, "# Input clauses (JSON)\n")
+            target = next(item for item in clauses if "at least 7%" in item["text"])
+            yield Chunk(
+                content=json.dumps(
+                    {
+                        "requirements": [
+                            {
+                                "local_id": "r1",
+                                "requirement_type": "QUANTITATIVE_LIMIT",
+                                "semantic_summary": "The portfolio must maintain at least 7% liquidity.",
+                                "constraint": {"operator": ">=", "value": 7, "unit": "%"},
+                                "evidence": {"clause_ids": [target["clause_id"]},
+                            }
+                        ],
+                        "definitions": [],
+                        "contextual_facts": [],
+                    }
+                ),
+                usage={"total_tokens": 5},
+            )
+            return
+        if "# Requirement coverage review" in prompt:
+            yield Chunk(
+                content=json.dumps({"missing_clauses": [], "partial_requirements": []}),
+                usage={"total_tokens": 3},
+            )
+            return
+        pytest.fail("unexpected prompt")
+
+
+@pytest.mark.anyio
+async def test_v2_workflow_can_be_invoked_without_touching_metric_catalogue():
+    input_val = VmChatInput(
+        userMessage=(
+            "<document_name>lab.pdf</document_name>"
+            "<document_text>[Page 1]\n"
+            "The portfolio shall maintain at least 7% liquidity."
+            "</document_text>"
+        ),
+        globalQueryParameters=GlobalQueryParameters(),
+        agentId="mandate-risk-v2-lab",
+        roleId="requirement-analyst",
+    )
+    context = WorkflowContext(
+        input_val=input_val,
+        provider=Provider(),
+        agent_id="mandate-risk-v2-lab",
+        role_id="requirement-analyst",
+    )
+
+    events = [event async for event in MandateRiskV2Workflow().stream(context)]
+
+    assert events[0].event == "reasoning.delta"
+    assert "不读取风险指标库" in events[0].delta
+    assert events[-1].event == "run.completed"
+    assert "REQ-0001" in events[-1].output
+    assert "7%" in events[-1].output
+    assert events[-1].usage["total_tokens"] == 8
