@@ -37,9 +37,11 @@ COVERAGE_SYSTEM_PROMPT = """你是 Mandate Requirement Coverage Reviewer。
 3. 如果一个多档或复合规则只抽取了一部分，放入 partial_requirements，而不是假装已覆盖。
 4. missing_clauses 和 related_clause_ids 只能引用真实输入 clause_id。
 5. partial_requirements 只能引用真实 requirement_id。
-6. Python 提供的 coverage hints 只是“值得重点检查”的线索，不是结论。
-7. 不要创建或讨论正式风险指标。
-8. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
+6. 对 Python coverage hints 中的每一个 clause_id，必须在 hint_assessments 中恰好返回一次处置，不得省略。disposition 只能是 COVERED、DEFINITION_OR_CONTEXT、NOT_REQUIREMENT、MISSING、PARTIAL。
+7. COVERED/PARTIAL 必须给出引用该 clause 的真实 requirement_ids；DEFINITION_OR_CONTEXT、NOT_REQUIREMENT、MISSING 不得填 requirement_ids。
+8. Python coverage hints 只是“值得重点检查”的线索，不是结论；你必须根据原文和当前 IR 独立判断。
+9. 不要创建或讨论正式风险指标。
+10. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
 """
 
 
@@ -148,6 +150,14 @@ def build_coverage_review_prompt(
                 "related_clause_ids": ["c0002"],
             }
         ],
+        "hint_assessments": [
+            {
+                "clause_id": "c0003",
+                "disposition": "COVERED",
+                "requirement_ids": ["REQ-0002"],
+                "reason": "说明该高风险线索如何被当前 IR 覆盖；若不是 Requirement，也要明确分类原因。",
+            }
+        ],
     }
     return "\n".join(
         [
@@ -157,10 +167,10 @@ def build_coverage_review_prompt(
             json.dumps(_clause_payload(clauses), ensure_ascii=False, separators=(",", ":")),
             "# Current Requirement IR (JSON)",
             json.dumps(requirement_ir.model_dump(), ensure_ascii=False, separators=(",", ":")),
-            "# Python coverage hints (JSON; hints only, not conclusions)",
+            "# Python coverage hints (JSON; every hint must be assessed exactly once)",
             json.dumps(coverage_hints, ensure_ascii=False, separators=(",", ":")),
             "# Required output shape",
             json.dumps(output_shape, ensure_ascii=False, separators=(",", ":")),
-            "如果没有遗漏或部分覆盖，两个数组都返回空数组。",
+            "即使没有遗漏，missing_clauses/partial_requirements 返回空数组，但 hint_assessments 仍必须逐条覆盖所有 Python coverage hints。",
         ]
     )
