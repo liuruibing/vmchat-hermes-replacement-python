@@ -7,10 +7,13 @@ from app.mandate_risk.clauses import DocumentClause
 from app.mandate_risk_v2.models import CoverageReview, RequirementIR
 
 
-# These are recall hints only. They must never create a Requirement or assign a
-# business meaning without model review.
+# These are recall-priority signals only. They must never create a Requirement
+# or assign a business meaning without model review. Every canonical clause is
+# still sent through the coverage audit so low-signal qualitative obligations
+# cannot disappear silently.
 _NUMERIC_RE = re.compile(
-    r"(?:\b\d+(?:\.\d+)?\s*(?:%|bps?|bp|days?|years?|months?|million|billion)\b|"
+    r"(?:\b\d+(?:\.\d+)?\s*(?:bps?|bp|days?|years?|months?|million|billion)\b|"
+    r"\b\d+(?:\.\d+)?\s*%|"
     r"(?:RMB|CNY|USD|EUR|HKD)\s*\d+(?:\.\d+)?)",
     re.I,
 )
@@ -28,7 +31,7 @@ _CONDITION_RE = re.compile(r"\b(?:if|unless|except|exception|provided\s+that|sub
 
 
 def build_coverage_hints(clauses: Sequence[DocumentClause]) -> List[Dict[str, object]]:
-    """Return generic high-recall review hints without assigning semantics."""
+    """Return one auditable entry per canonical clause plus generic priority signals."""
 
     hints: List[Dict[str, object]] = []
     for clause in clauses:
@@ -42,14 +45,14 @@ def build_coverage_hints(clauses: Sequence[DocumentClause]) -> List[Dict[str, ob
             signals.append("obligation_or_prohibition")
         if _CONDITION_RE.search(text):
             signals.append("condition_or_exception")
-        if signals:
-            hints.append(
-                {
-                    "clause_id": clause.clause_id,
-                    "page": clause.page,
-                    "signals": signals,
-                }
-            )
+        hints.append(
+            {
+                "clause_id": clause.clause_id,
+                "page": clause.page,
+                "signals": signals,
+                "priority": "high" if signals else "normal",
+            }
+        )
     return hints
 
 
@@ -60,12 +63,12 @@ def validate_coverage_review(
     requirement_ir: RequirementIR,
     expected_hint_clause_ids: Sequence[str] | None = None,
 ) -> CoverageReview:
-    """Validate reviewer output and close the 'empty review means complete' hole.
+    """Validate reviewer output and close silent whole-document omissions.
 
-    When expected_hint_clause_ids is supplied, every generic high-risk hint must
-    be explicitly classified exactly once by the AI reviewer. Python validates
-    identities and completeness only; it does not decide whether a hinted
-    clause is really a Requirement.
+    When expected_hint_clause_ids is supplied, every canonical clause must be
+    explicitly classified exactly once by the AI reviewer. Python validates
+    identities and completeness only; it does not decide whether a clause is
+    really a Requirement.
     """
 
     review = CoverageReview.model_validate(payload)
@@ -127,12 +130,12 @@ def validate_coverage_review(
         unexpected_assessments = actual - expected
         if missing_assessments:
             raise ValueError(
-                "coverage review omitted hint assessments: "
+                "coverage review omitted clause assessments: "
                 + ", ".join(sorted(missing_assessments))
             )
         if unexpected_assessments:
             raise ValueError(
-                "coverage review assessed non-hint clauses: "
+                "coverage review assessed unexpected clauses: "
                 + ", ".join(sorted(unexpected_assessments))
             )
 
