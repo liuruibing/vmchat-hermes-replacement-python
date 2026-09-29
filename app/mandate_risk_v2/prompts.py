@@ -15,13 +15,15 @@ EXTRACTION_SYSTEM_PROMPT = """你是投资委托文件（Mandate）的文档理�
 1. 当前阶段没有风险指标库。不要猜测、发明或推荐正式指标名称。
 2. 区分 Requirement、Definition、Context。定义不是监控要求；背景事实不是限额。
 3. Requirement 必须表示文件真实表达的目标、策略、范围、量化目标/限额、禁止、许可、条件规则、外部政策要求或治理要求。
-4. 复杂条件必须保留所有分支、阈值、单位、时点、scope、例外。不要把多档条件压缩成一条模糊总结。
-5. evidence 只能返回输入中真实存在的 clause_id。不要返回 page，不要自行复制或改写原文作为证据。
-6. 不得跨页拼接成输入中不存在的单条原文。需要多个条款共同支持时列出多个 clause_id。
-7. measurement / qualifiers / scope / conditions / attributes 是开放语义字段。只填写原文能够支持的信息，不要为了填满 schema 猜测。
-8. local_id 只需在当前批次唯一，例如 r1、r2、d1、c1。
-9. Coverage Reviewer 的反馈只是重新检查线索。必须重新依据原始 clauses 判断，不能无条件接受反馈。
-10. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
+4. requirement_type 只能是：OBJECTIVE、STRATEGY、SCOPE、QUANTITATIVE_TARGET、QUANTITATIVE_LIMIT、PROHIBITION、PERMISSION、CONDITIONAL_RULE、EXTERNAL_POLICY、GOVERNANCE、OTHER。
+5. 复杂条件必须保留所有分支、阈值、单位、时点、scope、例外。不要把多档条件压缩成一条模糊总结。
+6. evidence 只能返回输入中真实存在的 clause_id。不要返回 page，不要自行复制或改写原文作为证据。
+7. 不得跨页拼接成输入中不存在的单条原文。需要多个条款共同支持时列出多个 clause_id。
+8. measurement / qualifiers / scope / conditions / attributes 是开放语义字段。只填写原文能够支持的信息，不要为了填满 schema 猜测。
+9. relations 可选；type 只能是 BRANCH_OF、QUALIFIES、EXCEPTION_TO、DEFINES_SCOPE_FOR、DEPENDS_ON，target_local_id 必须指向当前批次真实 Requirement local_id。不确定时留空。
+10. local_id 只需在当前批次唯一，例如 r1、r2、d1、c1。
+11. Coverage Reviewer 的反馈只是重新检查线索。必须重新依据原始 clauses 判断，不能无条件接受反馈。
+12. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
 """
 
 
