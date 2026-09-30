@@ -77,7 +77,7 @@ class RunStore:
         expired_ids: List[str] = []
 
         for id_, record in list(self.store.items()):
-            if record.expiresAt <= now:
+            if record.expiresAt <= now and record.status not in ("running", "validating", "repairing"):
                 if (
                     record.controller
                     and record.status not in ("completed", "failed", "expired")
@@ -130,7 +130,10 @@ class RunStore:
         record = self.store.get(id)
         if not record:
             return None
-        if record.expiresAt <= time.time() * 1000 or record.status == "expired":
+        if record.status == "expired" or (
+            record.expiresAt <= time.time() * 1000
+            and record.status not in ("running", "validating", "repairing")
+        ):
             self.store.pop(id, None)
             return None
         return record

@@ -2,16 +2,12 @@ from __future__ import annotations
 
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk_v2.mapping_models import (
-    CORE_COMPATIBILITY_DIMENSIONS,
     CriticReview,
     FinalMappingReview,
     MappingBatch,
     MappingLink,
 )
 from app.mandate_risk_v2.models import RequirementIR
-
-_CORE_DIMENSION_SET = set(CORE_COMPATIBILITY_DIMENSIONS)
-_DIRECT_REQUIRED_EQUIVALENT = {"measurement_object", "algorithm_semantics"}
 
 
 def _requirements(ir: RequirementIR):
@@ -50,28 +46,18 @@ def _validate_evidence(ir: RequirementIR, requirement_id: str, clause_ids: list[
         raise ValueError(f"invalid evidence for {requirement_id}: unrelated requirement clause_ids={sorted(unsupported)}")
 
 
-def _validate_compatibility(link: MappingLink, *, registry: RawRiskMetricRegistry) -> None:
+def _validate_link_details(link: MappingLink, *, require_scores: bool) -> None:
     dimensions = [item.dimension for item in link.compatibility]
     if len(set(dimensions)) != len(dimensions):
         raise ValueError(f"duplicate compatibility dimension: {(link.requirement_id, link.raw_row_id)}")
-    dimension_map = {item.dimension: item for item in link.compatibility}
-    if link.level != "REJECTED":
-        missing = _CORE_DIMENSION_SET - set(dimension_map)
-        if missing:
-            raise ValueError(f"{link.level} compatibility matrix missing core dimensions: " + ", ".join(sorted(missing)))
-    if link.level == "DIRECT":
-        incompatible = [item.dimension for item in link.compatibility if item.relation in {"INSUFFICIENT", "CONFLICT"}]
-        if incompatible:
-            raise ValueError("DIRECT has incompatible compatibility dimension: " + ", ".join(incompatible))
-        non_equivalent = [d for d in sorted(_DIRECT_REQUIRED_EQUIVALENT) if dimension_map[d].relation != "EQUIVALENT"]
-        if non_equivalent:
-            raise ValueError("DIRECT requires EQUIVALENT core dimensions: " + ", ".join(non_equivalent))
-        row = registry.require(link.raw_row_id)
-        if not (row.algorithm or "").strip() and dimension_map["algorithm_semantics"].relation == "EQUIVALENT":
-            raise ValueError("DIRECT algorithm_semantics cannot be EQUIVALENT when metric algorithm is empty")
+    if require_scores and link.level != "REJECTED" and link.match_score is None:
+        raise ValueError("screening link requires match_score")
+    if link.match_score is not None and not (link.score_reason or "").strip():
+        raise ValueError("match_score requires score_reason")
 
 
-def validate_batch(payload: dict, *, ir: RequirementIR, registry: RawRiskMetricRegistry, batch_row_ids: set[int]) -> MappingBatch:
+def validate_batch(payload: dict, *, ir: RequirementIR, registry: RawRiskMetricRegistry,
+                   batch_row_ids: set[int], require_scores: bool = False) -> MappingBatch:
     batch = MappingBatch.model_validate(payload)
     actual = [item.raw_row_id for item in batch.row_assessments]
     if len(actual) != len(set(actual)) or set(actual) != batch_row_ids:
@@ -86,7 +72,7 @@ def validate_batch(payload: dict, *, ir: RequirementIR, registry: RawRiskMetricR
         if identity in seen:
             raise ValueError(f"duplicate mapping link: {identity}")
         seen.add(identity)
-        _validate_compatibility(link, registry=registry)
+        _validate_link_details(link, require_scores=require_scores)
     for item in batch.row_assessments:
         if (item.raw_row_id in linked_rows) != (item.outcome == "LINKED"):
             raise ValueError(f"row assessment disagrees with links: {item.raw_row_id}")
@@ -100,7 +86,6 @@ def validate_dispositions(payload: dict, *, ir: RequirementIR, registry: RawRisk
     if len(actual) != len(set(actual)) or set(actual) != expected:
         raise ValueError("requirement dispositions missing, duplicated or unknown")
     link_map = {(link.requirement_id, link.raw_row_id): link for link in links}
-    selected_direct: set[tuple[str, int]] = set()
     for disposition in review.dispositions:
         seen_aspects: set[str] = set()
         for destination in disposition.destinations:
@@ -116,23 +101,18 @@ def validate_dispositions(payload: dict, *, ir: RequirementIR, registry: RawRisk
                 link = link_map.get((disposition.requirement_id, row_id))
                 if link is None:
                     raise ValueError("destination has no mapping link")
-                if destination.destination == "MAIN_TABLE" and link.level != "DIRECT":
-                    raise ValueError("MAIN_TABLE has no DIRECT link")
-                if destination.destination == "PENDING_REVIEW" and link.level != "REVIEW":
-                    raise ValueError("PENDING_REVIEW metric row has no REVIEW link")
-                if destination.destination == "MAIN_TABLE":
-                    selected_direct.add((disposition.requirement_id, row_id))
+                if link.level == "REJECTED":
+                    raise ValueError("destination cannot select a REJECTED link")
             if destination.destination == "MAIN_TABLE" and not destination.raw_row_ids:
-                raise ValueError("MAIN_TABLE has no DIRECT link")
+                raise ValueError("MAIN_TABLE has no screening link")
             if destination.destination in {"LIBRARY_GAP", "NON_METRIC"} and destination.raw_row_ids:
                 raise ValueError("non-metric destination cannot reference metric rows")
-    proposed_direct = {(link.requirement_id, link.raw_row_id) for link in links if link.level == "DIRECT"}
-    if selected_direct != proposed_direct:
-        raise ValueError("DIRECT links lack matching MAIN_TABLE destination")
     return review
 
 
-def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMappingReview) -> CriticReview:
+def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMappingReview,
+                    registry: RawRiskMetricRegistry | None = None,
+                    links: list[MappingLink] | None = None, require_scores: bool = False) -> CriticReview:
     review = CriticReview.model_validate(payload)
     expected = {
         (item.requirement_id, dest.destination, row_id, dest.aspect)
@@ -146,4 +126,42 @@ def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMapp
         raise ValueError("critic verdicts missing, duplicated or unexpected")
     for verdict in review.verdicts:
         _validate_evidence(ir, verdict.requirement_id, verdict.evidence_clause_ids)
+    existing = {(link.requirement_id, link.raw_row_id): link for link in links or []}
+    recalled: set[tuple[str, int]] = set()
+    for link in review.recalled_links:
+        if link.level != "REVIEW":
+            raise ValueError("critic recalled links must be REVIEW candidates")
+        if registry is None or registry.get(link.raw_row_id) is None:
+            raise ValueError(f"unknown recalled raw_row_id: {link.raw_row_id}")
+        identity = (link.requirement_id, link.raw_row_id)
+        if identity in recalled or (identity in existing and existing[identity].level != "REJECTED"):
+            raise ValueError("critic recalled duplicate existing candidate")
+        _validate_evidence(ir, link.requirement_id, link.evidence_clause_ids)
+        _validate_link_details(link, require_scores=require_scores)
+        recalled.add(identity)
+    rejected: set[tuple[str, int]] = set()
+    for item in review.rejected_candidates:
+        identity = (item.requirement_id, item.raw_row_id)
+        if identity in rejected or identity not in existing or existing[identity].level == "REJECTED":
+            raise ValueError("critic rejection must identify one existing screening candidate")
+        _validate_evidence(ir, item.requirement_id, item.evidence_clause_ids)
+        rejected.add(identity)
+    adjusted: set[tuple[str, int]] = set()
+    for item in review.score_adjustments:
+        identity = (item.requirement_id, item.raw_row_id)
+        if (identity in adjusted or identity in rejected or identity not in existing
+                or existing[identity].level == "REJECTED"):
+            raise ValueError("critic score adjustment must identify one retained existing link")
+        if not item.score_reason.strip():
+            raise ValueError("critic score adjustment requires score_reason")
+        _validate_evidence(ir, item.requirement_id, item.evidence_clause_ids)
+        adjusted.add(identity)
+    aspects = {(item.requirement_id, destination.aspect)
+               for item in dispositions.dispositions for destination in item.destinations}
+    for item in review.missing_aspects:
+        _validate_evidence(ir, item.requirement_id, item.evidence_clause_ids)
+        identity = (item.requirement_id, item.aspect)
+        if identity in aspects:
+            raise ValueError("critic missing aspect duplicates an existing destination or missing aspect")
+        aspects.add(identity)
     return review

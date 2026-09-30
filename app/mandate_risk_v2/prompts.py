@@ -22,10 +22,13 @@ EXTRACTION_SYSTEM_PROMPT = """你是投资委托文件（Mandate）的文档理�
 8. measurement / qualifiers / scope / conditions / attributes 是开放语义字段。只填写原文能够支持的信息，不要为了填满 schema 猜测。
 9. constraint 用于保存原文能够明确支持的比较关系、数值、范围、单位、公式、benchmark 与限定词。区间必须分别保存 value 与 value_to；若 value 或 value_to 非空，raw_value_text 必须逐字复制 evidence 中包含该数值的原始短语，不得改写。原文没有明确数值、单位、上下限或 benchmark 时必须留空，不得根据常识补充。
 10. operator 保留原文语义，可使用 <、<=、>、>=、= 或 LT/LTE/GT/GTE/EQ/BETWEEN 等稳定表达；不要把“low / reasonable / sufficient / stable”等定性词伪造成数值阈值。
+    比较可以有非数字右侧。原文表达超过/接近某基准且没有明确数值时，value 留 null，benchmark 使用 evidence 中逐字存在的基准称呼，raw_value_text 复制比较原文；不要猜出 0 或额外收益阈值。若没有可表达的比较关系，operator 留 null。
+    原文的上限是公式、两个限额中的较低者或某对象的比例时，不得只返回比较 operator 而丢失右侧。不能用单个 value 完整表达的右侧须保存在 formula，并用 raw_value_text 逐字保留整个限额短语；不要把复合限额简化成其中一个数字，也不要创造原文没有的数值。
 11. relations 可选；type 只能是 BRANCH_OF、QUALIFIES、EXCEPTION_TO、DEFINES_SCOPE_FOR、DEPENDS_ON，target_local_id 必须指向当前批次真实 Requirement local_id。不确定时留空。
 12. local_id 只需在当前批次唯一，例如 r1、r2、d1、c1。
 13. Coverage Reviewer 的反馈只是重新检查线索。必须重新依据原始 clauses 判断，不能无条件接受反馈。
 14. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
+15. 省略没有信息的可选字段（null、空字典、空列表），不要为每条 Requirement 复制完整空模板。保留 local_id、requirement_type、semantic_summary、evidence 以及原文确实支持的字段；不因精简而省略真实数值、条件或分支。
 """
 
 
@@ -165,6 +168,9 @@ def build_coverage_review_prompt(
     coverage_hints: list[dict],
     validation_feedback: str | None = None,
 ) -> str:
+    ir_payload = requirement_ir.model_dump(exclude_none=True, exclude_defaults=True)
+    for field in ("requirements", "definitions", "contextual_facts"):
+        ir_payload.setdefault(field, [])
     output_shape = {
         "missing_clauses": [
             {"clause_id": "c0001", "reason": "说明为什么当前 IR 没有覆盖该重要要求"}
@@ -191,7 +197,7 @@ def build_coverage_review_prompt(
         "# All canonical clauses (JSON)",
         json.dumps(_clause_payload(clauses), ensure_ascii=False, separators=(",", ":")),
         "# Current Requirement IR (JSON)",
-        json.dumps(requirement_ir.model_dump(), ensure_ascii=False, separators=(",", ":")),
+        json.dumps(ir_payload, ensure_ascii=False, separators=(",", ":")),
         "# Python coverage hints (JSON; every canonical clause appears exactly once and must be assessed)",
         json.dumps(coverage_hints, ensure_ascii=False, separators=(",", ":")),
         "# Deterministic requirement evidence map for clauses (JSON)",

@@ -1,3 +1,4 @@
+import json
 import pytest
 from fastapi.testclient import TestClient
 
@@ -176,3 +177,24 @@ def test_runs_events_forwards_workflow_failure():
     assert res_events.status_code == 200
     assert '"event":"run.failed"' in res_events.text
     assert '"event":"run.completed"' not in res_events.text
+
+
+def test_runs_events_preserves_structured_metadata_in_completion_and_replay():
+    metadata = {"mandate_risk_v2": {"phase": "complete", "result": {"candidate_metrics": []}}}
+
+    class StructuredWorkflow:
+        id = "vm-report"
+
+        async def stream(self, _context):
+            yield {"event": "run.completed", "output": "report", "usage": {}, "metadata": metadata}
+
+    app = create_app({"resource_loader": MockResourceLoader(ready=True), "provider": DummyProvider(),
+        "workflow_registry": WorkflowRegistry([StructuredWorkflow()])})
+    client = TestClient(app)
+    run_id = client.post("/v1/runs", json={"model": "m",
+        "input": [{"role": "user", "content": "analyze"}]}).json()["run_id"]
+    for _ in range(2):
+        response = client.get(f"/v1/runs/{run_id}/events")
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+        completed = next(item for item in events if item["event"] == "run.completed")
+        assert completed["metadata"] == metadata

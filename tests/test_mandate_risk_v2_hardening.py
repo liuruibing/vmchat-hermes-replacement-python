@@ -32,12 +32,11 @@ def _batch(matrix):
             "row_assessments": [{"raw_row_id": 2, "outcome": "LINKED", "reason": "audited"}]}
 
 
-def test_direct_cannot_hide_measurement_or_algorithm_behind_not_applicable():
-    for dimension in ("measurement_object", "algorithm_semantics"):
-        matrix = _matrix()
-        next(item for item in matrix if item["dimension"] == dimension)["relation"] = "NOT_APPLICABLE"
-        with pytest.raises(ValueError, match="requires EQUIVALENT"):
-            validate_batch(_batch(matrix), ir=_ir(), registry=_registry(), batch_row_ids={2})
+def test_screening_explanation_cannot_repeat_a_compatibility_dimension():
+    matrix = _matrix()
+    matrix.append(dict(matrix[0]))
+    with pytest.raises(ValueError, match="duplicate compatibility dimension"):
+        validate_batch(_batch(matrix), ir=_ir(), registry=_registry(), batch_row_ids={2})
 
 
 def test_critic_must_explicitly_review_non_metric_destination():

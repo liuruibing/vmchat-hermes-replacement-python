@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence, Tuple
 
+import httpx
+
 from app.mandate_risk.clauses import DocumentClause, split_document_clauses
 from app.mandate_risk.json_utils import extract_first_json_object
 from app.mandate_risk_v2.coverage import build_coverage_hints, validate_coverage_review
@@ -25,7 +27,7 @@ from app.provider.fixed_provider import ModelSkillRunInput
 MODEL_TIMEOUT_SECONDS = 120
 EXTRACTION_BATCH_SIZE = 32
 EXTRACTION_BATCH_OVERLAP = 6
-FULL_DOCUMENT_MAX_CLAUSES = 120
+FULL_DOCUMENT_MAX_CLAUSES = None
 FULL_DOCUMENT_MAX_CHARS = 60_000
 MAX_REPAIR_ROUNDS = 2
 MAX_COVERAGE_VALIDATION_REPAIRS = 2
@@ -161,13 +163,14 @@ def choose_extraction_windows(
     *,
     batch_size: int = EXTRACTION_BATCH_SIZE,
     overlap: int = EXTRACTION_BATCH_OVERLAP,
-    full_document_max_clauses: int = FULL_DOCUMENT_MAX_CLAUSES,
+    full_document_max_clauses: int | None = FULL_DOCUMENT_MAX_CLAUSES,
     full_document_max_chars: int = FULL_DOCUMENT_MAX_CHARS,
 ) -> Tuple[str, List[List[DocumentClause]]]:
     """Prefer one global AI reading when the Mandate comfortably fits."""
 
-    total_chars = sum(len(clause.text) for clause in clauses)
-    if len(clauses) <= full_document_max_clauses and total_chars <= full_document_max_chars:
+    total_chars = sum(len(clause.text) + len(clause.clause_id) + 64 for clause in clauses)
+    within_clause_limit = full_document_max_clauses is None or len(clauses) <= full_document_max_clauses
+    if within_clause_limit and total_chars <= full_document_max_chars:
         return "full_document", [list(clauses)]
     return "chunked", chunk_clauses(clauses, max_clauses=batch_size, overlap=overlap)
 
@@ -191,7 +194,7 @@ class RequirementExtractionPipeline:
         overlap: int = EXTRACTION_BATCH_OVERLAP,
         timeout_seconds: int = MODEL_TIMEOUT_SECONDS,
         max_repair_rounds: int = MAX_REPAIR_ROUNDS,
-        full_document_max_clauses: int = FULL_DOCUMENT_MAX_CLAUSES,
+        full_document_max_clauses: int | None = FULL_DOCUMENT_MAX_CLAUSES,
         full_document_max_chars: int = FULL_DOCUMENT_MAX_CHARS,
     ) -> None:
         self.batch_size = batch_size
@@ -210,6 +213,8 @@ class RequirementExtractionPipeline:
         system_prompt: str,
         user_prompt: str,
         signal: Any,
+        stage: str = "model",
+        timeout_seconds: float | None = None,
     ) -> Tuple[dict, Dict[str, int] | None]:
         run_skill = getattr(provider, "run_skill", None) or getattr(provider, "runSkill", None)
         if run_skill is None:
@@ -222,17 +227,24 @@ class RequirementExtractionPipeline:
             signal=signal,
         )
         last_err = None
+        timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
         for attempt in range(3):
             try:
                 content, usage, usage_reported = await asyncio.wait_for(
                     _collect_skill_output(run_skill, run_input, signal),
-                    timeout=self.timeout_seconds,
+                    timeout=timeout,
                 )
                 return extract_first_json_object(content), usage if usage_reported else None
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError(
+                    f"MANDATE_MODEL_TIMEOUT: stage={stage}; timeout_seconds={timeout}"
+                ) from exc
             except Exception as e:
                 last_err = e
                 err_msg = str(e)
-                if ("503" in err_msg or "UNAVAILABLE" in err_msg or "high demand" in err_msg or "502" in err_msg) and attempt < 2:
+                transient = isinstance(e, (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError))
+                transient = transient or any(marker in err_msg for marker in ("503", "UNAVAILABLE", "high demand", "502"))
+                if transient and attempt < 2 and not _is_aborted(signal):
                     await asyncio.sleep(2.0 * (attempt + 1))
                     continue
                 raise e
@@ -266,6 +278,7 @@ class RequirementExtractionPipeline:
                     system_prompt=EXTRACTION_SYSTEM_PROMPT,
                     user_prompt=prompt,
                     signal=signal,
+                    stage="extraction",
                 )
                 call_count += 1
                 if usage is not None:
@@ -308,6 +321,7 @@ class RequirementExtractionPipeline:
                 system_prompt=COVERAGE_SYSTEM_PROMPT,
                 user_prompt=prompt,
                 signal=signal,
+                stage="coverage",
             )
             call_count += 1
             if usage is not None:

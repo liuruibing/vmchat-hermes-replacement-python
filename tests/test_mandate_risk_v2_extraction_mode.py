@@ -55,3 +55,10 @@ def test_character_limit_can_force_chunking():
     assert len(clauses) <= 200  # clause count alone would permit a full-document read
     assert mode == "chunked"    # character limit independently forces the fallback
     assert len(windows) > 1
+
+
+def test_default_budget_reads_many_short_clauses_together():
+    clauses = split_document_clauses(_document(150))
+    mode, windows = choose_extraction_windows(clauses)
+    assert mode == "full_document"
+    assert len(windows[0]) == len(clauses)

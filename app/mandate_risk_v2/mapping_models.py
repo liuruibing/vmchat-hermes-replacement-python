@@ -7,10 +7,7 @@ from pydantic import Field
 from app.mandate_risk_v2.models import StrictModel
 
 
-# Every non-rejected semantic link must explicitly audit these dimensions.
-# Additional open-ended qualifier dimensions are allowed, but they cannot
-# replace any of these core checks. This keeps DIRECT fail-closed when a model
-# forgets a difficult qualifier such as aggregation level or ex-ante basis.
+# Reference dimensions for explaining a match; screening does not require all of them.
 CORE_COMPATIBILITY_DIMENSIONS = (
     "measurement_object",
     "aggregation_level",
@@ -42,6 +39,8 @@ class MappingLink(StrictModel):
     compatibility: list[CompatibilityDimension] = Field(min_length=1)
     evidence_clause_ids: list[str] = Field(min_length=1)
     reason: str = Field(min_length=1)
+    match_score: float | None = Field(default=None, ge=0, le=100, strict=True, allow_inf_nan=False)
+    score_reason: str | None = Field(default=None, min_length=1)
 
 
 class MetricRowAssessment(StrictModel):
@@ -83,5 +82,31 @@ class CriticVerdict(StrictModel):
     evidence_clause_ids: list[str] = Field(min_length=1)
 
 
+class CandidateRejection(StrictModel):
+    requirement_id: str
+    raw_row_id: int
+    reason: str = Field(min_length=1)
+    evidence_clause_ids: list[str] = Field(min_length=1)
+
+
+class MissingAspect(StrictModel):
+    requirement_id: str
+    aspect: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    evidence_clause_ids: list[str] = Field(min_length=1)
+
+
+class ScoreAdjustment(StrictModel):
+    requirement_id: str
+    raw_row_id: int
+    match_score: float = Field(ge=0, le=100, strict=True, allow_inf_nan=False)
+    score_reason: str = Field(min_length=1)
+    evidence_clause_ids: list[str] = Field(min_length=1)
+
+
 class CriticReview(StrictModel):
     verdicts: list[CriticVerdict]
+    recalled_links: list[MappingLink] = Field(default_factory=list)
+    rejected_candidates: list[CandidateRejection] = Field(default_factory=list)
+    missing_aspects: list[MissingAspect] = Field(default_factory=list)
+    score_adjustments: list[ScoreAdjustment] = Field(default_factory=list)

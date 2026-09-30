@@ -1,3 +1,5 @@
+import pytest
+
 from app.mandate_risk.clauses import DocumentClause
 from app.mandate_risk.models import RawRiskMetric
 from app.mandate_risk.registry import RawRiskMetricRegistry
@@ -182,3 +184,44 @@ def test_report_keeps_six_column_contract_and_renders_requirement_constraints():
     assert "Constraint qualifiers：`{\"time_basis\":\"ongoing\"}`" in markdown
     assert "The portfolio shall maintain at least 7% liquidity.（第 3 页）" in markdown
     assert "主表“值”表示实际组合值" in markdown
+
+
+@pytest.mark.parametrize("destination", ["PENDING_REVIEW", "LIBRARY_GAP"])
+def test_metric_keeps_review_requirement_when_another_requirement_is_direct(destination):
+    ir, clauses, registry, mapping = _fixture()
+    review_link = mapping.links[1]
+    review_link.level = "REVIEW"
+    review_link.reason = "Relevant monitoring purpose; the upper-limit basis needs confirmation."
+    review_link.compatibility[0].relation = "INSUFFICIENT"
+    review_link.compatibility[0].reason = "Upper-limit measurement basis needs confirmation."
+    review_destination = mapping.dispositions.dispositions[1].destinations[0]
+    review_destination.destination = destination
+    review_destination.reason = "No confirmed algorithm for the upper limit."
+    if destination == "LIBRARY_GAP":
+        review_destination.raw_row_ids = []
+
+    result = build_v2_analysis_result(
+        ir=ir, clauses=clauses, registry=registry, mapping=mapping,
+    )
+    assert len(result.matched_metrics) == 1
+    assert len(result.candidate_metrics) == 1
+    formal = result.matched_metrics[0]
+    candidate = result.candidate_metrics[0]
+    assert formal.metric.raw_row_id == candidate.metric.raw_row_id == 2
+    assert [link.requirement.requirement.requirement_id for link in formal.requirements] == ["REQ-0001"]
+    assert [link.mapping_level for link in formal.requirements] == ["DIRECT"]
+    assert [link.requirement.requirement.requirement_id for link in candidate.requirements] == ["REQ-0002"]
+    assert candidate.requirements[0].mapping_level == "REVIEW"
+    assert candidate.requirements[0].mapping_reason == review_link.reason
+    assert candidate.requirements[0].mapping_evidence[0].page == 4
+
+    report = render_v2_report(
+        ir=ir, clauses=clauses, registry=registry, mapping=mapping, analysis=result,
+    )
+    main_table = report.split("## 筛选结果", 1)[1].split("## 指标匹配依据", 1)[0]
+    assert clauses[0].text in main_table
+    assert clauses[1].text in main_table
+    assert len(result.screened_metrics) == 1
+    assert len(result.screened_metrics[0].requirements) == 2
+    assert review_link.reason in report
+    assert review_link.compatibility[0].reason in report

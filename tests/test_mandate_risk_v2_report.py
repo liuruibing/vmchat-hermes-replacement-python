@@ -15,8 +15,8 @@ async def test_report_uses_six_columns_verbatim_clause_and_unknown_group():
     )
     report = render_v2_report(ir=ir, clauses=clauses, registry=registry, mapping=mapping)
     assert "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in report
-    assert "| 待分类 | Never-seen Exposure Measure | Exposure shall not exceed NAV. | — | — | — |" in report
-    assert "Other Measure" not in report.split("## 待确认", 1)[0]
+    assert "| 待分类 | Never-seen Exposure Measure | Exposure shall not exceed NAV. | — | — | 93/100 |" in report
+    assert "Other Measure" not in report
     assert "第 1 页" in report
 
 

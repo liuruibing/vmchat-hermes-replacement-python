@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
@@ -47,7 +48,10 @@ def _evidence_text(requirement: RequirementDraft, clauses_by_id: dict[str, Docum
 def _validate_constraint_shape(constraint: RequirementConstraint, *, owner: str) -> None:
     operator = str(constraint.operator or "").strip().upper()
     if operator in _COMPARATIVE_OPERATORS and constraint.value is None:
-        raise ValueError(f"{owner} comparative constraint requires value")
+        if not (constraint.benchmark or "").strip() and not (constraint.formula or "").strip():
+            raise ValueError(f"{owner} comparative constraint requires value, benchmark or formula")
+        if not constraint.raw_value_text:
+            raise ValueError(f"{owner} symbolic comparison requires raw_value_text")
     if operator in _BETWEEN_OPERATORS:
         if constraint.value is None or constraint.value_to is None:
             raise ValueError(f"{owner} range constraint requires value and value_to")
@@ -70,6 +74,10 @@ def _validate_constraint_provenance(
     raw_value_text = _normalize_text(constraint.raw_value_text or "")
     if raw_value_text and raw_value_text not in normalized_evidence:
         raise ValueError(f"{owner} raw_value_text is not present in evidence")
+    if constraint.value is None and str(constraint.operator or "").strip().upper() in _COMPARATIVE_OPERATORS:
+        benchmark = _normalize_text(constraint.benchmark or "")
+        if benchmark and benchmark not in normalized_evidence:
+            raise ValueError(f"{owner} benchmark is not present in evidence")
 
     # Verify scalar values are grounded in the copied raw value span. This is
     # deliberately lexical only: Python does not infer financial semantics,
@@ -102,9 +110,13 @@ def validate_requirement_constraints(
         if constraint is None:
             continue
         owner = f"requirement {requirement.local_id}"
-        _validate_constraint_shape(constraint, owner=owner)
-        _validate_constraint_provenance(
-            constraint,
-            evidence_text=_evidence_text(requirement, clauses_by_id),
-            owner=owner,
-        )
+        evidence_text = _evidence_text(requirement, clauses_by_id)
+        try:
+            _validate_constraint_shape(constraint, owner=owner)
+            _validate_constraint_provenance(constraint, evidence_text=evidence_text, owner=owner)
+        except ValueError as exc:
+            context = json.dumps({
+                "constraint": constraint.model_dump(exclude_none=True),
+                "evidence_text": evidence_text,
+            }, ensure_ascii=False, separators=(",", ":"))
+            raise ValueError(f"{exc}; original constraint and evidence: {context}") from exc

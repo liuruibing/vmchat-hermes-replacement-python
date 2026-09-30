@@ -155,6 +155,7 @@ def run_one(base_url: str, pdf: Path, model: str, timeout: int):
             f"[progress] {pdf.name}: {message}", file=sys.stderr, flush=True,
         ))
     output = terminal.get("output") or ""
+    structured = (terminal.get("metadata") or {}).get("mandate_risk_v2", {}).get("result")
     return {
         "pdf": str(pdf), "name": pdf.name, "sha256": hashlib.sha256(raw).hexdigest(),
         "run_id": run_id, "event": terminal["event"],
@@ -164,6 +165,9 @@ def run_one(base_url: str, pdf: Path, model: str, timeout: int):
             "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in output
         ),
         "output": output,
+        "structured_result": structured,
+        "has_structured_result": isinstance(structured, dict),
+        "model": model,
     }
 
 
@@ -186,10 +190,15 @@ def main() -> int:
     for pdf in args.pdf:
         result = run_one(args.base_url.rstrip("/"), pdf, args.model, args.timeout)
         output = result.pop("output")
+        structured = result.pop("structured_result")
         if args.report_dir and output:
             report_path = args.report_dir / f"{result['run_id']}.md"
             report_path.write_text(output, encoding="utf-8")
             result["report_path"] = str(report_path)
+            if structured is not None:
+                structured_path = args.report_dir / f"{result['run_id']}.json"
+                structured_path.write_text(json.dumps(structured, ensure_ascii=False, indent=2), encoding="utf-8")
+                result["structured_result_path"] = str(structured_path)
 
         if gold is not None:
             spec = select_gold_spec(gold, pdf_name=result["name"], sha256=result["sha256"])
@@ -206,7 +215,8 @@ def main() -> int:
                 result["gold_errors"] = errors
 
         print(json.dumps(result, ensure_ascii=False), flush=True)
-        failed |= result["event"] != "run.completed" or not result["has_six_column_table"]
+        failed |= (result["event"] != "run.completed" or not result["has_six_column_table"]
+                   or not result["has_structured_result"])
         if gold is not None:
             failed |= not result.get("gold_passed", False)
     return 1 if failed else 0

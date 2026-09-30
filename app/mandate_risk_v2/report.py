@@ -81,6 +81,8 @@ def format_requirement_constraint(requirement: Requirement) -> str:
         rendered = f"{normalized_operator} {value}".strip()
     elif constraint.formula:
         rendered = str(constraint.formula)
+    elif operator and constraint.benchmark:
+        return f"{normalized_operator} {constraint.benchmark}"
     elif operator:
         rendered = normalized_operator
     else:
@@ -147,130 +149,78 @@ def render_v2_report(
     analysis: V2AnalysisResult | None = None,
 ) -> str:
     analysis = analysis or build_v2_analysis_result(
-        ir=ir,
-        clauses=clauses,
-        registry=registry,
-        mapping=mapping,
+        ir=ir, clauses=clauses, registry=registry, mapping=mapping,
     )
     groups = _groups()
     lines = [
-        "# Mandate 风险指标报告（V2）",
-        "",
+        "# Mandate 风险指标筛选报告（V2）", "",
         f"- 文档：{analysis.document_name}",
         f"- 指标库：{analysis.metric_catalogue_name}",
         f"- 指标库 SHA-256：{analysis.metric_catalogue_sha256 or '未提供'}",
-        f"- 结果摘要：{analysis.summary}",
-        "",
-        "## 匹配摘要",
-        "",
+        f"- 结果摘要：{analysis.summary}", "",
+        "## 筛选结果", "",
+        "相似度显示模型评估的 PDF 要求匹配分（0–100），用于筛选和排序，不是统计校准的正确概率。",
+        "同一指标关联多个要求时，表格使用最高关联分；各要求的评分与差异在详情中分别保留。高分不代表覆盖整个 PDF 的全部要求。", "",
         "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
+    for selected in analysis.screened_metrics:
+        quotes = "<br>".join(_cell(item.requirement.evidence[0].text)
+                              for item in selected.requirements if item.requirement.evidence)
+        score = f"{selected.match_score:g}/100" if selected.match_score is not None else "未评分"
+        lines.append("| " + " | ".join([
+            _cell(groups.get(selected.metric.metric_name, "待分类")),
+            _cell(selected.metric.metric_name), quotes or "—", "—", "—", score,
+        ]) + " |")
+    if not analysis.screened_metrics:
+        lines.extend(["", "当前没有筛选出有文档依据的相关指标。"])
 
-    for matched in analysis.matched_metrics:
-        metric = matched.metric
-        # Preserve the original six-column contract: Mandate解读 remains
-        # verbatim Python-owned contract evidence. Multiple Requirements are
-        # shown as separate evidence snippets rather than collapsed into an AI
-        # summary; normalized constraints live in the detail section below.
-        summaries = "<br>".join(
-            _cell(
-                item.requirement.evidence[0].text
-                if item.requirement.evidence
-                else item.requirement.requirement.semantic_summary
-            )
-            for item in matched.requirements
-        )
-        lines.append(
-            "| "
-            + " | ".join(
-                [
-                    _cell(groups.get(metric.metric_name, "待分类")),
-                    _cell(metric.metric_name),
-                    summaries or "—",
-                    "—",
-                    "—",
-                    "—",
-                ]
-            )
-            + " |"
-        )
-    if not analysis.matched_metrics:
-        lines.extend(["", "当前没有通过独立复核的主表指标。"])
-
-    lines.extend(["", "## 主表指标依据与合同要求", ""])
-    if not analysis.matched_metrics:
+    lines.extend(["", "## 指标匹配依据", ""])
+    if not analysis.screened_metrics:
         lines.append("无。")
-    for matched in analysis.matched_metrics:
-        metric = matched.metric
-        lines.extend(
-            [
-                f"### {metric.metric_name}",
-                "",
-                f"- 原始库行：{metric.source_row}",
-                f"- 指标算法（原始值）：{metric.algorithm or '空'}",
-                f"- 指标库 Mandate（原始值）：{metric.mandate or '空'}",
-                "",
-            ]
-        )
-        for link_index, link in enumerate(matched.requirements, start=1):
+    for selected in analysis.screened_metrics:
+        metric = selected.metric
+        score = f"{selected.match_score:g}/100" if selected.match_score is not None else "未评分"
+        lines.extend([
+            f"### {metric.metric_name}", "",
+            f"- 匹配分：{score}",
+            f"- 评分理由：{selected.score_reason or '历史结果未评分'}",
+            f"- 原始库行：{metric.source_row}",
+            f"- 指标算法（原始值）：{metric.algorithm or '未提供，供用户确认'}",
+            f"- 指标库 Mandate（原始值）：{metric.mandate or '未提供'}", "",
+        ])
+        for link in selected.requirements:
             requirement = link.requirement.requirement
-            lines.extend(
-                [
-                    f"#### 合同要求 {link_index}：{requirement.requirement_id}",
-                    "",
-                ]
-            )
+            score = f"{link.match_score:g}/100" if link.match_score is not None else "未评分"
+            lines.extend([f"#### 合同要求：{requirement.requirement_id}", ""])
             _append_requirement_details(lines, requirement)
-            lines.extend([f"- 映射理由：{link.mapping_reason}", "", "**文档依据**", ""])
+            lines.extend([
+                f"- 该要求匹配分：{score}",
+                f"- 评分理由：{link.score_reason or '历史结果未评分'}",
+                f"- 关联理由：{link.mapping_reason}",
+            ])
+            lines.extend(f"- 差异说明：{note}" for note in link.review_notes)
+            for dimension in link.compatibility:
+                if dimension.relation in {"INSUFFICIENT", "CONFLICT"}:
+                    lines.append(f"- 口径差异（{dimension.dimension}）：{dimension.reason}；"
+                                 f"合同：{dimension.requirement_basis}；指标库：{dimension.metric_basis}")
+            lines.extend(["", "**合同原文**", ""])
             _append_evidence(lines, link.mapping_evidence)
-            lines.extend(["**逐维兼容审查**", ""])
-            for item in link.compatibility:
-                lines.extend(
-                    [
-                        f"- **{item.dimension}**：{item.relation}",
-                        f"  - 合同依据：{item.requirement_basis}",
-                        f"  - 指标库依据：{item.metric_basis}",
-                        f"  - 判断：{item.reason}",
-                    ]
-                )
-            lines.append("")
 
-    lines.extend(["## 待确认", ""])
-    if not analysis.pending_review:
-        lines.append("无。")
-    for item in analysis.pending_review:
-        _append_destination(lines, item)
+    for title, items in (("需用户关注的差异与待确认项", analysis.pending_review),
+                         ("未找到相关指标的要求", analysis.library_gaps),
+                         ("非指标要求", analysis.non_metric_requirements)):
+        lines.extend(["", f"## {title}", ""])
+        if not items:
+            lines.append("无。")
+        for item in items:
+            _append_destination(lines, item)
 
-    lines.extend(["", "## 指标库缺口", ""])
-    if not analysis.library_gaps:
-        lines.append("无。")
-    for item in analysis.library_gaps:
-        _append_destination(lines, item)
-
-    lines.extend(["", "## 非指标要求", ""])
-    if not analysis.non_metric_requirements:
-        lines.append("无。")
-    for item in analysis.non_metric_requirements:
-        _append_destination(lines, item)
-
-    lines.extend(["", "## 未解决 Requirement", ""])
-    if not analysis.unresolved_requirements:
-        lines.append("无。Phase A 当前采用 fail-closed；成功完成的正式结果不会静默保留未解决 Requirement。")
-    else:
-        for item in analysis.unresolved_requirements:
-            lines.append(f"- {item.requirement.requirement_id}：{item.requirement.semantic_summary}")
-
-    lines.extend(
-        [
-            "",
-            "## 说明",
-            "",
-            "- 主表只包含合同直接支持、已通过逐维兼容审查及独立 Critic 复核的原始库指标。",
-            "- 主表“值”表示实际组合值；当前没有权威持仓/组合数据，因此仍显示“—”。PDF 中的阈值、范围和时点在“合同要求”中单独展示，避免把 Mandate 要求误当成实际组合值。",
-            "- 参考组合、相似度没有权威数据，统一显示“—”；系统不会编造数值或伪精确相似度。",
-            "- 同一正式指标可保留多条独立 Requirement，各自保留约束、条件、证据和兼容审查，不在展示层强行合并。",
-            "- 待确认、指标库缺口和非指标要求与主表分开；合同原文保持可追溯，不创建新指标。",
-        ]
-    )
+    lines.extend([
+        "", "## 说明", "",
+        "- 结果用于筛选相关指标，不表示自动入库、合规通过或算法完全等价。算法缺失、年化/事前口径不明等差异保留在详情中，供用户判断。",
+        "- 主表“值”表示实际组合值；当前没有权威持仓/组合数据，因此显示“—”。PDF 阈值在合同要求详情中展示，不作为实际组合值。",
+        "- 参考组合没有权威数据，显示“—”；相似度来自本次模型的文档匹配评估，与参考组合比较无关。",
+        "- 历史输出没有评分时显示“未评分”，不自动补造分数。",
+    ])
     return "\n".join(lines).strip() + "\n"

@@ -61,7 +61,7 @@ class MandateRiskV2Workflow:
         yield ReasoningDeltaEvent(
             delta=("V2 Phase A：先独立理解 Mandate Requirement，再做完整性审计；本阶段不读取风险指标库。"
                    if self.phase_a_only else
-                   "V2 Phase A：先独立理解 Mandate Requirement，再做完整性审计；随后进行指标库映射与独立 Critic 复核。"),
+                   "V2 Phase A：先理解 PDF 要求并审计覆盖；随后筛选相关库指标、评估匹配分并独立复核。"),
             sequence=1,
         )
 
@@ -124,6 +124,8 @@ class MandateRiskV2Workflow:
                     "result_counts": {
                         "requirements": len(analysis.requirements),
                         "matched_metrics": len(analysis.matched_metrics),
+                        "candidate_metrics": len(analysis.candidate_metrics),
+                        "screened_metrics": len(analysis.screened_metrics),
                         "pending_review": len(analysis.pending_review),
                         "library_gaps": len(analysis.library_gaps),
                         "non_metric_requirements": len(analysis.non_metric_requirements),
@@ -137,7 +139,7 @@ class MandateRiskV2Workflow:
                 yield RunFailedEvent(error=f"V2 指标映射或 Critic 复核失败: {err}")
                 return
             yield ReasoningDeltaEvent(
-                delta="Phase B 完成：指标映射、结构化结果及 DIRECT/库缺口/非指标要求的独立 Critic 复核均已闭合。",
+                delta="Phase B 完成：相关指标筛选、匹配评分和独立复核已完成，结果供用户筛选判断。",
                 sequence=3,
             )
         for chunk in code_point_chunks(markdown, context.message_chunk_chars):

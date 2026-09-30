@@ -57,7 +57,7 @@ def _batch_payload(link):
     ]}
 
 
-def test_direct_requires_complete_structural_matrix_and_real_evidence():
+def test_direct_screening_keeps_partial_compatibility_but_requires_real_evidence():
     ir, registry = _fixture()
     payload = _batch_payload(_link())
     assert len(validate_batch(payload, ir=ir, registry=registry, batch_row_ids={2, 3}).links) == 1
@@ -67,13 +67,11 @@ def test_direct_requires_complete_structural_matrix_and_real_evidence():
         item for item in payload["links"][0]["compatibility"]
         if item["dimension"] != "annualisation"
     ]
-    with pytest.raises(ValueError, match="missing core dimensions.*annualisation"):
-        validate_batch(payload, ir=ir, registry=registry, batch_row_ids={2, 3})
+    assert validate_batch(payload, ir=ir, registry=registry, batch_row_ids={2, 3}).links
 
     payload = _batch_payload(_link())
     payload["links"][0]["compatibility"][0]["relation"] = "INSUFFICIENT"
-    with pytest.raises(ValueError, match="DIRECT.*compatibility"):
-        validate_batch(payload, ir=ir, registry=registry, batch_row_ids={2, 3})
+    assert validate_batch(payload, ir=ir, registry=registry, batch_row_ids={2, 3}).links
 
     payload = _batch_payload(_link())
     payload["links"][0]["evidence_clause_ids"] = ["c9999"]
@@ -81,14 +79,15 @@ def test_direct_requires_complete_structural_matrix_and_real_evidence():
         validate_batch(payload, ir=ir, registry=registry, batch_row_ids={2, 3})
 
 
-def test_empty_algorithm_cannot_supply_equivalent_direct_algorithm_basis():
+def test_empty_algorithm_does_not_prevent_screening_a_related_indicator():
     ir, _ = _fixture()
     registry = RawRiskMetricRegistry([
         RawRiskMetric(row_id=2, source_row=2, metric_name="No Algorithm", algorithm=""),
         RawRiskMetric(row_id=3, source_row=3, metric_name="Other", algorithm="turnover"),
     ])
-    with pytest.raises(ValueError, match="algorithm_semantics.*empty"):
-        validate_batch(_batch_payload(_link()), ir=ir, registry=registry, batch_row_ids={2, 3})
+    link = _link()
+    next(item for item in link["compatibility"] if item["dimension"] == "algorithm_semantics")["relation"] = "INSUFFICIENT"
+    assert validate_batch(_batch_payload(link), ir=ir, registry=registry, batch_row_ids={2, 3}).links
 
 
 def test_definition_clause_may_support_but_not_replace_requirement_evidence():
@@ -135,7 +134,7 @@ def test_dispositions_can_partition_one_requirement_and_critic_checks_all_direct
             ir=ir, dispositions=dispositions)
 
 
-def test_pending_review_metric_rows_require_review_links():
+def test_pending_review_metric_rows_cannot_select_rejected_links():
     ir, registry = _fixture()
     rejected = _link(level="REJECTED")
     rejected["compatibility"] = [{
@@ -144,7 +143,7 @@ def test_pending_review_metric_rows_require_review_links():
     }]
     links = validate_batch(_batch_payload(rejected), ir=ir, registry=registry,
                            batch_row_ids={2, 3}).links
-    with pytest.raises(ValueError, match="PENDING_REVIEW.*REVIEW"):
+    with pytest.raises(ValueError, match="REJECTED"):
         validate_dispositions({"dispositions": [{
             "requirement_id": "REQ-0001", "reason": "not direct", "destinations": [{
                 "destination": "PENDING_REVIEW", "raw_row_ids": [2],
@@ -165,13 +164,16 @@ def test_pending_review_metric_rows_require_review_links():
     assert review.dispositions[0].destinations[0].destination == "PENDING_REVIEW"
 
 
-def test_direct_link_cannot_disappear_from_final_destinations():
+def test_screening_links_remain_available_when_destination_has_a_different_aspect():
     ir, registry = _fixture()
     links = validate_batch(_batch_payload(_link()), ir=ir, registry=registry,
                            batch_row_ids={2, 3}).links
-    with pytest.raises(ValueError, match="DIRECT.*destination"):
-        validate_dispositions({"dispositions": [{"requirement_id": "REQ-0001",
+    review = validate_dispositions({"dispositions": [{"requirement_id": "REQ-0001",
             "reason": "ignored candidate", "destinations": [{
                 "destination": "LIBRARY_GAP", "raw_row_ids": [],
-                "evidence_clause_ids": ["c0001"], "aspect": "exposure", "reason": "none",
+                "evidence_clause_ids": ["c0001"], "aspect": "additional issuer measure", "reason": "none",
             }]}]}, ir=ir, registry=registry, links=links)
+    from app.mandate_risk_v2.mapping import MappingResult
+    from app.mandate_risk_v2.mapping_models import CriticReview
+    mapping = MappingResult(links=links, dispositions=review, critic=CriticReview(verdicts=[]), usage={})
+    assert mapping.screening_links == links

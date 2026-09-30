@@ -7,7 +7,7 @@
   "roles_dir": "roles",
   "default_role": "requirement-analyst",
   "metadata": {
-    "description": "实验性 V2：先独立提取并审计 Requirement IR，再映射原始指标库并由独立 Critic 复核 DIRECT 与指标库缺口",
+    "description": "实验性 V2：先理解并审计 PDF Requirement，再筛选相关原始库指标、评估文档匹配分并由独立 Critic 复核，供用户判断",
     "experimental": true
   }
 }

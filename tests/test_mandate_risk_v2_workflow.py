@@ -70,7 +70,8 @@ class FullProvider(Provider):
         prompt = run_input.user_prompt
         if "# V2 mapping batch" in prompt:
             yield Chunk(content=json.dumps({"links": [{"requirement_id": "REQ-0001", "raw_row_id": 2,
-                "level": "DIRECT", "compatibility": _matrix(), "evidence_clause_ids": ["c0001"], "reason": "direct"}],
+                "level": "DIRECT", "compatibility": _matrix(), "evidence_clause_ids": ["c0001"], "reason": "direct",
+                "match_score": 92, "score_reason": "Directly relevant to the PDF liquidity requirement."}],
                 "row_assessments": [{"raw_row_id": 2, "outcome": "LINKED", "reason": "direct"}]}), usage={"total_tokens": 7})
         elif "# V2 final destinations" in prompt:
             yield Chunk(content=json.dumps({"dispositions": [{"requirement_id": "REQ-0001", "reason": "complete",
@@ -104,4 +105,6 @@ async def test_v2_workflow_outputs_critic_confirmed_six_column_report():
     structured = events[-1].metadata["mandate_risk_v2"]
     assert structured["phase"] == "complete"
     assert structured["result"]["matched_metrics"][0]["metric"]["metric_name"] == "Unseen Liquidity Metric"
+    assert structured["result"]["screened_metrics"][0]["match_score"] == 92
+    assert "92/100" in events[-1].output
     assert structured["result"]["requirements"][0]["requirement"]["constraint"]["value"] == 7

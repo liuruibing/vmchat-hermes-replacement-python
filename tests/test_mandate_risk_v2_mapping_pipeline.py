@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -39,6 +40,7 @@ class Provider:
             yield Chunk(json.dumps({"links": [
                 {"requirement_id": "REQ-0001", "raw_row_id": rows[0]["row_id"],
                  "level": "DIRECT", "compatibility": _matrix(),
+                 "match_score": 93, "score_reason": "The PDF expressly limits this exposure.",
                  "evidence_clause_ids": ["c0001"], "reason": "direct"}],
                  "row_assessments": [
                      {"raw_row_id": row["row_id"],
@@ -73,14 +75,17 @@ def _data():
     return ir, clauses, registry
 
 
-def test_mapping_prompt_gives_exact_relation_enum_and_required_dimensions():
+def test_mapping_prompt_explains_scoring_and_optional_compatibility_dimensions():
     ir, clauses, registry = _data()
     prompt = MAPPING_SYSTEM_PROMPT + batch_prompt(ir, clauses, registry.all())
     assert '"relation":"EQUIVALENT"' in prompt
-    assert "MISMATCH" in prompt
-    assert "PARTIAL" in prompt
+    assert "match_score" in prompt and "score_reason" in prompt
+    assert "不要求填齐十二项" in prompt
+    assert "正确概率" in prompt
     assert "strategy_applicability" in prompt
     assert "algorithm_semantics" in prompt
+    assert '"outcome":"LINKED"' in prompt
+    assert "NOT_RELEVANT" in prompt
     for dimension in CORE_COMPATIBILITY_DIMENSIONS:
         assert dimension in prompt
 
@@ -93,6 +98,49 @@ def test_mapping_prompt_includes_definition_source_without_turning_it_into_requi
     clauses.append(DocumentClause(clause_id="c0002", text="NAV means net asset value.", page=2))
     prompt = batch_prompt(ir, clauses, registry.all())
     assert "NAV means net asset value." in prompt
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stage,marker", [
+    ("mapping_batch", "# V2 mapping batch"),
+    ("destinations", "# V2 final destinations"),
+    ("critic", "# V2 independent critic"),
+])
+async def test_mapping_timeout_names_the_failed_stage(stage, marker):
+    class SlowProvider(Provider):
+        async def run_skill(self, run_input):
+            if marker in run_input.user_prompt:
+                await asyncio.Event().wait()
+            async for chunk in super().run_skill(run_input):
+                yield chunk
+
+    ir, clauses, registry = _data()
+    pipeline = MappingPipeline(batch_size=2, critic_timeout_seconds=0.01)
+    pipeline._model.timeout_seconds = 0.01
+    with pytest.raises(TimeoutError, match=f"MANDATE_MODEL_TIMEOUT: stage={stage}; timeout_seconds=0.01"):
+        await pipeline.run(ir=ir, clauses=clauses, registry=registry, provider=SlowProvider())
+
+
+@pytest.mark.anyio
+async def test_critic_can_finish_within_its_own_bounded_timeout():
+    class SlowCriticProvider(Provider):
+        async def run_skill(self, run_input):
+            if "# V2 independent critic" in run_input.user_prompt:
+                await asyncio.sleep(0.02)
+            async for chunk in super().run_skill(run_input):
+                yield chunk
+
+    ir, clauses, registry = _data()
+    pipeline = MappingPipeline(batch_size=2, critic_timeout_seconds=0.2)
+    pipeline._model.timeout_seconds = 0.01
+    mapping = await pipeline.run(ir=ir, clauses=clauses, registry=registry, provider=SlowCriticProvider())
+    assert [link.raw_row_id for link in mapping.direct_links] == [2]
+    assert mapping.usage["expected_calls"] == 3
+
+
+def test_critic_timeout_must_be_positive():
+    with pytest.raises(ValueError, match="timeout"):
+        MappingPipeline(critic_timeout_seconds=0)
 
 
 @pytest.mark.anyio
@@ -128,6 +176,7 @@ class MixedCriticProvider:
                 "links": [
                     {"requirement_id": "REQ-0001", "raw_row_id": row["row_id"],
                      "level": "DIRECT", "compatibility": _matrix(),
+                     "match_score": 87, "score_reason": "Relevant exposure with a scope difference.",
                      "evidence_clause_ids": ["c0001"], "reason": "direct"}
                     for row in rows
                 ],
