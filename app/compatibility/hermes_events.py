@@ -23,6 +23,11 @@ class RunCompletedEvent(BaseModel):
     event: Literal["run.completed"] = "run.completed"
     output: str
     usage: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    # Optional additive metadata keeps the existing SSE fields stable while
+    # allowing workflows such as Mandate Risk V2 to expose a structured result.
+    # serialize_sse_event(exclude_none=True) means legacy events remain byte-for-
+    # byte compatible when metadata is not supplied.
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class RunFailedEvent(BaseModel):

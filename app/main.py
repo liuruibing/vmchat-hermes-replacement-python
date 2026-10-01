@@ -814,6 +814,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 has_reasoning = False
                 sequence = 0
                 last_usage: Dict[str, Any] = {}
+                completion_metadata = None
 
                 skill_md = agent_registry.read_skill(agent_id) if agent_registry else ""
                 loaded_resources = (
@@ -904,6 +905,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                                 event_output = getattr(event, "output", None) or (event.get("output") if isinstance(event, dict) else "")
                                 full_output = event_output or full_output
                                 last_usage = getattr(event, "usage", None) or (event.get("usage") if isinstance(event, dict) else {}) or {}
+                                completion_metadata = getattr(event, "metadata", None) if not isinstance(event, dict) else event.get("metadata")
                             elif event_type == "run.failed":
                                 fail_msg = getattr(event, "error", None) or (event.get("error") if isinstance(event, dict) else "") or "AI 助手任务执行失败"
                                 err_frame = serialize_sse_event({"event": "run.failed", "error": fail_msg})
@@ -918,11 +920,14 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     frame = write_sse_frame(serialize_sse_event({"event": "reasoning.done"}))
                     yield frame
 
-                frame = write_sse_frame(serialize_sse_event({
+                completion_event = {
                     "event": "run.completed",
                     "output": full_output,
                     "usage": last_usage,
-                }))
+                }
+                if completion_metadata is not None:
+                    completion_event["metadata"] = completion_metadata
+                frame = write_sse_frame(serialize_sse_event(completion_event))
                 yield frame
 
                 artifact_id = None

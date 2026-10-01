@@ -209,12 +209,13 @@ class LangChainVmChatProvider(VmChatModelProvider):
             or "structured"
         )
 
-    def build_model(self) -> Any:
+    def build_model(self, *, timeout_seconds: float = 120) -> Any:
+        retries = int(os.getenv("LLM_NETWORK_RETRIES", "3"))
         kwargs: Dict[str, Any] = {
             "model": self.model_name,
             "temperature": 0,
-            "max_retries": 0,
-            "timeout": 120,
+            "max_retries": retries,
+            "timeout": timeout_seconds,
         }
         if self.base_url:
             kwargs["base_url"] = self.base_url
@@ -390,7 +391,8 @@ class LangChainVmChatProvider(VmChatModelProvider):
         if is_aborted(input.signal):
             raise RuntimeError("ABORTED: Request aborted")
 
-        model = self.build_model()
+        model = (self.build_model(timeout_seconds=input.timeout_seconds)
+                 if input.timeout_seconds is not None else self.build_model())
         @tool("read_vmchat_skill_resource", args_schema=ReadSkillResourceInput)
         def read_resource_tool(path: str) -> str:
             """Read one allow-listed agent resource by relative path."""
