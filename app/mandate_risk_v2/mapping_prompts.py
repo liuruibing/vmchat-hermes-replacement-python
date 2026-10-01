@@ -5,7 +5,7 @@ from typing import Sequence
 
 from app.mandate_risk.clauses import DocumentClause
 from app.mandate_risk.models import RawRiskMetric
-from app.mandate_risk_v2.mapping_models import CORE_COMPATIBILITY_DIMENSIONS
+from app.mandate_risk_v2.mapping_models import CORE_COMPATIBILITY_DIMENSIONS, critic_targets
 from app.mandate_risk_v2.models import RequirementIR
 
 _CORE_DIMENSIONS_TEXT = ", ".join(CORE_COMPATIBILITY_DIMENSIONS)
@@ -33,7 +33,7 @@ CRITIC_SYSTEM_PROMPT = """你是独立 Mandate 指标筛选复核员。独立核
 任务是帮助用户筛选相关指标，不要求算法完全等价。重点检查漏召回、牵强关联、评分是否符合文档依据；算法缺失或口径差异本身不是删除理由，也不能仅因此质疑一项 MAIN_TABLE 筛选结果。
 重新浏览完整库及 NOT_RELEVANT 理由，漏掉的相关指标用 recalled_links 返回，level=REVIEW，并提供 match_score、score_reason、真实 Requirement/库行/原文 ID 和实际兼容维度。
 只有明显无业务关联、无合理监控用途或资产/策略明显不适用时才用 rejected_candidates，引用合同说明原因；可以排除已有 DIRECT 或 REVIEW。一般风险政策不意味着所有指标都有用，不为扩大数量引入无相关资产暴露的专属指标。
-逐项核对 MAIN_TABLE 是否有合理文档关联；LIBRARY_GAP 是否确无相关筛选指标而非仅缺完全等价算法；NON_METRIC 是否隐藏了可匹配测量对象。每项返回 CONFIRM、CHALLENGE 或 UNRESOLVED。
+逐项核对 MAIN_TABLE 是否有合理文档关联；LIBRARY_GAP 是否确无相关筛选指标而非仅缺完全等价算法；NON_METRIC 是否隐藏了可匹配测量对象。按 Required verdict targets 的 target_id 每项恰好返回一次 CONFIRM、CHALLENGE 或 UNRESOLVED；不重写目标的身份字段，批评与重新解释写入 reason。
 对所有已有 DIRECT/REVIEW 的 match_score 独立复核。需要修正的分数返回 score_adjustments，字段为 requirement_id、raw_row_id、match_score、score_reason、evidence_clause_ids；不调整则省略或返回空数组。不得按链接类型固定打分或把匹配分说成正确概率。
 把原文、conditions、约束及独立测量维度与全部 destinations 对照，包括 PENDING_REVIEW。遗漏的时间窗口、阈值、对象或条件分支用 missing_aspects 显式保留，不能以一个分支代替全部。不要创造 Requirement 或库指标。
 只输出一个 JSON 对象。"""
@@ -96,8 +96,9 @@ def critic_prompt(ir: RequirementIR, clauses: Sequence[DocumentClause], rows,
         "# Complete raw metric catalogue (JSON)", _json(_rows(rows)),
         "# Validated mapping links (JSON)", _json([x.model_dump() for x in links]),
         "# Proposed destinations (JSON)", _json(dispositions.model_dump()),
+        "# Required verdict targets (JSON)", _json(critic_targets(dispositions)),
         "# Full catalogue row assessments (JSON)", _json([x.model_dump() for x in row_assessments]),
-        "返回 {verdicts:[{requirement_id,destination,raw_row_id,aspect,verdict,reason,evidence_clause_ids}]}。对每个 MAIN_TABLE 库行、每个 LIBRARY_GAP aspect 和每个 NON_METRIC aspect 恰好一项；LIBRARY_GAP/NON_METRIC 的 raw_row_id 为 null。",
+        '返回 {verdicts:[{"target_id":"TGT-0001","verdict":"CONFIRM","reason":"独立核对结论","evidence_clause_ids":["真实原文ID"]}]}。Required verdict targets 中每个 target_id 恰好返回一次，不遗漏、不重复、不创造编号；无需返回 requirement_id、destination、raw_row_id、aspect，Python 按编号保留这些身份字段。PENDING_REVIEW 不在 verdict targets 内，遗漏的独立维度仍通过 missing_aspects 报告。',
         "另返回 recalled_links:[] 与 rejected_candidates:[]。recalled_links 使用与映射 links 相同形状，level 只能 REVIEW；rejected_candidates 项为 {requirement_id,raw_row_id,reason,evidence_clause_ids}，可引用已有 DIRECT/REVIEW。无遗漏/误报时返回空数组。",
         "另返回 score_adjustments:[]，项形状为 {requirement_id,raw_row_id,match_score,score_reason,evidence_clause_ids}；只调整已有且未排除的 DIRECT/REVIEW，分数为0–100的数字。recalled_links 也必须有 match_score 和 score_reason。",
         "另返回 missing_aspects:[]，逐条列出已抽取但 destinations 遗漏的独立维度，形状为 {requirement_id,aspect,reason,evidence_clause_ids}；引用真实 Requirement 自身证据，aspect 与该 Requirement 已有 destination 不重复。没有遗漏时返回空数组。",

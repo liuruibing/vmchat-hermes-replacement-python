@@ -24,7 +24,7 @@ from app.mandate_risk_v2.prompts import (
 from app.provider.fixed_provider import ModelSkillRunInput
 
 
-MODEL_TIMEOUT_SECONDS = 120
+MODEL_TIMEOUT_SECONDS = 240
 EXTRACTION_BATCH_SIZE = 32
 EXTRACTION_BATCH_OVERLAP = 6
 FULL_DOCUMENT_MAX_CLAUSES = None
@@ -219,15 +219,16 @@ class RequirementExtractionPipeline:
         run_skill = getattr(provider, "run_skill", None) or getattr(provider, "runSkill", None)
         if run_skill is None:
             raise RuntimeError("AI Provider 不支持 Skill 运行")
+        timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
         run_input = ModelSkillRunInput(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             read_resource=lambda _path: "RESOURCE_NOT_ALLOWED",
             search_knowledge=None,
             signal=signal,
+            timeout_seconds=timeout,
         )
         last_err = None
-        timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
         for attempt in range(3):
             try:
                 content, usage, usage_reported = await asyncio.wait_for(

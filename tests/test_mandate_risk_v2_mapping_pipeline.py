@@ -167,6 +167,31 @@ async def test_critic_challenge_moves_unconfirmed_direct_to_pending_not_main_tab
     assert "Critic" in destination.reason
 
 
+@pytest.mark.anyio
+async def test_numbered_critic_challenge_still_downgrades_the_exact_metric():
+    class NumberedProvider(Provider):
+        async def run_skill(self, run_input):
+            if "# V2 independent critic" in run_input.user_prompt:
+                targets = json.loads(run_input.user_prompt.split(
+                    "# Required verdict targets (JSON)\n", 1)[1].split("\n", 1)[0])
+                yield Chunk(json.dumps({"verdicts": [{
+                    "target_id": target["target_id"], "verdict": "CHALLENGE",
+                    "reason": "algorithm differs", "evidence_clause_ids": ["c0001"],
+                } for target in targets]}))
+            else:
+                async for chunk in super().run_skill(run_input):
+                    yield chunk
+
+    ir, clauses, registry = _data()
+    result = await MappingPipeline(batch_size=2).run(
+        ir=ir, clauses=clauses, registry=registry, provider=NumberedProvider())
+    assert result.direct_links == []
+    assert result.critic.verdicts[0].aspect == "portfolio exposure"
+    destination = result.dispositions.dispositions[0].destinations[0]
+    assert destination.destination == "PENDING_REVIEW"
+    assert destination.raw_row_ids == [2]
+
+
 class MixedCriticProvider:
     async def run_skill(self, run_input):
         prompt = run_input.user_prompt

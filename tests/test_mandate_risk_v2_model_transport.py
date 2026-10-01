@@ -8,6 +8,42 @@ from app.mandate_risk_v2.pipeline import RequirementExtractionPipeline
 
 
 @pytest.mark.anyio
+async def test_slow_model_can_finish_past_the_old_120_second_budget(monkeypatch):
+    import asyncio
+    import app.mandate_risk_v2.pipeline as module
+
+    real_wait_for = asyncio.wait_for
+
+    async def scaled_wait_for(awaitable, timeout):
+        return await real_wait_for(awaitable, timeout=timeout / 1000)
+
+    monkeypatch.setattr(module.asyncio, 'wait_for', scaled_wait_for)
+
+    class Provider:
+        async def run_skill(self, run_input):
+            await asyncio.sleep(0.18)
+            yield SimpleNamespace(contentDelta='{"complete":true}', usage=None)
+
+    payload, _ = await RequirementExtractionPipeline()._call_model(
+        provider=Provider(), system_prompt='system', user_prompt='input',
+        signal=None, stage='mapping_batch')
+    assert payload == {'complete': True}
+
+
+@pytest.mark.anyio
+async def test_stage_timeout_is_forwarded_to_provider():
+    class Provider:
+        async def run_skill(self, run_input):
+            assert run_input.timeout_seconds == 240
+            yield SimpleNamespace(contentDelta='{"complete":true}', usage=None)
+
+    payload, _ = await RequirementExtractionPipeline()._call_model(
+        provider=Provider(), system_prompt='system', user_prompt='input',
+        signal=None, stage='critic', timeout_seconds=240)
+    assert payload == {'complete': True}
+
+
+@pytest.mark.anyio
 async def test_incomplete_model_stream_retries_without_merging_partial_json(monkeypatch):
     import app.mandate_risk_v2.pipeline as module
     async def no_delay(_seconds):

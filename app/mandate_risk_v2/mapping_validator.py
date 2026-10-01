@@ -6,6 +6,7 @@ from app.mandate_risk_v2.mapping_models import (
     FinalMappingReview,
     MappingBatch,
     MappingLink,
+    critic_targets,
 )
 from app.mandate_risk_v2.models import RequirementIR
 
@@ -113,7 +114,23 @@ def validate_dispositions(payload: dict, *, ir: RequirementIR, registry: RawRisk
 def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMappingReview,
                     registry: RawRiskMetricRegistry | None = None,
                     links: list[MappingLink] | None = None, require_scores: bool = False) -> CriticReview:
-    review = CriticReview.model_validate(payload)
+    targets = {item["target_id"]: item for item in critic_targets(dispositions)}
+    verdicts = []
+    for verdict in payload.get("verdicts", []):
+        if not isinstance(verdict, dict) or "target_id" not in verdict:
+            verdicts.append(verdict)
+            continue
+        target_id = verdict["target_id"]
+        if not isinstance(target_id, str) or target_id not in targets:
+            raise ValueError(f"unknown critic target_id: {target_id}")
+        identity = {key: value for key, value in targets[target_id].items() if key != "target_id"}
+        if any(key in verdict and verdict[key] != value for key, value in identity.items()):
+            raise ValueError(f"critic target identity mismatch: {target_id}")
+        verdicts.append({**identity, **{key: value for key, value in verdict.items() if key != "target_id"}})
+    normalized = dict(payload)
+    if "verdicts" in normalized:
+        normalized["verdicts"] = verdicts
+    review = CriticReview.model_validate(normalized)
     expected = {
         (item.requirement_id, dest.destination, row_id, dest.aspect)
         for item in dispositions.dispositions

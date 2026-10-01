@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -70,6 +70,24 @@ class RequirementDisposition(StrictModel):
 
 class FinalMappingReview(StrictModel):
     dispositions: list[RequirementDisposition]
+
+
+def critic_targets(dispositions: FinalMappingReview) -> list[dict[str, Any]]:
+    targets = []
+    for item in dispositions.dispositions:
+        for destination in item.destinations:
+            if destination.destination not in {"MAIN_TABLE", "LIBRARY_GAP", "NON_METRIC"}:
+                continue
+            row_ids = destination.raw_row_ids if destination.destination == "MAIN_TABLE" else [None]
+            for row_id in row_ids:
+                targets.append({
+                    "target_id": f"TGT-{len(targets) + 1:04d}",
+                    "requirement_id": item.requirement_id,
+                    "destination": destination.destination,
+                    "raw_row_id": row_id,
+                    "aspect": destination.aspect,
+                })
+    return targets
 
 
 class CriticVerdict(StrictModel):

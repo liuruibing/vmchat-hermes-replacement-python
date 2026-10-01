@@ -37,6 +37,7 @@ class ModelSkillRunInput(BaseModel):
     readResource: Callable[[str], str] = Field(alias="read_resource")
     searchKnowledge: Optional[Callable[[str], str]] = Field(default=None, alias="search_knowledge")
     signal: Optional[Any] = None
+    timeout_seconds: Optional[float] = Field(default=None, gt=0)
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
