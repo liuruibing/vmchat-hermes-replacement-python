@@ -50,3 +50,17 @@ def test_incomplete_comparison_feedback_includes_original_constraint_and_its_evi
     assert 'requires value, benchmark or formula' in str(error.value)
     assert '"operator":"<="' in str(error.value)
     assert text in str(error.value)
+
+
+@pytest.mark.parametrize('source', ['Sub-\nPortfolio', 'Sub- \nPortfolio'])
+def test_constraint_quote_accepts_pdf_line_wrap_after_hyphen(source):
+    data = {"requirements": [{"local_id": "r1", "requirement_type": "QUANTITATIVE_LIMIT",
+        "semantic_summary": "Single security limit",
+        "constraint": {"operator": "<=", "value": 100, "unit": "%",
+            "raw_value_text": "shall not exceed 100% of the market value of the Sub-Portfolio"},
+        "evidence": {"clause_ids": ["c0001"]}}]}
+    clause = DocumentClause(clause_id="c0001", text="The exposure to any single security shall not exceed 100% of the market value of the " + source + ".")
+    assert validate_extraction_payload(data, allowed_clauses=[clause]).requirements[0].constraint.value == 100
+    data['requirements'][0]['constraint']['raw_value_text'] = "shall not exceed 80% of the market value of the Sub-Portfolio"
+    with pytest.raises(ValueError, match="raw_value_text is not present"):
+        validate_extraction_payload(data, allowed_clauses=[clause])

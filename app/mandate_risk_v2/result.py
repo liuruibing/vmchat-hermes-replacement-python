@@ -74,7 +74,8 @@ class V2AnalysisResult(StrictModel):
     """Stable structured V2 output from which Markdown/UI views can be rendered."""
 
     document_name: str
-    coverage_status: Literal["complete"] = "complete"
+    coverage_status: Literal["complete", "not_audited"] = "complete"
+    analysis_mode: Literal["detailed", "screening"] = "detailed"
     metric_catalogue_name: str
     metric_catalogue_sha256: str | None = None
     catalogue_assessments: list[MetricRowAssessment] = Field(default_factory=list)

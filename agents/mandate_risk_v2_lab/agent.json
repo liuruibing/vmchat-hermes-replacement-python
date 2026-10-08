@@ -7,7 +7,7 @@
   "roles_dir": "roles",
   "default_role": "requirement-analyst",
   "metadata": {
-    "description": "实验性 V2：先理解并审计 PDF Requirement，再筛选相关原始库指标、评估文档匹配分并由独立 Critic 复核，供用户判断",
+    "description": "V2 默认快速筛选：直接阅读 PDF 和完整指标库，返回相关指标、匹配分及原文，供人工选择；详细模式保留覆盖审计和独立复核",
     "experimental": true
   }
 }

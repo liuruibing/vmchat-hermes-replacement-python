@@ -17,7 +17,8 @@ _BETWEEN_OPERATORS = {"BETWEEN", "RANGE"}
 
 
 def _normalize_text(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
+    text = re.sub(r"(?<=\w)-[ \t]*\r?\n[ \t]*(?=\w)", "-", str(value or ""))
+    return re.sub(r"\s+", " ", text).strip().casefold()
 
 
 def _scalar_text(value: Any) -> str | None:

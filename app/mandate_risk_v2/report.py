@@ -140,6 +140,36 @@ def _append_destination(lines: list[str], item: DestinationResultItem) -> None:
     _append_evidence(lines, item.evidence)
 
 
+def render_screening_report(analysis: V2AnalysisResult) -> str:
+    groups = _groups()
+    lines = ["# Mandate 风险指标筛选报告（快速筛选）", "",
+             f"- 文档：{analysis.document_name}",
+             f"- 指标库：{analysis.metric_catalogue_name}",
+             f"- 结果摘要：{analysis.summary}", "",
+             "本次直接依据 PDF 和指标库筛选，未执行逐条要求覆盖审计或独立复核。匹配分用于排序，供人工选择，不表示合规结论或算法完全等价。", "",
+             "## 筛选结果", "",
+             "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |",
+             "| --- | --- | --- | --- | --- | --- |"]
+    for item in analysis.screened_metrics:
+        lines.append("| " + " | ".join([
+            _cell(groups.get(item.metric.metric_name, "待分类")), _cell(item.metric.metric_name),
+            _cell(item.score_reason or ""), "—", "—", f"{item.match_score:g}/100",
+        ]) + " |")
+    if not analysis.screened_metrics:
+        lines.extend(["", "当前没有筛选出有文档依据的相关指标。"])
+    lines.extend(["", "## 指标匹配依据", ""])
+    for item in analysis.screened_metrics:
+        lines.extend([f"### {item.metric.metric_name}", "", f"- 匹配分：{item.match_score:g}/100",
+                      f"- 原始库行：{item.metric.source_row}",
+                      f"- 指标算法（原始值）：{item.metric.algorithm or '未提供，供用户确认'}", ""])
+        for link in item.requirements:
+            lines.append(f"- 关联理由：{link.mapping_reason}")
+            lines.extend(f"- 需确认：{note}" for note in link.review_notes)
+            lines.extend(["", "**PDF 原文**", ""])
+            _append_evidence(lines, link.mapping_evidence)
+    return "\n".join(lines).strip() + "\n"
+
+
 def render_v2_report(
     *,
     ir: RequirementIR,

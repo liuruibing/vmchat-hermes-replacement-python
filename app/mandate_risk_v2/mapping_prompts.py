@@ -64,6 +64,7 @@ def batch_prompt(ir: RequirementIR, clauses: Sequence[DocumentClause], rows,
              'compatibility 项 JSON 形状必须为 {"dimension":"measurement_object","requirement_basis":"合同原文支持的口径","metric_basis":"库算法支持的口径","relation":"EQUIVALENT","reason":"双方依据"}；relation 只能取 EQUIVALENT / INSUFFICIENT / CONFLICT / NOT_APPLICABLE。只写实际相关维度；不要求填齐十二项，口径差异作为说明而非筛选门禁。',
              'row_assessments 项形状为 {"raw_row_id":真实库行ID,"outcome":"LINKED","reason":"已有本行link"} 或 {"raw_row_id":真实库行ID,"outcome":"NOT_RELEVANT","reason":"无关联link的原因"}；outcome 只允许 LINKED / NOT_RELEVANT，不能使用 link.level 的值。',
              "返回 {links:[{requirement_id,raw_row_id,level,match_score,score_reason,compatibility:[{dimension,requirement_basis,metric_basis,relation,reason}],evidence_clause_ids,reason}],row_assessments:[{raw_row_id,outcome,reason}]}。每个库行必须恰好一个 row_assessment。"]
+    parts.append("身份与证据检查：对每个 link，先按 requirement_id 找到 IR 中的对应 Requirement，复制它自身 evidence.clause_ids 作为主证据；不要因指标名称或合同条款相似而交换 Requirement 编号。补充证据仅限定义、上下文或该 Requirement 的 IR relation 所关联的条款。输出前逐项核对。")
     if feedback:
         parts.extend(["# Previous invalid output feedback", feedback])
     return "\n".join(parts)

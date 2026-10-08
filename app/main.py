@@ -1,3 +1,16 @@
+# ==============================================================================
+# 文件：app/main.py
+# 文件作用：FastAPI 后端入口，将模型、工作流、会话、知识和文档服务连接起来。
+# 全局位置：浏览器 → 本文件的 HTTP 接口 → WorkflowEngine → 具体工作流 → Provider → 模型服务。
+# 谁调用它：服务启动入口调用 create_app()；浏览器随后请求上传、创建任务、查询或 SSE 接口。
+# 输入：应用配置、可选的依赖注入，以及浏览器提交的问题、Agent/角色选择和 PDF 文档 id。
+# 输出：HTTP 响应和 SSE 事件，并通过相应服务维护任务、会话及分析产物。
+# 主要流程：启动时组装服务；运行时按 Agent 配置选工作流、组装 WorkflowContext、消费业务事件。
+# 前端类比：像应用 bootstrap + API 路由层；provider 是 API service，context 是参数与回调的集合。
+# 边界：本文件负责接线和事件传输；模型协议在 provider/ 中，业务步骤在 workflow/ 中。
+# 阅读入口：先看 create_app() 中 Provider/WorkflowEngine 的创建，再看 workflow_engine.stream() 的调用。
+# ==============================================================================
+
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -257,10 +270,17 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             knowledge_service = KnowledgeService(knowledge_store, embedder=embedding_provider)
             knowledge_backend = "sqlite"
 
+    # 模型入口：Provider 类似可替换的 API service。外部注入优先，例如 OMP 服务注入自己的实现。
+    # 工作流只调用 Provider 接口，不必关心它最终使用 LangChain 还是其它模型客户端。
     if deps_override.get("provider"):
         provider = deps_override["provider"]
-    elif config.llm_provider == "langchain" and LangChainVmChatProvider is not None:
-        provider = LangChainVmChatProvider(
+    elif config.llm_provider in ("langchain", "colab") and LangChainVmChatProvider is not None:
+        provider_class = LangChainVmChatProvider
+        if config.llm_provider == "colab":
+            from app.provider.colab_provider import ColabVmChatProvider
+            provider_class = ColabVmChatProvider
+        # 将应用配置交给适配器；此处创建客户端包装对象，还没有发起模型生成请求。
+        provider = provider_class(
             model_name=config.llm_model,
             base_url=config.llm_base_url,
             api_key=config.llm_api_key,
@@ -271,6 +291,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
     else:
         provider = None
 
+    # 注册表把 workflow id 映射到实例；Engine 按 id 分发，本身不决定模型或具体图节点。
     workflow_registry = (
         deps_override.get("workflow_registry")
         or deps_override.get("workflowRegistry")
@@ -284,6 +305,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
         or deps_override.get("workflowEngine")
         or WorkflowEngine(workflow_registry)
     )
+
+    background_runs: dict[str, asyncio.Task] = {}
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -322,6 +345,10 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
 
         # Shutdown
         active_registry.abort_all()
+        for task in background_runs.values():
+            task.cancel()
+        if background_runs:
+            await asyncio.gather(*background_runs.values(), return_exceptions=True)
         if hasattr(run_store, "destroy") and callable(run_store.destroy):
             run_store.destroy()
         if hasattr(session_store, "close") and callable(session_store.close):
@@ -371,6 +398,17 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
         status = "ok" if ready else "degraded"
         status_code = 200 if ready else 503
         model_configured = bool(config.llm_api_key or config.llm_provider == "fixed")
+        runtime_model = getattr(provider, "runtime_info", None)
+        if not isinstance(runtime_model, dict):
+            if LangChainVmChatProvider is not None and isinstance(provider, LangChainVmChatProvider):
+                runtime_model = {"provider": config.llm_provider, "model": provider.model_name}
+            elif FixedVmChatProvider is not None and isinstance(provider, FixedVmChatProvider):
+                runtime_model = {"provider": "fixed", "model": "固定测试结果"}
+            else:
+                runtime_model = {"provider": "custom", "model": "自定义服务（模型未声明）"}
+        v2_workflow = workflow_registry.get("mandate-risk-analysis-v2")
+        v2_mode = ("requirement_ir" if getattr(v2_workflow, "phase_a_only", False)
+                   else getattr(v2_workflow, "mode", None))
 
         return JSONResponse(
             status_code=status_code,
@@ -380,6 +418,12 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 "catalogLoaded": ready,
                 "schemaLoaded": ready,
                 "modelConfigured": model_configured,
+                "runtime": {
+                    "provider": runtime_model.get("provider"),
+                    "model": runtime_model.get("model"),
+                    "modelSelectable": False,
+                    "v2Mode": v2_mode,
+                },
                 "sessionStore": "sqlite",
                 "documentStore": "sqlite" if document_store is not None else "custom",
                 "maxDocumentBytes": getattr(config, "max_document_bytes", 20 * 1024 * 1024),
@@ -625,6 +669,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 body = await request.json()
             except Exception:
                 body = {}
+            if isinstance(body, dict) and not body.get("model"):
+                body["model"] = getattr(provider, "model_name", None) or config.llm_model
             normalized_req = normalize_create_run_request(body)
         except Exception as err:
             return JSONResponse(
@@ -732,7 +778,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 replay_generator(),
                 media_type="text/event-stream",
                 headers={
-                    "Cache-Control": "no-cache",
+                    "Cache-Control": "no-cache, no-transform",
                     "Connection": "keep-alive",
                     "X-Accel-Buffering": "no",
                 }
@@ -756,7 +802,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 limit_err_generator(),
                 media_type="text/event-stream",
                 headers={
-                    "Cache-Control": "no-cache",
+                    "Cache-Control": "no-cache, no-transform",
                     "Connection": "keep-alive",
                     "X-Accel-Buffering": "no",
                 }
@@ -801,9 +847,11 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                 agent = agent_registry.get(agent_id) if agent_registry else None
                 if agent_registry is not None and agent is None:
                     raise VmChatRunError("UNKNOWN_AGENT", f"未知 Agent: {agent_id}")
+                # Agent 配置选业务流程；Provider 配置选模型服务，这两个选择分别生效。
                 workflow = agent.workflow if agent is not None else "vm-report"
                 role = agent_registry.get_role(agent_id, role_id) if agent_registry else None
                 role_prompt = role.systemPrompt if role else ""
+                # lambda 类似 (query) => search(agentId, query)，闭包把本次 Agent 身份带进检索函数。
                 knowledge_search = (
                     (lambda query: knowledge_service.format_for_tool(agent_id, query))
                     if knowledge_service is not None
@@ -823,6 +871,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     else None
                 )
                 document_ids = list(getattr(vm_input, "documentIds", []) or [])
+                # 一次性装入工作流依赖，类似给组件传 props + 回调；不是把整套服务藏进图 state。
                 workflow_context = WorkflowContext(
                     input_val=vm_input,
                     provider=provider,
@@ -837,9 +886,11 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     run_id=runId,
                     session_id=getattr(getattr(record, "request", None), "session_id", None),
                     document_ids=document_ids,
+                    # 传入的是方法本身，工作流稍后按 id 调用；PDF 正文不在这里重复读取。
                     document_loader=document_service.load_parsed if document_ids else None,
                 )
                 try:
+                    # stream() 返回异步事件生成器；__aiter__() 取得它的异步迭代入口。
                     stream_gen = workflow_engine.stream(
                         workflow,
                         workflow_context,
@@ -851,10 +902,12 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     ) from err
 
                 if stream_gen is not None:
+                    # __anext__() 取下一个事件；create_task 类似启动一个正在进行的 Promise。
                     next_event_task = asyncio.create_task(stream_gen.__anext__())
 
                     try:
                         while True:
+                            # wait 最多等 12 秒；超时返回但不取消任务，便于发送 SSE 保活后继续等待。
                             done, _ = await asyncio.wait({next_event_task}, timeout=12.0)
                             if not done:
                                 if not is_aborted():
@@ -864,6 +917,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                             try:
                                 event = next_event_task.result()
                             except StopAsyncIteration:
+                                # 异步生成器没有更多事件，相当于迭代器返回 done: true。
                                 break
 
                             next_event_task = asyncio.create_task(stream_gen.__anext__())
@@ -871,10 +925,12 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                             if is_aborted():
                                 raise RuntimeError("CLIENT_DISCONNECTED")
 
+                            # 图/普通 Python 流程都输出同一种业务事件；浏览器不需要认识 LangGraph。
                             event_type = getattr(event, "event", None) or getattr(event, "type", None) or (
                                 (event.get("event") or event.get("type")) if isinstance(event, dict) else None
                             )
 
+                            # 在这里才把事件转成 SSE 文本帧：过程说明和正文分开，正文同时累积用于保存。
                             if event_type == "reasoning.delta":
                                 has_reasoning = True
                                 sequence += 1
@@ -915,6 +971,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     finally:
                         if not next_event_task.done():
                             next_event_task.cancel()
+                        await asyncio.gather(next_event_task, return_exceptions=True)
 
                 if has_reasoning:
                     frame = write_sse_frame(serialize_sse_event({"event": "reasoning.done"}))
@@ -1000,11 +1057,79 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             event_generator(),
             media_type="text/event-stream",
             headers={
-                "Cache-Control": "no-cache",
+                "Cache-Control": "no-cache, no-transform",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
             }
         )
+
+    @app.post("/v1/runs/{runId}/start")
+    async def start_background_run(runId: str, request: Request):
+        record = run_store.get(runId)
+        if record is None:
+            return JSONResponse(status_code=404, content={"error": "RUN_NOT_FOUND"})
+        if record.status != "queued":
+            return JSONResponse(status_code=200, content={"run_id": runId, "status": record.status})
+
+        response = await run_events(runId, request)
+        if not isinstance(response, StreamingResponse):
+            return response
+
+        async def consume():
+            async for frame in response.body_iterator:
+                if isinstance(frame, bytes):
+                    frame = frame.decode("utf-8")
+                if frame.startswith("data:") and (
+                    not record.eventBuffer or record.eventBuffer[-1] != frame
+                ):
+                    run_store.append_event(runId, frame)
+
+        task = asyncio.create_task(consume())
+        background_runs[runId] = task
+        def finish_task(done):
+            background_runs.pop(runId, None)
+            error = None if done.cancelled() else done.exception()
+            if record.status in ("running", "validating", "repairing") and (done.cancelled() or error):
+                frame = serialize_sse_event({
+                    "event": "run.failed",
+                    "error": "客户端连接已中断" if done.cancelled() else "后台任务执行失败",
+                })
+                run_store.append_event(runId, frame)
+                run_store.fail(runId, frame)
+
+        task.add_done_callback(finish_task)
+        return JSONResponse(status_code=202, content={"run_id": runId, "status": record.status})
+
+    @app.post("/v1/runs/{runId}/cancel")
+    async def cancel_background_run(runId: str):
+        record = run_store.get(runId)
+        if record is None:
+            return JSONResponse(status_code=404, content={"error": "RUN_NOT_FOUND"})
+        if record.status == "queued":
+            frame = serialize_sse_event({"event": "run.failed", "error": "客户端连接已中断"})
+            run_store.append_event(runId, frame)
+            run_store.fail(runId, frame)
+        elif record.status in ("running", "validating", "repairing"):
+            if record.controller:
+                record.controller.abort()
+            task = background_runs.get(runId)
+            if task is not None:
+                task.cancel()
+        return JSONResponse(content={"run_id": runId, "status": record.status})
+
+    @app.get("/v1/runs/{runId}/snapshot")
+    async def run_snapshot(runId: str, after: int = 0):
+        record = run_store.get(runId)
+        if record is None:
+            return JSONResponse(status_code=404, content={"error": "RUN_NOT_FOUND"})
+        frames = list(record.eventBuffer)
+        if after < 0 or after > len(frames):
+            return JSONResponse(status_code=400, content={"error": "INVALID_EVENT_CURSOR"})
+        batch = frames[after:after + 100]
+        return JSONResponse(content={
+            "run_id": runId, "status": record.status,
+            "cursor": after + len(batch), "frames": batch,
+        }, headers={"Cache-Control": "no-store"})
 
     return app
 

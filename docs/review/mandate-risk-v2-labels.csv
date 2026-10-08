@@ -1,0 +1,69 @@
+﻿sample,pdf,raw_row_id,metric_name,label,pages,reason,business_confirmed
+fixed,固收sample.pdf,2,基金收益率,可选,4,稳定现金流目标；总回报率不是现金流稳定性的直接等价测量。,否
+fixed,固收sample.pdf,3,超额收益率（基准超额）,可选,4,新购债收益率较基准高 10 bps；库区间超额收益不能代替买入时 yield spread。,否
+fixed,固收sample.pdf,4,Alpha,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,5,股息贡献率,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,6,Sortino索提诺,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,7,信息比率,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,8,VaR,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,9,最大回撤,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,10,波动率,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,11,组合Beta贝塔,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,12,下行Beta,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,13,行业偏离度,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,14,跟踪误差,可选,2、4,稳定现金流、相对价值与短期波动相关的补充监控；未要求该具体算法，属弱关联，非核心必选。,否
+fixed,固收sample.pdf,15,久期,必选,3、4,Duration 定义及久期调整例外明确出现；核心利率风险监控。,否
+fixed,固收sample.pdf,16,DV01,必选,3、4,长期公共信用债存在利率敏感性；保留 DV01 与久期两种监控视角，但合同未规定 DV01 算法或阈值。,否
+fixed,固收sample.pdf,17,股息支付率NII,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,18,股息增长率,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,19,股息覆盖率,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,20,境内资产占比,可选,4,中国市场注册的 CNY 公共信用证券；需确认注册地与资产所在地口径。,否
+fixed,固收sample.pdf,21,单一证券占比,可选,4,公共信用债的证券集中度可辅助信用监控，但无明确集中度条款。,否
+fixed,固收sample.pdf,22,可用融资余额,可选,5,Repo 用途含流动性；可用融资余额只作参考，库算法 20% 不是本合同上限。,否
+fixed,固收sample.pdf,23,换手率(%),必选,2、4,Buy and Maintain、持有至到期及卖出例外，需要换手监控；不能因库策略只写权益而漏选。,否
+fixed,固收sample.pdf,24,剩余期限,必选,4,明确 long-term Public Credit 与 held-to-maturity；剩余期限是核心期限视角。,否
+fixed,固收sample.pdf,25,非标剩余期限,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,26,债券资产变现天数,可选,4、5,capital management 与 general business liquidity；变现天数模型及交易参与率待确认。,否
+fixed,固收sample.pdf,27,流通受限资产占比,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,28,优质动性资产占比,可选,5,允许现金等价物与流动性 Repo；优质流动性资产定义须另行确认。,否
+fixed,固收sample.pdf,29,流动性上市权益资产占比,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,30,信用利差（债券）,必选,4,reasonable credit risk 与信用债 relative value 支持公共信用利差监控。,否
+fixed,固收sample.pdf,31,信用利差（非标）,无关,4、5,本样本限公共信用债、Repo 和现金等价物；该行专属股票、非标或上市权益指标无实质原文支持。,否
+fixed,固收sample.pdf,32,加权平均信用评级,必选,3、4,同时含 IG 与 HY，需监控信用质量；ORR 与外部评级转换须确认。,否
+fixed,固收sample.pdf,33,债券AA+及以下评级占比(%),可选,3、4,IG/HY 信用暴露支持评级分布辅助监控，但 AA+ 与 ORR 4- 无直接映射。,否
+fixed,固收sample.pdf,34,单一发行人集中度,可选,4,合理信用风险可支持发行人分散度监控，但没有单一发行人上限。,否
+fixed,固收sample.pdf,35,区域分布,可选,4,中国市场投资及信用集中风险可支持区域分布观察，关联较弱。,否
+equity,权益sample.pdf,2,基金收益率,必选,4、5,明确 total return 与长期 capital growth，应监控基金收益。,否
+equity,权益sample.pdf,3,超额收益率（基准超额）,必选,3、4,明确年超额收益 0.5%；频率及年化口径须核对。,否
+equity,权益sample.pdf,4,Alpha,可选,5,主动管理与超额收益支持 Alpha 辅助分析，未要求 CAPM 调整收益。,否
+equity,权益sample.pdf,5,股息贡献率,必选,4、5,稳定 dividend yield 是策略目标，需保留股息贡献监控；贡献率并不等同股息率。,否
+equity,权益sample.pdf,6,Sortino索提诺,可选,4、5,长期增长可选下行调整收益，未点名 Sortino。,否
+equity,权益sample.pdf,7,信息比率,可选,5,超额收益和低跟踪误差支持信息比率，但未要求该具体算法。,否
+equity,权益sample.pdf,8,VaR,可选,4、5,长期资本增长的补充损失风险监控；置信度、期限均未规定。,否
+equity,权益sample.pdf,9,最大回撤,可选,4、5,长期资本增长可辅以最大回撤观察，没有回撤限额。,否
+equity,权益sample.pdf,10,波动率,可选,4、5,可辅以收益波动观察；波动率不等于跟踪误差。,否
+equity,权益sample.pdf,11,组合Beta贝塔,可选,4、5,可辅助市场敞口观察，没有组合 Beta 限额。,否
+equity,权益sample.pdf,12,下行Beta,可选,4、5,可辅助下行市场敞口观察，没有下行 Beta 要求。,否
+equity,权益sample.pdf,13,行业偏离度,必选,5,Industry/Sector 策略与 enhanced index 支持行业偏离监控；不能等同 p.6 的行业集中度上限。,否
+equity,权益sample.pdf,14,跟踪误差,必选,4、5、6,明确 Tracking Error 定义、low TE 与 annualised ex-ante 上限；库算法事后 TE 口径待确认。,否
+equity,权益sample.pdf,15,久期,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,16,DV01,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,17,股息支付率NII,可选,4、5,稳定股息目标的补充指标；NII/账面净值口径与股息收益不同。,否
+equity,权益sample.pdf,18,股息增长率,可选,4、5,可监控股息稳定和增长，但无明确增长率要求。,否
+equity,权益sample.pdf,19,股息覆盖率,可选,4、5,可比较组合及基准股息率，但未规定覆盖率阈值。,否
+equity,权益sample.pdf,20,境内资产占比,必选,5,中国发行人、China A-share 的投资范围需要境内资产监控。,否
+equity,权益sample.pdf,21,单一证券占比,必选,6,single security 上限为市值分母，且仅 build-up stage 适用；不能丢失阶段条件。,否
+equity,权益sample.pdf,22,可用融资余额,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,23,换手率(%),可选,5,主动交易策略支持换手观察，但未规定换手限额。,否
+equity,权益sample.pdf,24,剩余期限,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,25,非标剩余期限,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,26,债券资产变现天数,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,27,流通受限资产占比,可选,3、5,上市权益定义含 IPO 及基金，可作锁定期监控；没有锁定资产比例上限。,否
+equity,权益sample.pdf,28,优质动性资产占比,可选,5、7,现金等价物和底层资产流动性提供间接监控依据；不能覆盖 1/7 天变现条件。,否
+equity,权益sample.pdf,29,流动性上市权益资产占比,可选,5、7,上市权益和底层资产流动性支持辅助观察；不能等同 TPMF 底层资产流动性条件。,否
+equity,权益sample.pdf,30,信用利差（债券）,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,31,信用利差（非标）,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,32,加权平均信用评级,无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,33,债券AA+及以下评级占比(%),无关,5、7,本样本限上市权益及现金等价物，Repo、Borrowing 被禁止；该债券、非标或融资算法无对应主要资产暴露支持。,否
+equity,权益sample.pdf,34,单一发行人集中度,可选,6,发行人集中度补充单一证券视角，但单一发行人不等于单一证券。,否
+equity,权益sample.pdf,35,区域分布,可选,5,明确 geographic strategy，可辅助区域配置观察。,否

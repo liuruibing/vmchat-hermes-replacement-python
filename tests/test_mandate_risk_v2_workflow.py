@@ -94,7 +94,7 @@ async def test_v2_workflow_outputs_critic_confirmed_six_column_report():
     context = WorkflowContext(input_val=input_val, provider=FullProvider(), agent_id="mandate-risk-v2-lab", role_id="requirement-analyst")
     registry = RawRiskMetricRegistry([RawRiskMetric(row_id=2, source_row=2,
         metric_name="Unseen Liquidity Metric", algorithm="liquid assets / NAV")])
-    events = [event async for event in MandateRiskV2Workflow(metric_registry=registry).stream(context)]
+    events = [event async for event in MandateRiskV2Workflow(metric_registry=registry, mode="detailed").stream(context)]
     assert events[-1].event == "run.completed"
     assert any(event.event == "reasoning.delta" and "Phase A 完成" in event.delta for event in events)
     assert "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in events[-1].output
