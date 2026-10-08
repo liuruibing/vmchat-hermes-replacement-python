@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 MatchLevel = Literal["DIRECT", "STRONG_INFERRED", "WEAK_INFERRED", "REJECTED"]
+CandidateRecallSource = Literal["primary", "mandate_fallback", "coverage_audit"]
 
 
 class RawRiskMetric(BaseModel):
@@ -34,6 +35,7 @@ class CandidateClauseHint(BaseModel):
     score: float = 0.0
     source_start: int = 0
     source_end: int = 0
+    page: int | None = None
 
 
 class MetricCandidate(BaseModel):
@@ -43,6 +45,7 @@ class MetricCandidate(BaseModel):
     deterministic_score: float = 0.0
     exact_hits: List[str] = Field(default_factory=list)
     matched_clauses: List[CandidateClauseHint] = Field(default_factory=list)
+    recall_source: CandidateRecallSource = "primary"
 
 
 class EvidenceQuote(BaseModel):

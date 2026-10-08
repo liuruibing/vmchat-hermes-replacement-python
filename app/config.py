@@ -13,7 +13,7 @@ class AppConfig(BaseModel):
     port: int = 7310
     service_api_key: str = ""
     cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:9528", "http://127.0.0.1:9528"])
-    llm_provider: Literal["langchain", "fixed"] = "fixed"
+    llm_provider: Literal["langchain", "fixed", "colab"] = "fixed"
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = "deepseek-v4-flash"
@@ -139,7 +139,9 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
     vmchat_frontend_root = str(pathlib.Path.cwd().joinpath(frontend_root_raw).resolve())
 
     llm_provider_val = raw_env.get("LLM_PROVIDER", "fixed")
-    llm_provider: Literal["langchain", "fixed"] = "langchain" if llm_provider_val == "langchain" else "fixed"
+    llm_provider: Literal["langchain", "fixed", "colab"] = (
+        llm_provider_val if llm_provider_val in ("langchain", "colab") else "fixed"
+    )
 
     llm_output_mode_val = raw_env.get("LLM_OUTPUT_MODE", "structured")
     llm_output_mode: Literal["structured", "text-json"] = "text-json" if llm_output_mode_val == "text-json" else "structured"

@@ -1,0 +1,16 @@
+{
+  "annotation_status": "原文人工初标，待业务确认；不是模型答案或合规标准",
+  "catalogue_sha256": "cd097edb49be7b73152292722db71d41e7f65d40444b35cd7fc3e96a071fc4d5",
+  "samples": [
+    {
+      "sample": "fixed",
+      "pdf": "固收sample.pdf",
+      "result_path": ".runtime/v2-validation/2026-10-01-screening/run-51e71de1-d00c-4fe2-b6e0-1e85654b7523.json"
+    },
+    {
+      "sample": "equity",
+      "pdf": "权益sample.pdf",
+      "result_path": ".runtime/v2-validation/2026-10-01-screening/run-9f6889d8-ebaa-4399-ae84-858e59c4a74a.json"
+    }
+  ]
+}
