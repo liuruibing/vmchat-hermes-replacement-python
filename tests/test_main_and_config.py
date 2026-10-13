@@ -11,7 +11,7 @@ from app.workflow.registry import WorkflowRegistry
 def test_load_config_defaults():
     config = load_config({})
     assert config.host == "127.0.0.1"
-    assert config.port == 7310
+    assert config.port == 7320
     assert config.service_api_key == ""
     assert config.llm_provider == "fixed"
     assert config.llm_model == "deepseek-v4-flash"

@@ -10,7 +10,7 @@ load_dotenv()
 
 class AppConfig(BaseModel):
     host: str = "127.0.0.1"
-    port: int = 7310
+    port: int = 7320
     service_api_key: str = ""
     cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:9528", "http://127.0.0.1:9528"])
     llm_provider: Literal["langchain", "fixed", "colab"] = "fixed"
@@ -147,7 +147,7 @@ def load_config(env: Optional[Dict[str, Optional[str]]] = None) -> AppConfig:
     llm_output_mode: Literal["structured", "text-json"] = "text-json" if llm_output_mode_val == "text-json" else "structured"
 
     host = raw_env.get("HOST", "127.0.0.1")
-    port = int(raw_env.get("PORT", "7310"))
+    port = int(raw_env.get("PORT", "7320"))
     service_api_key = raw_env.get("SERVICE_API_KEY", "")
     llm_base_url = raw_env.get("LLM_BASE_URL", "")
     llm_api_key = raw_env.get("LLM_API_KEY") or raw_env.get("OPENAI_API_KEY", "")

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 本脚本由容器内的 restart.sh 调用：
-#   第一个参数是 Python 命令（通常为 python3），第二个参数是服务端口（这里为 7310）。
+#   第一个参数是 Python 命令（通常为 python3），第二个参数是服务端口（这里为 7320）。
 # 它只负责启动 vmchat 服务；Jenkins 的打包、上传和目录切换在 Jenkins 配置中完成。
 set -euo pipefail
 
