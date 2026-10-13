@@ -35,11 +35,10 @@
 ## 二、后端服务与 API 契约
 
 ### 1. 后端访问地址
-* **Colab 远程公网隧道 Base URL**：
-  👉 **`https://entering-projectors-islands-spin.trycloudflare.com`**
-* **本地备用 FastAPI Base URL**：
-  `http://127.0.0.1:8000`
-
+* **Cloudflare 公网隧道 Base URL（通过本地 OMP 代理直达 Gemini 3.8 Flash）**：
+  👉 **`https://opinion-bobby-heroes-florence.trycloudflare.com`**
+* **本地直接访问 Base URL**：
+  `http://127.0.0.1:8002`
 ### 2. 后端工程信息
 * **代码仓库路径**：
   `/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python`
