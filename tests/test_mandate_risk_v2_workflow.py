@@ -81,6 +81,26 @@ class FullProvider(Provider):
             yield Chunk(content=json.dumps({"verdicts": [{"requirement_id": "REQ-0001", "destination": "MAIN_TABLE",
                 "raw_row_id": 2, "aspect": "liquidity", "verdict": "CONFIRM", "reason": "verified",
                 "evidence_clause_ids": ["c0001"]}]}), usage={"total_tokens": 7})
+        elif "# V2 strategy evidence" in prompt:
+            yield Chunk(content=json.dumps({
+                "sections": [{
+                    "category": "investment_strategy",
+                    "title": "流动性要求与约束",
+                    "evidence_clause_ids": ["c0001"],
+                }],
+                "points": [{
+                    "title": "流动性要求与约束",
+                    "summary": "组合维持至少7%的流动性资产要求。",
+                    "evidence_clause_ids": ["c0001"],
+                    "metric_links": [{
+                        "raw_row_id": 2,
+                        "basis": "EXPLICIT",
+                        "reason": "原文明确要求至少7%流动性",
+                        "evidence_clause_ids": ["c0001"],
+                    }]
+                }],
+                "unlinked_metrics": []
+            }), usage={"total_tokens": 5})
         else:
             async for chunk in super().run_skill(run_input):
                 yield chunk
@@ -100,11 +120,13 @@ async def test_v2_workflow_outputs_critic_confirmed_six_column_report():
     assert "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in events[-1].output
     assert "Unseen Liquidity Metric" in events[-1].output
     assert "结构化约束：`>= 7%`" in events[-1].output
-    assert events[-1].usage["total_tokens"] == 29
-    assert events[-1].usage["result_counts"]["requirements"] == 1
+    assert events[-1].usage["total_tokens"] == 34
+    assert events[-1].usage["strategy_evidence_phase"]["total_tokens"] == 5
     structured = events[-1].metadata["mandate_risk_v2"]
     assert structured["phase"] == "complete"
     assert structured["result"]["matched_metrics"][0]["metric"]["metric_name"] == "Unseen Liquidity Metric"
     assert structured["result"]["screened_metrics"][0]["match_score"] == 92
     assert "92/100" in events[-1].output
     assert structured["result"]["requirements"][0]["requirement"]["constraint"]["value"] == 7
+    assert structured["result"]["strategy_evidence"]["points"][0]["point_id"] == "ST-0001"
+    assert structured["result"]["strategy_evidence"]["points"][0]["metric_links"][0]["raw_row_id"] == 2

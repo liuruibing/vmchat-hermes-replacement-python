@@ -43,5 +43,8 @@ if [ ! -x "$runtime_venv/bin/python" ] || [ ! -f "$lock_marker" ] || [ "$(cat "$
   printf '%s\n' "$lock_hash" > "$lock_marker"
 fi
 
+# 预先校验预编译风险指标库产物；校验失败立即终止，防止未构建/已过期的指标库被带入服务。
+"$runtime_venv/bin/python" -m app.mandate_risk.catalogue --check
+
 # 用稳定虚拟环境启动当前发布目录里的 FastAPI 代码。exec 便于重启脚本管理进程。
 exec "$runtime_venv/bin/python" -m uvicorn app.main:app --host 0.0.0.0 --port "$port"

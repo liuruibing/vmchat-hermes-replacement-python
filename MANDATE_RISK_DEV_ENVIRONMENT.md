@@ -169,7 +169,7 @@ Host colab
   * `Dv01` 与久期重叠被去重策略误杀；
   * `剩余期限`（对应 `Buy and Maintain`）与 `债券资产变现天数`（对应 `Capital Management`）被过于严格的门禁降级剔除。
 * **目标文件**：
-  * `agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv`（适用策略补充固收）
+  * `指标知识库.md`（唯一人工维护的权威风险指标 Markdown 知识库，修改后显式执行 `python -m app.mandate_risk.catalogue` 生成 `指标知识库.generated.json` 并重启服务）
   * `app/mandate_risk/matcher.py`（召回词库与触发器放开）
   * `app/workflow/graphs/mandate_risk.py`（候选池打分与排序逻辑）
 

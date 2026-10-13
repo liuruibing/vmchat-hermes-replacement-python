@@ -123,6 +123,16 @@ Search is hybrid-ready:
 
 The runtime supports `DuckDbKnowledgeStore`. If the `duckdb` Python package is not installed, it automatically falls back to SQLite so deployments remain compatible.
 
+### Structured knowledge for chat
+
+Agent Packages may declare `"knowledge_sources": ["risk-metrics"]` in addition to existing `knowledge_paths`. `KnowledgeService.configure_sources()` authorizes sources per Agent; unknown source IDs fail configuration rather than silently disappearing. The current structured source is `risk-metrics`; additional source types require a real reader implementation before configuration.
+
+The runtime loads one authoritative metric registry and shares it with V1/V2 analysis and the knowledge service. `context_for_chat(agent_id, query, history, session_summary)` provides the complete metric catalogue, including the dynamically calculated total, original algorithm/Mandate fields, effective classification, source path and SHA version. It does not duplicate the catalogue into a vector store. Document retrieval remains Agent-scoped and uses the question plus recent user context for follow-ups.
+
+`WorkflowContext.knowledge_context_loader` injects this service into `retrieve_knowledge`; the graph has no Agent-ID branches or fixed question/answer mapping. Structured sources enter `<knowledge_sources>` with `status`, `complete`, and (when available) `total`/`items`. A read failure is `status=error`, not an empty catalogue or evidence that the backend lacks knowledge. Unmatched document retrieval remains distinct from failed retrieval.
+
+The answer distinguishes the complete catalogue count from PDF matching results, cites source/metric IDs, and separates the original algorithm from financial explanations. Current analysis results are not injected by this change; the assistant must not infer matching scores from the PDF alone. Shared knowledge is prepared per run, not appended to conversation history.
+
 To enable DuckDB locally or in Colab:
 
 ```bash
@@ -188,7 +198,7 @@ Runtime Core 不直接依赖具体业务流程。所有 Agent 通过 `WorkflowEn
 
 当前内置 LangGraph：
 
-- `simple-chat`: `retrieve_knowledge -> answer`
+- `simple-chat`: `load_document -> retrieve_knowledge -> answer`
 - `vm-report`: `resolve_semantics -> generate -> validate -> repair -> validate -> finalize`
 
 `vm-report` 的 `resolve_semantics` 会优先从运行时 Module Profile 中确定用户明确点名的指标，并生成结构化 `semanticPlan`（entity / shape / grain / joinKey / taxonomy）。这些结果作为高优先级提示注入 generate/repair，但最终 DSL 仍由 Python Validator 决定是否合法。
@@ -206,7 +216,7 @@ Graph State 只保存本次 run 的轻量执行状态，例如：
 
 完整 Session、Wiki、Artifact DB、Provider 实例不会进入 Graph State。
 
-长期会话继续由 `SessionManager` 管理；页面 DSL 大对象由 `ArtifactStore` 管理；知识正文由 `KnowledgeService` 按需 Top-K 检索。
+长期会话继续由 `SessionManager` 管理；页面 DSL 大对象由 `ArtifactStore` 管理；文档知识由 `KnowledgeService` 按需 Top-K 检索，已授权的小型结构化指标目录完整提供给当前问答。
 
 ### Checkpoint
 

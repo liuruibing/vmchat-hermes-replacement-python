@@ -30,10 +30,47 @@ class Provider:
     def __init__(self, responses):
         self.responses = responses
         self.calls = []
-
     async def run_skill(self, request):
         self.calls.append(request)
-        response = self.responses[min(len(self.calls) - 1, len(self.responses) - 1)]
+        if "# V2 strategy evidence" in request.user_prompt:
+            metrics_part = request.user_prompt.split("# Currently selected raw metric rows (JSON)\n", 1)[1].split("\n", 1)[0]
+            selected_metrics = json.loads(metrics_part)
+            if not selected_metrics:
+                response = {"sections": [], "points": [], "unlinked_metrics": []}
+            else:
+                links = []
+                unlinked = []
+                for idx, m in enumerate(selected_metrics):
+                    row_id = m["raw_row_id"]
+                    if idx == 0:
+                        links.append({
+                            "raw_row_id": row_id,
+                            "basis": "EXPLICIT",
+                            "reason": "原文明确要求与监控",
+                            "evidence_clause_ids": ["c0002"] if "c0002" in request.user_prompt else ["c0001"],
+                        })
+                    else:
+                        unlinked.append({
+                            "raw_row_id": row_id,
+                            "reason": "当前条款未显式提及关联",
+                        })
+                points = [{
+                    "title": "策略与流动性要点",
+                    "summary": "基于原文条款的策略要点",
+                    "evidence_clause_ids": ["c0002"] if "c0002" in request.user_prompt else ["c0001"],
+                    "metric_links": links,
+                }] if links else []
+                response = {
+                    "sections": [{
+                        "category": "investment_strategy",
+                        "title": "投资策略与流动性",
+                        "evidence_clause_ids": ["c0002"] if "c0002" in request.user_prompt else ["c0001"],
+                    }],
+                    "points": points,
+                    "unlinked_metrics": unlinked,
+                }
+        else:
+            response = self.responses[min(len(self.calls) - 1, len(self.responses) - 1)]
         yield type("Chunk", (), {"contentDelta": json.dumps(response), "usage": {"total_tokens": 10}})()
 
 
@@ -47,7 +84,8 @@ async def test_default_workflow_screens_once_preserving_catalogue_and_exact_pdf_
     events = [event async for event in MandateRiskV2Workflow(metric_registry=registry()).stream(context)]
     terminal = events[-1]
     assert terminal.event == "run.completed"
-    assert len(provider.calls) == 1
+    assert len(provider.calls) == 2
+
     result = terminal.metadata["mandate_risk_v2"]["result"]
     assert result["analysis_mode"] == "screening"
     assert result["coverage_status"] == "not_audited"
@@ -58,8 +96,11 @@ async def test_default_workflow_screens_once_preserving_catalogue_and_exact_pdf_
     assert quote["page"] == 2
     assert TEXT[quote["source_start"]:quote["source_end"]] == quote["text"]
     assert "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |" in terminal.output
-    assert "未执行逐条要求覆盖审计" in terminal.output
-    assert terminal.usage["total_tokens"] == 10
+    assert terminal.usage["screening_phase"]["total_tokens"] == 10
+    assert terminal.usage["strategy_evidence_phase"]["total_tokens"] == 10
+    assert terminal.usage["total_tokens"] == 20
+    assert result["strategy_evidence"]["points"][0]["metric_links"][0]["raw_row_id"] == 2
+    assert result["strategy_evidence"]["unlinked_metrics"][0]["raw_row_id"] == 3
 
 
 @pytest.mark.anyio
@@ -118,12 +159,14 @@ async def test_empty_selection_is_success_and_is_not_forced_into_candidates():
                                               registry=registry(), provider=provider)
     assert analysis.screened_metrics == []
     assert len(analysis.catalogue_assessments) == 2
-
-
 @pytest.mark.anyio
 async def test_long_document_reads_every_window_and_keeps_later_evidence():
     class WindowProvider(Provider):
         async def run_skill(self, request):
+            if "# V2 strategy evidence" in request.user_prompt:
+                async for chunk in super().run_skill(request):
+                    yield chunk
+                return
             self.calls.append(request)
             clauses = json.loads(request.user_prompt.split("# PDF clauses (JSON)\n", 1)[1].split("\n", 1)[0])
             target = next((item for item in clauses if "liquidity" in item["text"]), None)

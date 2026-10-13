@@ -153,7 +153,7 @@ async def test_cross_language_audit_recalls_rows_into_semantic_judge_with_python
 ):
     monkeypatch.setattr(mandate_risk_workflow, "COVERAGE_AUDIT_BATCH_SIZE", 2, raising=False)
     source = _cross_language_source(tmp_path)
-    workflow = MandateRiskLangGraphWorkflow(str(source))
+    workflow = MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source))
     registry = workflow._load_registry()
     strategy = infer_strategy_type(DOCUMENT)[0]
     eligible = registry.eligible_for_strategy(strategy)
@@ -281,7 +281,7 @@ async def test_audit_clauses_are_union_merged_with_existing_candidate_for_same_r
             }))
 
     provider = SameRowProvider()
-    events = [event async for event in MandateRiskLangGraphWorkflow(str(source)).stream(
+    events = [event async for event in MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source)).stream(
         _context(document, provider)
     )]
 
@@ -308,7 +308,7 @@ async def test_missing_usage_from_any_phase_marks_totals_incomplete_without_part
                 return
             yield Chunk(content=json.dumps({"matches": [], "gaps": []}))
 
-    events = [event async for event in MandateRiskLangGraphWorkflow(str(source)).stream(
+    events = [event async for event in MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source)).stream(
         _context(DOCUMENT, MissingSemanticUsageProvider())
     )]
     completed = next(event for event in events if event.event == "run.completed")
@@ -345,7 +345,7 @@ async def test_coverage_audit_rejects_untrusted_row_and_clause_ids(
             else:
                 pytest.fail("非法审计提案不应进入 semantic_judge")
 
-    events = [event async for event in MandateRiskLangGraphWorkflow(str(source)).stream(
+    events = [event async for event in MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source)).stream(
         _context(DOCUMENT, InvalidAuditProvider())
     )]
     failures = [event for event in events if event.event == "run.failed"]
@@ -365,7 +365,7 @@ async def test_coverage_audit_rejects_strategy_mismatch(tmp_path):
             else:
                 pytest.fail("错误策略的审计结果不应进入 semantic_judge")
 
-    events = [event async for event in MandateRiskLangGraphWorkflow(str(source)).stream(
+    events = [event async for event in MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source)).stream(
         _context(DOCUMENT, WrongStrategyProvider())
     )]
     failures = [event for event in events if event.event == "run.failed"]
@@ -388,7 +388,7 @@ async def test_coverage_audit_timeout_fails_run_instead_of_rendering_partial_rep
                 await asyncio.sleep(1)
             yield Chunk(content=json.dumps({"matches": [], "gaps": []}))
 
-    events = [event async for event in MandateRiskLangGraphWorkflow(str(source)).stream(
+    events = [event async for event in MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source)).stream(
         _context(DOCUMENT, HangingAuditProvider())
     )]
     failures = [event for event in events if event.event == "run.failed"]

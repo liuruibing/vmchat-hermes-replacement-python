@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "一次请求的运行链路",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1120,
+      550
+    ]
+  },
+  "components": [
+    {
+      "id": "http",
+      "type": "frontend",
+      "label": "HTTP 入口",
+      "sublabel": "请求规范化",
+      "pos": [
+        50,
+        100
+      ],
+      "size": [
+        230,
+        85
+      ]
+    },
+    {
+      "id": "bounded",
+      "type": "backend",
+      "label": "上下文准备",
+      "sublabel": "Session → Context",
+      "pos": [
+        440,
+        100
+      ],
+      "size": [
+        230,
+        85
+      ]
+    },
+    {
+      "id": "dispatch",
+      "type": "backend",
+      "label": "流程分派",
+      "sublabel": "Agent → Engine",
+      "pos": [
+        830,
+        100
+      ],
+      "size": [
+        230,
+        85
+      ]
+    },
+    {
+      "id": "business",
+      "type": "backend",
+      "label": "业务工作流",
+      "sublabel": "图或 Python 管线",
+      "pos": [
+        830,
+        330
+      ],
+      "size": [
+        230,
+        85
+      ]
+    },
+    {
+      "id": "model",
+      "type": "external",
+      "label": "模型 Provider",
+      "sublabel": "工具与模型调用",
+      "pos": [
+        440,
+        330
+      ],
+      "size": [
+        230,
+        85
+      ]
+    },
+    {
+      "id": "delivery",
+      "type": "messagebus",
+      "label": "校验与交付",
+      "sublabel": "业务事件 → SSE",
+      "pos": [
+        50,
+        330
+      ],
+      "size": [
+        230,
+        85
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "normalize",
+      "from": "http",
+      "to": "bounded",
+      "label": "裁剪输入"
+    },
+    {
+      "id": "prepare",
+      "from": "bounded",
+      "to": "dispatch",
+      "label": "构造 context"
+    },
+    {
+      "id": "choose",
+      "from": "dispatch",
+      "to": "business",
+      "label": "按 id 查找",
+      "labelAt": [
+        945,
+        255
+      ]
+    },
+    {
+      "id": "invoke",
+      "from": "business",
+      "to": "model",
+      "label": "Prompt 与回调"
+    },
+    {
+      "id": "finish",
+      "from": "model",
+      "to": "delivery",
+      "label": "返回后校验"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "共享入口",
+      "items": [
+        "Run 是一次执行，Session 保存多轮历史",
+        "Engine 分派业务，Provider 对接模型"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "业务边界",
+      "items": [
+        "聊天和报表使用 LangGraph",
+        "风险 V2 使用独立 Python 管线"
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@
 set -eu
 rm -rf dist
 mkdir -p dist/backend
-cp -R app resources dist/backend/
+cp -R app resources 指标知识库.md 指标知识库.generated.json dist/backend/
 cp pyproject.toml uv.lock run_start.sh dist/backend/
 tar -C dist -czf dist/vmchat-hermes-replacement-python.tar.gz backend
 ```
@@ -17,7 +17,7 @@ tar -C dist -czf dist/vmchat-hermes-replacement-python.tar.gz backend
 - `set -u`：使用未定义变量时立即报错，避免脚本因为拼写错误而静默运行。
 - `rm -rf dist`：删除上一次构建产生的临时目录；只影响 Jenkins 工作空间里的 `dist`。
 - `mkdir -p dist/backend`：创建发布包的顶层目录 `backend`。远程脚本会识别这个目录名。
-- `cp -R app resources ...`：复制 FastAPI 源代码与 DSL/Skill 资源；缺少任一目录服务都不能正确工作。
+- `cp -R app resources 指标知识库.md 指标知识库.generated.json ...`：复制 FastAPI 源代码、DSL/Skill 资源以及预编译风险指标库（Markdown 权威源 `指标知识库.md` 与预生成 JSON 产物 `指标知识库.generated.json`）；缺少任一文件服务都不能正确工作。
 - `cp pyproject.toml uv.lock run_start.sh ...`：复制依赖声明、精确依赖版本和启动脚本。
 - 没有复制 `.env`：其中可能包含密钥，应由服务器安全地配置。
 - 没有复制 `.venv`：本机虚拟环境是 macOS 版本，不能带到 Linux 容器。
@@ -69,10 +69,18 @@ sudo docker exec -itd team-jinan-python nohup sh /datadriver/upload/restart.sh 7
 - `uv.lock` 未改变时，直接启动，完全不访问公网包源；
 - 只有锁文件改变时，才重新同步依赖。
 
-最后使用：
+在启动 FastApi 服务前，脚本会强制执行预编译指标库校验：
+
+```bash
+/datadriver/upload/venvs/vmchat/bin/python -m app.mandate_risk.catalogue --check
+```
+
+校验命令会验证 `指标知识库.generated.json` 的 Schema 版本、字段完整性、非空目录、唯一 ID/名称以及源 `指标知识库.md` 的 SHA-256 哈希一致性。若 JSON 产物缺失、损坏或与 Markdown 源文件不匹配，校验立即返回非 0 退出码并阻止服务启动，防止带病提供服务。
+
+校验通过后，使用：
 
 ```bash
 /datadriver/upload/venvs/vmchat/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 7310
 ```
 
-启动 FastAPI 服务。每个项目的依赖隔离在自己的 `.venv` 中，不会影响容器里已有的其他 Python 服务。
+启动 FastAPI 服务。指标库 JSON 由 Worker 进程启动时一次性载入内存复用。源 Markdown 修改后需显式运行 `python -m app.mandate_risk.catalogue` 重新生成 JSON 并重启服务；运行时禁止动态解析 Markdown/Excel 或自动构建。

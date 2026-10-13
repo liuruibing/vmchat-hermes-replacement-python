@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 MatchLevel = Literal["DIRECT", "STRONG_INFERRED", "WEAK_INFERRED", "REJECTED"]
@@ -16,6 +16,8 @@ class RawRiskMetric(BaseModel):
     Derived grouping fields are separate so callers never have to mutate the
     source row.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     row_id: int
     source_row: int

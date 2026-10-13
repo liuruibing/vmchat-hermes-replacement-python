@@ -4,9 +4,10 @@
   "version": "1.0.0",
   "workflow": "simple-chat",
   "knowledge_paths": [],
+  "knowledge_sources": ["risk-metrics"],
   "roles_dir": "roles",
   "default_role": "risk-assistant",
   "metadata": {
-    "description": "仅依据当前风险指标匹配报告回答追问"
+    "description": "依据授权指标知识、当前 PDF 与对话历史回答业务追问"
   }
 }

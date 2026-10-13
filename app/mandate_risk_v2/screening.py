@@ -16,6 +16,7 @@ from app.mandate_risk_v2.result import (
     MatchedMetricResult, MetricRequirementResult, RequirementResultItem,
     V2AnalysisResult, _catalogue_name, _metric_reference,
 )
+from app.mandate_risk_v2.reference_portfolio import ReferencePortfolioResolver
 
 
 SCREENING_SYSTEM_PROMPT = """你是 PDF 风险指标筛选员，帮助用户从给定指标库筛出与文档相关的指标，供人工选择。
@@ -54,7 +55,9 @@ class ScreeningPipeline:
         self._model = RequirementExtractionPipeline()
 
     async def run(self, *, document_name: str, document_text: str,
-                  registry: RawRiskMetricRegistry, provider: Any, signal: Any = None):
+                  registry: RawRiskMetricRegistry, provider: Any, signal: Any = None,
+                  reference_portfolio_resolver: ReferencePortfolioResolver | None = None,
+                  as_of_date: str | None = None):
         clauses = split_document_clauses(document_text)
         rows = registry.all()
         if not clauses:
@@ -170,6 +173,8 @@ class ScreeningPipeline:
             screened_metrics=screened, matched_metrics=matched, candidate_metrics=candidates,
             summary=f"浏览 {len(rows)} 个库指标，筛选出 {len(screened)} 个相关指标，按匹配分排序；供人工选择。",
         )
+        resolver = reference_portfolio_resolver or ReferencePortfolioResolver(as_of_date=as_of_date)
+        analysis = resolver.enrich_result(analysis)
         complete = len(reports) == call_count and all(
             report is not None and "total_tokens" in report for report in reports)
         usage = {"complete": complete, "analysis_mode": "screening", "expected_calls": call_count,

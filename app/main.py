@@ -46,6 +46,7 @@ from app.orchestrator.vmchat_orchestrator import stream_vm_chat
 from app.orchestrator.simple_chat_orchestrator import stream_simple_chat
 from app.workflow.engine import WorkflowContext, WorkflowEngine
 from app.workflow.legacy import build_default_workflow_registry
+from app.mandate_risk.catalogue import load_prebuilt_registry
 from app.resources.wiki_catalog import get_wiki_tree, get_wiki_document
 from app.agents.registry import AgentRegistry
 from app.session.store import SqliteSessionStore
@@ -291,6 +292,16 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
     else:
         provider = None
 
+    metric_registry = deps_override.get("metric_registry")
+    if metric_registry is None:
+        metric_registry = load_prebuilt_registry()
+    configure_sources = getattr(knowledge_service, "configure_sources", None)
+    if callable(configure_sources) and agent_registry is not None:
+        for configured_agent in agent_registry.list_agents():
+            configure_sources(
+                configured_agent.id, configured_agent.knowledgeSources, metric_registry
+            )
+
     # 注册表把 workflow id 映射到实例；Engine 按 id 分发，本身不决定模型或具体图节点。
     workflow_registry = (
         deps_override.get("workflow_registry")
@@ -298,6 +309,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
         or build_default_workflow_registry(
             simple_chat_stream=stream_simple_chat,
             vm_report_stream=stream_vm_chat,
+            metric_registry=metric_registry,
         )
     )
     workflow_engine = (
@@ -857,6 +869,14 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     if knowledge_service is not None
                     else None
                 )
+                knowledge_context_loader = None
+                context_for_chat = getattr(knowledge_service, "context_for_chat", None)
+                if callable(context_for_chat):
+                    async def knowledge_context_loader(query, history, summary):
+                        return await asyncio.to_thread(
+                            context_for_chat, agent_id, query, history, summary
+                        )
+
 
                 full_output = ""
                 has_reasoning = False
@@ -880,6 +900,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     role_prompt=role_prompt,
                     skill_md=skill_md,
                     knowledge_search=knowledge_search,
+                    knowledge_context_loader=knowledge_context_loader,
                     resources=loaded_resources,
                     signal=controller,
                     message_chunk_chars=config.sse_chunk_chars,

@@ -14,10 +14,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import time
-from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Tuple
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -48,6 +46,7 @@ from app.mandate_risk.prompts import (
     build_semantic_judge_prompt,
 )
 from app.mandate_risk.registry import RawRiskMetricRegistry
+from app.mandate_risk.catalogue import load_prebuilt_registry
 from app.mandate_risk.renderer import render_markdown
 from app.mandate_risk.validator import validate_model_result
 from app.provider.fixed_provider import ModelSkillRunInput
@@ -55,7 +54,6 @@ from app.workflow.engine import WorkflowContext
 from app.workflow.graphs.mandate_risk_state import MandateRiskGraphState
 
 
-DEFAULT_METRIC_SOURCE = "agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv"
 COVERAGE_AUDIT_BATCH_SIZE = 24
 COVERAGE_AUDIT_TIMEOUT_SECONDS = 120
 
@@ -237,26 +235,23 @@ def _candidate_matches_error(
 class MandateRiskLangGraphWorkflow:
     id = "mandate-risk-analysis"
 
-    def __init__(self, metric_source_path: str | None = None) -> None:
-        # a or b 从左到右取第一个真值；这里优先用传入路径，再读环境变量，最后用默认库。
-        configured = (
-            metric_source_path
-            or os.getenv("MANDATE_RISK_METRIC_SOURCE")
-            or os.getenv("MANDATE_RISK_METRIC_XLSX")
-            or DEFAULT_METRIC_SOURCE
-        )
-        self.metric_source_path = str(configured)
+    def __init__(
+        self,
+        metric_source_path: str | None = None,
+        *,
+        metric_registry: RawRiskMetricRegistry | None = None,
+    ) -> None:
+        self.metric_source_path = metric_source_path
+        self.metric_registry = metric_registry
+        if metric_registry is not None and not metric_registry.all():
+            raise RuntimeError("MANDATE_RISK_METRIC_LIBRARY_INVALID: no metric rows")
         # 图状态的内存检查点；不是数据库，也不负责长期保存 PDF 或会话。
         self._checkpointer = InMemorySaver()
 
     def _load_registry(self) -> RawRiskMetricRegistry:
-        path = Path(self.metric_source_path)
-        if not path.is_file():
-            raise RuntimeError(f"MANDATE_RISK_METRIC_LIBRARY_NOT_FOUND: {path}")
-        registry = RawRiskMetricRegistry.from_path(path)
-        if not registry.all():
-            raise RuntimeError("MANDATE_RISK_METRIC_LIBRARY_INVALID: no metric rows")
-        return registry
+        if self.metric_registry is None:
+            self.metric_registry = load_prebuilt_registry(self.metric_source_path)
+        return self.metric_registry
 
     def _compile(self, context: WorkflowContext, registry: RawRiskMetricRegistry):
         # 内部节点是闭包：state 提供中间数据，context / registry 提供本次依赖。

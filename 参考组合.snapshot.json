@@ -1,0 +1,350 @@
+{
+  "schema_version": 1,
+  "exported_at": "2026-10-12T05:47:12.450Z",
+  "source": {
+    "connection_name": "amc_tyjx_Oracle",
+    "schema": "AMC_TYJX",
+    "tables": [
+      "ET_PORT_KCINDEX_CONFIG",
+      "ET_PORT_KCINDEX_CONFIG_DETAIL",
+      "E_DIM_PORTAL"
+    ],
+    "method": "DBX MCP read-only SELECT",
+    "dictionary_types": [
+      "key_core_index",
+      "key_core_type"
+    ]
+  },
+  "configs": [
+    {
+      "id": "f2bb1c2a-2103-4f6c-ade3-34a85df30fa6",
+      "port_code": "82",
+      "port_name": "测试风险组合树01",
+      "effective_date": "2026-09-21",
+      "begin_date": "2026-09-21",
+      "end_date": null,
+      "created_by": "系统管理员",
+      "created_at": "2026-09-21T17:05:39",
+      "updated_by": "系统管理员",
+      "updated_at": "2026-09-21T17:05:39"
+    },
+    {
+      "id": "bd6f42c1-cdca-44b0-8f53-e725e37707eb",
+      "port_code": "C100ICEBA",
+      "port_name": "友邦人寿投连平衡权益91",
+      "effective_date": "2025-01-01",
+      "begin_date": "2025-01-01",
+      "end_date": null,
+      "created_by": "系统管理员",
+      "created_at": "2026-09-21T15:59:14",
+      "updated_by": "系统管理员",
+      "updated_at": "2026-09-21T15:59:14"
+    },
+    {
+      "id": "7526f3bc-2a91-41ce-a68a-a7e08f90eabc",
+      "port_code": "C100ICEBA",
+      "port_name": "友邦人寿投连平衡权益91",
+      "effective_date": "2026-01-01",
+      "begin_date": "2026-01-01",
+      "end_date": null,
+      "created_by": "系统管理员",
+      "created_at": "2026-09-16T18:33:08",
+      "updated_by": "系统管理员",
+      "updated_at": "2026-09-16T18:33:08"
+    },
+    {
+      "id": "b8d037bd-046a-4c01-bd67-c88afcd30d9a",
+      "port_code": "C101ICEBA",
+      "port_name": "友邦人寿投连平衡权益92",
+      "effective_date": "2026-01-01",
+      "begin_date": "2026-01-01",
+      "end_date": null,
+      "created_by": "系统管理员",
+      "created_at": "2026-09-21T15:59:14",
+      "updated_by": "系统管理员",
+      "updated_at": "2026-09-21T15:59:14"
+    },
+    {
+      "id": "0778af8c-22e8-4a08-8a32-b8ed8f2bc41b",
+      "port_code": "C101ICEBA",
+      "port_name": "友邦人寿投连平衡权益92",
+      "effective_date": "2026-09-16",
+      "begin_date": "2026-09-16",
+      "end_date": null,
+      "created_by": "系统管理员",
+      "created_at": "2026-09-21T16:18:51",
+      "updated_by": "系统管理员",
+      "updated_at": "2026-09-21T16:18:51"
+    }
+  ],
+  "details": [
+    {
+      "id": "e8e2b514-c934-4fb2-a284-71494cae2975",
+      "config_id": "0778af8c-22e8-4a08-8a32-b8ed8f2bc41b",
+      "index_code": "F_PYIELD",
+      "index_name": "组合收益率",
+      "index_type": "key",
+      "sort_order": 1,
+      "green_rule": "≥",
+      "green_value": 1,
+      "amber_rule": "≥",
+      "amber_value": null,
+      "red_rule": "<",
+      "red_value": null
+    },
+    {
+      "id": "35e246e9-9465-43db-a83d-99f49ba3d445",
+      "config_id": "0778af8c-22e8-4a08-8a32-b8ed8f2bc41b",
+      "index_code": "F_BYIELD",
+      "index_name": "基准收益率",
+      "index_type": "core",
+      "sort_order": 2,
+      "green_rule": "≥",
+      "green_value": 1,
+      "amber_rule": "≥",
+      "amber_value": null,
+      "red_rule": "<",
+      "red_value": null
+    },
+    {
+      "id": "fbad76c7-e7bc-4f6f-83a9-51767ecf2aa3",
+      "config_id": "0778af8c-22e8-4a08-8a32-b8ed8f2bc41b",
+      "index_code": "F_EXCESS_YIELD",
+      "index_name": "超额收益率",
+      "index_type": "core",
+      "sort_order": 3,
+      "green_rule": "≥",
+      "green_value": 1,
+      "amber_rule": "≥",
+      "amber_value": null,
+      "red_rule": "<",
+      "red_value": null
+    },
+    {
+      "id": "c216de83-beec-41dc-abe6-9769b256af53",
+      "config_id": "7526f3bc-2a91-41ce-a68a-a7e08f90eabc",
+      "index_code": "F_PYIELD",
+      "index_name": "组合收益率",
+      "index_type": "key",
+      "sort_order": 1,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "2f830f74-bebd-437f-a060-b73f1215a382",
+      "config_id": "7526f3bc-2a91-41ce-a68a-a7e08f90eabc",
+      "index_code": "F_BYIELD",
+      "index_name": "基准收益率",
+      "index_type": "core",
+      "sort_order": 2,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "26c648f8-9093-4b67-aefb-b8dcbb5d0fce",
+      "config_id": "7526f3bc-2a91-41ce-a68a-a7e08f90eabc",
+      "index_code": "F_ALPHA",
+      "index_name": "Alpha",
+      "index_type": "core",
+      "sort_order": 3,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -2
+    },
+    {
+      "id": "4ca3ecda-72cd-48a3-b9dd-f8cb3adbf95c",
+      "config_id": "b8d037bd-046a-4c01-bd67-c88afcd30d9a",
+      "index_code": "F_PYIELD",
+      "index_name": "组合收益率",
+      "index_type": "key",
+      "sort_order": 1,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "1435de48-036f-43c8-8d07-a02b2da4d118",
+      "config_id": "b8d037bd-046a-4c01-bd67-c88afcd30d9a",
+      "index_code": "F_BYIELD",
+      "index_name": "基准收益率",
+      "index_type": "core",
+      "sort_order": 2,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "b064ba97-28d8-47e1-bfa5-160a715cca7e",
+      "config_id": "b8d037bd-046a-4c01-bd67-c88afcd30d9a",
+      "index_code": "F_NYIELD",
+      "index_name": "无风险收益率",
+      "index_type": "core",
+      "sort_order": 3,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "a7658c01-8ddb-4dc7-b843-320a9680841e",
+      "config_id": "bd6f42c1-cdca-44b0-8f53-e725e37707eb",
+      "index_code": "F_PYIELD",
+      "index_name": "组合收益率",
+      "index_type": "key",
+      "sort_order": 1,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "0eba5331-74e0-4053-861e-2fece4e0a396",
+      "config_id": "bd6f42c1-cdca-44b0-8f53-e725e37707eb",
+      "index_code": "F_NYIELD",
+      "index_name": "无风险收益率",
+      "index_type": "core",
+      "sort_order": 2,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "af20e4c7-283c-4531-8266-fc6eb5d1e6e2",
+      "config_id": "bd6f42c1-cdca-44b0-8f53-e725e37707eb",
+      "index_code": "F_EXCESS_YIELD",
+      "index_name": "超额收益率",
+      "index_type": "core",
+      "sort_order": 3,
+      "green_rule": "≥",
+      "green_value": 0,
+      "amber_rule": "≥",
+      "amber_value": -2,
+      "red_rule": "<",
+      "red_value": -5
+    },
+    {
+      "id": "584ce117-468c-4106-90b1-0d98ca621a68",
+      "config_id": "f2bb1c2a-2103-4f6c-ade3-34a85df30fa6",
+      "index_code": "F_PYIELD",
+      "index_name": "组合收益率",
+      "index_type": "key",
+      "sort_order": 1,
+      "green_rule": "≥",
+      "green_value": null,
+      "amber_rule": "≥",
+      "amber_value": null,
+      "red_rule": "<",
+      "red_value": null
+    },
+    {
+      "id": "105a1b82-10f1-4f54-926b-9d78de5fad38",
+      "config_id": "f2bb1c2a-2103-4f6c-ade3-34a85df30fa6",
+      "index_code": "F_BYIELD",
+      "index_name": "基准收益率",
+      "index_type": "core",
+      "sort_order": 2,
+      "green_rule": "≥",
+      "green_value": null,
+      "amber_rule": "≥",
+      "amber_value": null,
+      "red_rule": "<",
+      "red_value": null
+    },
+    {
+      "id": "44b27d2c-064d-4b02-ad51-427b09e7980a",
+      "config_id": "f2bb1c2a-2103-4f6c-ade3-34a85df30fa6",
+      "index_code": "F_NYIELD",
+      "index_name": "无风险收益率",
+      "index_type": "core",
+      "sort_order": 3,
+      "green_rule": "≥",
+      "green_value": null,
+      "amber_rule": "≥",
+      "amber_value": null,
+      "red_rule": "<",
+      "red_value": null
+    }
+  ],
+  "dictionary": [
+    {
+      "type": "key_core_index",
+      "code": "F_PYIELD",
+      "name": "组合收益率",
+      "order": 1,
+      "status": "1"
+    },
+    {
+      "type": "key_core_index",
+      "code": "F_BYIELD",
+      "name": "基准收益率",
+      "order": 2,
+      "status": "1"
+    },
+    {
+      "type": "key_core_index",
+      "code": "F_NYIELD",
+      "name": "无风险收益率",
+      "order": 3,
+      "status": "1"
+    },
+    {
+      "type": "key_core_index",
+      "code": "F_NYIELD_YEAR",
+      "name": "无风险超额收益年化",
+      "order": 4,
+      "status": "1"
+    },
+    {
+      "type": "key_core_index",
+      "code": "F_EXCESS_YIELD",
+      "name": "超额收益率",
+      "order": 5,
+      "status": "1"
+    },
+    {
+      "type": "key_core_index",
+      "code": "F_ALPHA",
+      "name": "Alpha",
+      "order": 6,
+      "status": "1"
+    },
+    {
+      "type": "key_core_type",
+      "code": "key",
+      "name": "key",
+      "order": 1,
+      "status": "1"
+    },
+    {
+      "type": "key_core_type",
+      "code": "core",
+      "name": "core",
+      "order": 2,
+      "status": "1"
+    }
+  ]
+}

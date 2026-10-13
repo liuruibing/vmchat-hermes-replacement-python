@@ -17,6 +17,7 @@ from typing import Any, AsyncGenerator, Callable
 
 from app.contracts.types import VmChatRunError
 from app.workflow.engine import WorkflowContext
+from app.mandate_risk.registry import RawRiskMetricRegistry
 
 
 class SimpleChatWorkflow:
@@ -67,12 +68,14 @@ def build_default_workflow_registry(
     *,
     simple_chat_stream: Callable[..., AsyncGenerator[Any, None]],
     vm_report_stream: Callable[..., AsyncGenerator[Any, None]],
+    metric_registry: RawRiskMetricRegistry | None = None,
 ):
     # simple_chat_stream / vm_report_stream 参数保留接口兼容；下面的默认列表没有使用它们。
     from app.workflow.registry import WorkflowRegistry
 
     from app.workflow.graphs.mandate_risk import MandateRiskLangGraphWorkflow
     from app.workflow.graphs.mandate_risk_v2 import MandateRiskV2Workflow
+    from app.mandate_risk.catalogue import load_prebuilt_registry
     from app.workflow.graphs.performance_report import PerformanceReportLangGraphWorkflow
     from app.workflow.graphs.simple_chat import SimpleChatLangGraphWorkflow
 
@@ -81,11 +84,12 @@ def build_default_workflow_registry(
     # PDFs; registering it here merely makes explicit lab invocation possible.
     # 注册是建立 id → 实例的映射，不会立即调用模型或执行任何流程。
     # simple-chat / vm-report / mandate-risk-analysis 使用 LangGraph；V2 是普通 Python 异步流程。
+    metric_registry = metric_registry if metric_registry is not None else load_prebuilt_registry()
     return WorkflowRegistry(
         [
             SimpleChatLangGraphWorkflow(),
             PerformanceReportLangGraphWorkflow(),
-            MandateRiskLangGraphWorkflow(),
-            MandateRiskV2Workflow(),
+            MandateRiskLangGraphWorkflow(metric_registry=metric_registry),
+            MandateRiskV2Workflow(metric_registry=metric_registry),
         ]
     )

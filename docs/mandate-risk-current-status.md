@@ -21,7 +21,7 @@
 | 调用量 | 审计与语义判断的 Provider usage 分别统计；缺少 `total_tokens` 或某次调用未报 usage 时不宣称总量完整。 |
 | PDF 条款 | `split_document_clauses` 保留页码和精确 source span；局部修复了独立印刷页码混入下一段引文。权益 PDF 第 7 页 `c0118` 现在是 `sector<100%`，但第 6–7 页仍是两段独立引文，未自动重建跨页完整句。 |
 
-代码主要位于 `app/mandate_risk/`、`app/workflow/graphs/mandate_risk.py`，测试位于 `tests/test_mandate_risk*.py`。实现中仍有按既有指标名称写的 alias、分组、策略适用例外和少数测量对象规则；目录审计降低了新增指标对 alias 的依赖，**没有消除所有硬编码与误判风险**。原始指标 CSV 未修改。
+代码主要位于 `app/mandate_risk/`、`app/workflow/graphs/mandate_risk.py`，测试位于 `tests/test_mandate_risk*.py`。实现中仍有按既有指标名称写的 alias、分组、策略适用例外和少数测量对象规则；目录审计降低了新增指标对 alias 的依赖，**没有消除所有硬编码与误判风险**。风险指标知识库已全量迁移至根目录权威 Markdown 知识库 `指标知识库.md` 及其预编译 JSON 产物 `指标知识库.generated.json`；原始指标 CSV/XLSX 已归档保留。
 
 ## 已验证的证据
 

@@ -36,6 +36,8 @@ jobs:
       - name: Compile Python sources
         run: uv run python -m compileall -q app tests
 
+      - name: Validate prebuilt risk catalogue
+        run: uv run python -m app.mandate_risk.catalogue --check
       - name: Run tests
         run: uv run pytest -q
 

@@ -113,10 +113,28 @@ class ContextFactDraft(StrictModel):
     attributes: Dict[str, Any] = Field(default_factory=dict)
 
 
+class DocumentProfileItemDraft(StrictModel):
+    summary: str = Field(min_length=1)
+    evidence_clause_ids: List[str] = Field(min_length=1)
+
+
+class DocumentProfileDraft(StrictModel):
+    asset_scope: DocumentProfileItemDraft | None = None
+    instruments: DocumentProfileItemDraft | None = None
+    benchmark: DocumentProfileItemDraft | None = None
+    investment_strategy: DocumentProfileItemDraft | None = None
+
+
 class ExtractionBatch(StrictModel):
     requirements: List[RequirementDraft] = Field(default_factory=list)
     definitions: List[DefinitionDraft] = Field(default_factory=list)
     contextual_facts: List[ContextFactDraft] = Field(default_factory=list)
+    document_profile: DocumentProfileDraft | None = None
+
+
+class DocumentProfileEntry(StrictModel):
+    summary: str
+    evidence: List[CanonicalEvidence] = Field(default_factory=list)
 
 
 class Requirement(StrictModel):

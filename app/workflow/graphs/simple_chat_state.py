@@ -24,6 +24,8 @@ class SimpleChatGraphState(TypedDict, total=False):
     session_summary: str  # 上层 Context 服务提供的会话摘要。
     history: List[Dict[str, str]]  # 历史消息，每项包含 role / content。
     knowledge_context: str  # retrieve_knowledge 节点检索到的资料。
+    knowledge_sources: List[Dict[str, Any]]  # Authorized sources with completeness and load status.
+    document_context: str  # 加载的关联文档全文或上下文。
     answer: str  # answer 节点拼好的完整答案。
     reasoning: List[str]  # 收集的过程说明片段。
     usage: Dict[str, Any]  # 模型报告的 token 用量。

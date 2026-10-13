@@ -353,21 +353,19 @@ SHA-256 用于内容标识与追溯；当前上传实现每次生成新 ID，不
 
 ```text
 注入的 metric_registry（测试/调用方提供）
-    或 MANDATE_RISK_METRIC_SOURCE
-    或 MANDATE_RISK_METRIC_XLSX
-    或 agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv
+    或 MANDATE_RISK_METRIC_SOURCE（默认根目录 指标知识库.generated.json）
 ```
 
-相对路径按 Python 仓库根目录解析。默认 CSV 是 `AI测试样例信息.xlsx` 中“风险指标库”工作表的只读快照，并非实时数据库查询。本次核对该快照共有 **34 个有名称的指标行**，后续更换来源后数量可以变化。
+相对路径按 Python 仓库根目录解析。`MANDATE_RISK_METRIC_SOURCE` 仅支持预编译 JSON 产物，旧版 `MANDATE_RISK_METRIC_XLSX` 选项已被移除。
 
-`RawRiskMetricRegistry` 支持 CSV 和 XLSX：CSV 用标准库 csv 读取，XLSX 用 ZIP/XML 读取对应工作表。要求六列表头为：
-
-```text
-风险类型一级 / 风险类型二级 / 指标名称 / 指标算法 / Mandate字段 / 适用策略种类
-```
-
-每行保留原始单元格值、`row_id/source_row`、名称、算法和策略等字段。对合并单元格产生的分类空白，另建 `effective_risk_type_1/2` 供读取使用，不把前向填充写回源文件。重复 ID 或名称会被拒绝，源文件保留 SHA-256 供结果追溯。
-
+项目采用 **预编译指标库契约**：
+1. **权威知识源**：根目录 `指标知识库.md` 为唯一人工维护的风险指标知识库，保留原始 34 个指标行及其原值、算法、ID 与策略。
+2. **预编译 JSON 产物**：根目录 `指标知识库.generated.json` 记录完整的指标 Schema、稳定整型 `raw_row_id` / `source_row` 属性，以及源 Markdown 文件的 SHA-256 指纹 (`source_sha256`)。
+3. **显式编译与校验**：
+   - 编译生成 JSON：`python -m app.mandate_risk.catalogue`
+   - 部署/启动探针校验：`python -m app.mandate_risk.catalogue --check`
+4. **加载与更新策略**：服务启动或 Worker 创建时一次性载入内存复用，禁止运行时解析 Markdown/Excel 或自动重新构建。知识库修改后必须显式重新生成 JSON 产物并重启服务。
+5. **归档数据说明**：`agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv` 与原始 Excel 工作表已归档，仅保留用于离线校验与历史归档转换。
 模型输入中有 `raw_row_id`、名称、算法、Mandate 和策略信息。模型返回库行 ID 后，Python 遍历真实 registry，使用 `_metric_reference(metric)` 回填名称与其他原始字段。因此最终指标名称来自真实库行，而非模型响应的自由文本。
 
 **展示分组是另一层配置**：`agents/mandate_risk_v2_lab/metric-display-groups.json` 把指标名称映射到 key/core/Indicator。本次配置分别包含 6、10、18 个名称。没有映射的名称在 Markdown 报告中显示“待分类”。这个配置不决定某指标是否应该被选中，也不修改指标库名称或算法。
@@ -623,7 +621,7 @@ LLM_BASE_URL=<实际模型服务地址>
 LLM_API_KEY=<模型服务凭据，仅在后端配置>
 SERVICE_API_KEY=<可选的应用接口凭据>
 MANDATE_RISK_V2_MODE=screening
-MANDATE_RISK_METRIC_SOURCE=agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv
+MANDATE_RISK_METRIC_SOURCE=指标知识库.generated.json
 ```
 
 随后启动：
@@ -708,9 +706,10 @@ node node_modules/eslint/bin/eslint.js src/views/mandateRiskV2 --ext .js,.vue
 - [文档校验与落盘](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/documents/service.py)
 - [PDF 解析](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/documents/parser.py)
 - [条款和页码切分](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/mandate_risk/clauses.py)
-- [指标库加载](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/mandate_risk/registry.py)
-- [默认指标库快照](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv)
-- [展示分组配置](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/agents/mandate_risk_v2_lab/metric-display-groups.json)
+- [指标库编译器与加载器](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/mandate_risk/catalogue.py)
+- [权威 Markdown 风险指标库](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/指标知识库.md)
+- [预编译 JSON 指标库产物](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/指标知识库.generated.json)
+- [归档历史 CSV 快照](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv)
 - [快速筛选与聚合](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/mandate_risk_v2/screening.py)
 - [公共模型调用、要求提取与覆盖编排](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/mandate_risk_v2/pipeline.py)
 - [要求与原文重建](/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python/app/mandate_risk_v2/extractor.py)

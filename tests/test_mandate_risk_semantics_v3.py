@@ -87,7 +87,7 @@ def test_new_metric_library_row_loads_and_reaches_candidate_search(tmp_path):
         "流动性风险,流动性,组合流动性缓冲率,高流动性资产/组合净值,liquidity buffer,固收\n",
         encoding="utf-8",
     )
-    registry = MandateRiskLangGraphWorkflow(str(source))._load_registry()
+    registry = MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source))._load_registry()
     candidates = select_candidates(
         build_candidates("组合应维持组合流动性缓冲率不低于10%。", registry.eligible_for_strategy("固收"))
     )
@@ -110,7 +110,7 @@ def test_empty_metric_library_is_rejected(tmp_path):
         encoding="utf-8",
     )
     with pytest.raises(RuntimeError, match="MANDATE_RISK_METRIC_LIBRARY_INVALID"):
-        MandateRiskLangGraphWorkflow(str(source))._load_registry()
+        MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(source))._load_registry()
 
 
 def test_fixed_income_contract_reaches_related_duration_maturity_liquidity_metrics():

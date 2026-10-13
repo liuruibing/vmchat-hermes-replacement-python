@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Protocol, Sequence
 
 from app.knowledge.store import DuckDbKnowledgeStore, KnowledgeChunk, KnowledgeSearchHit
+from app.mandate_risk.registry import RawRiskMetricRegistry
 
 
 class EmbeddingProvider(Protocol):
@@ -100,6 +101,73 @@ class KnowledgeService:
     ) -> None:
         self.store = store
         self.embedder = embedder
+        self._sources: Dict[str, tuple[str, ...]] = {}
+        self._metric_registry: Optional[RawRiskMetricRegistry] = None
+
+    def configure_sources(
+        self,
+        agent_id: str,
+        sources: List[str],
+        metric_registry: Optional[RawRiskMetricRegistry] = None,
+    ) -> None:
+        unknown = set(sources) - {"risk-metrics"}
+        if unknown:
+            raise ValueError(f"UNKNOWN_KNOWLEDGE_SOURCE: {', '.join(sorted(unknown))}")
+        self._sources[agent_id] = tuple(dict.fromkeys(sources))
+        if metric_registry is not None:
+            self._metric_registry = metric_registry
+
+    def context_for_chat(
+        self,
+        agent_id: str,
+        query: str,
+        history: List[Dict[str, str]],
+        session_summary: str,
+    ) -> Dict[str, Any]:
+        sources: List[Dict[str, Any]] = []
+        for source_id in self._sources.get(agent_id, ()):
+            source: Dict[str, Any] = {
+                "id": source_id,
+                "title": "风险指标库",
+                "status": "error",
+                "complete": False,
+            }
+            try:
+                if self._metric_registry is None:
+                    raise RuntimeError("METRIC_REGISTRY_UNAVAILABLE")
+                registry = self._metric_registry
+                rows = registry.all()
+                source.update(
+                    status="ok",
+                    complete=True,
+                    total=len(rows),
+                    source=registry.source_path,
+                    version=registry.source_sha256,
+                    items=[row.model_dump(mode="json") for row in rows],
+                )
+            except Exception:
+                source["error"] = "指标知识来源读取失败，不能据此判断指标库不存在或数量为零。"
+            sources.append(source)
+
+        # Recent user questions resolve follow-ups without indexing chat as shared knowledge.
+        recent = [
+            item.get("content", "")[:1000]
+            for item in history[-6:]
+            if item.get("role") == "user"
+        ]
+        retrieval_query = "\n".join([query, *recent, session_summary[:1000]])
+        try:
+            retrieved = self.format_for_tool(agent_id, retrieval_query)
+        except Exception:
+            retrieved = "KNOWLEDGE_NOT_FOUND"
+            sources.append({
+                "id": "documents",
+                "title": "文档知识",
+                "status": "error",
+                "complete": False,
+                "error": "文档知识检索失败，不代表没有相关知识。",
+            })
+        return {"sources": sources, "retrieved_context": retrieved}
 
     def index_resource_map(
         self,

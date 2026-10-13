@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "description": "指标知识库标准指标名称到 AMC_TYJX 核心/关键参考指标代码(INDEX_CODE)的显式等价映射配置",
+  "updated_at": "2026-10-12T00:00:00+08:00",
+  "mappings": {
+    "基金收益率": "F_PYIELD",
+    "超额收益率（基准超额）": "F_EXCESS_YIELD",
+    "Alpha": "F_ALPHA",
+    "组合收益率": "F_PYIELD",
+    "超额收益率": "F_EXCESS_YIELD"
+  },
+  "index_dictionary": {
+    "F_PYIELD": {
+      "name": "组合收益率",
+      "type": "key"
+    },
+    "F_BYIELD": {
+      "name": "基准收益率",
+      "type": "core"
+    },
+    "F_NYIELD": {
+      "name": "无风险收益率",
+      "type": "core"
+    },
+    "F_NYIELD_YEAR": {
+      "name": "无风险超额收益年化",
+      "type": "core"
+    },
+    "F_EXCESS_YIELD": {
+      "name": "超额收益率",
+      "type": "core"
+    },
+    "F_ALPHA": {
+      "name": "Alpha",
+      "type": "core"
+    }
+  }
+}

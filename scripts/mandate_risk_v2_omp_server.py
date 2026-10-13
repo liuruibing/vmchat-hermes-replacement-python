@@ -75,7 +75,7 @@ class OmpTestProvider:
                 command[1:1] = ["--model", self.model_name]
             with (EVIDENCE / f"{call_id}.stderr").open("wb") as stderr:
                 process = await asyncio.create_subprocess_exec(
-                    *command, cwd=directory, stdout=asyncio.subprocess.PIPE, stderr=stderr,
+                    *command, cwd=directory, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=stderr,
                     start_new_session=True, limit=4 * 1024 * 1024,
                 )
                 message = None
@@ -122,10 +122,19 @@ def local_app():
         session_db_path=str(EVIDENCE / "sessions.sqlite3"),
         artifact_db_path=str(EVIDENCE / "artifacts.sqlite3"),
         knowledge_db_path=str(EVIDENCE / "knowledge.sqlite3"),
-        document_db_path=str(EVIDENCE / "documents.sqlite3"),
-        document_root=str(EVIDENCE / "documents"),
+        document_db_path=str(ROOT / ".runtime/ai-documents.sqlite3"),
+        document_root=str(ROOT / ".runtime/documents"),
     )
-    return create_app({"config": config, "provider": OmpTestProvider()})
+    from app.documents.parser import PdfDocumentParser
+    from app.documents.service import DocumentService
+    from app.documents.store import SqliteDocumentStore
+    doc_service = DocumentService(
+        root_dir=str(ROOT / ".runtime/documents"),
+        store=SqliteDocumentStore(str(ROOT / ".runtime/ai-documents.sqlite3")),
+        parser=PdfDocumentParser(),
+        max_document_bytes=20 * 1024 * 1024,
+    )
+    return create_app({"config": config, "provider": OmpTestProvider(), "document_service": doc_service})
 
 
 if __name__ == "__main__":

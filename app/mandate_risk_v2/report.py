@@ -13,6 +13,7 @@ from app.mandate_risk_v2.result import (
     V2AnalysisResult,
     build_v2_analysis_result,
 )
+from app.mandate_risk_v2.reference_portfolio import ReferencePortfolioResolver
 
 
 GROUPS_PATH = (
@@ -42,6 +43,12 @@ def _groups() -> dict[str, str]:
                 raise ValueError(f"duplicate display group metric: {name}")
             result[name] = group
     return result
+
+def _reference_cell(item: Any) -> str:
+    portfolios = getattr(item, "reference_portfolios", None)
+    if portfolios:
+        return _cell(ReferencePortfolioResolver.format_reference_cell(portfolios))
+    return "—"
 
 
 def _cell(value: str) -> str:
@@ -153,7 +160,7 @@ def render_screening_report(analysis: V2AnalysisResult) -> str:
     for item in analysis.screened_metrics:
         lines.append("| " + " | ".join([
             _cell(groups.get(item.metric.metric_name, "待分类")), _cell(item.metric.metric_name),
-            _cell(item.score_reason or ""), "—", "—", f"{item.match_score:g}/100",
+            _cell(item.score_reason or ""), "—", _reference_cell(item), f"{item.match_score:g}/100",
         ]) + " |")
     if not analysis.screened_metrics:
         lines.extend(["", "当前没有筛选出有文档依据的相关指标。"])
@@ -200,7 +207,7 @@ def render_v2_report(
         score = f"{selected.match_score:g}/100" if selected.match_score is not None else "未评分"
         lines.append("| " + " | ".join([
             _cell(groups.get(selected.metric.metric_name, "待分类")),
-            _cell(selected.metric.metric_name), quotes or "—", "—", "—", score,
+            _cell(selected.metric.metric_name), quotes or "—", "—", _reference_cell(selected), score,
         ]) + " |")
     if not analysis.screened_metrics:
         lines.extend(["", "当前没有筛选出有文档依据的相关指标。"])
@@ -250,7 +257,7 @@ def render_v2_report(
         "", "## 说明", "",
         "- 结果用于筛选相关指标，不表示自动入库、合规通过或算法完全等价。算法缺失、年化/事前口径不明等差异保留在详情中，供用户判断。",
         "- 主表“值”表示实际组合值；当前没有权威持仓/组合数据，因此显示“—”。PDF 阈值在合同要求详情中展示，不作为实际组合值。",
-        "- 参考组合没有权威数据，显示“—”；相似度来自本次模型的文档匹配评估，与参考组合比较无关。",
+        "- “参考组合”展示基于生产配置快照匹配的基准/参考投资组合；无匹配或来源不可用时显示“—”。相似度来自本次模型的文档匹配评估，与参考组合比较无关。",
         "- 历史输出没有评分时显示“未评分”，不自动补造分数。",
     ])
     return "\n".join(lines).strip() + "\n"

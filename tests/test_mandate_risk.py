@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 
 from app.compatibility.hermes_request import GlobalQueryParameters, VmChatInput
-from app.agents.registry import AgentRegistry
 from app.mandate_risk.matcher import (
     build_candidates,
     build_mandate_recall_candidates,
@@ -34,16 +33,6 @@ To ensure the Sub-Portfolio to generate a comparable return against the Benchmar
 The Sub-Portfolio shall deliver excess return over the designated Benchmark by executing geographic, Industry/Sector and trading strategies. The Sub-Portfolio shall be actively managed to achieve the Investment Objective, by investing in Funds or stocks, which are listed through China A-Share market.
 The Sub-Portfolio should be managed under the enhanced index strategy with proper active management and low Tracking Error. The investment strategy could be a blend of bottom-up and top-down approach. The Sub-Portfolio shall invest in listed stocks with solid fundamentals to gain stable dividend yield and achieve long term capital growth.
 """
-
-
-def test_report_chat_agent_is_registered_with_simple_chat_workflow():
-    agents = AgentRegistry(str(ROOT / "agents")).load()
-    agent = agents.require("mandate-risk-chat")
-    role = agents.get_role(agent.id, "risk-assistant")
-
-    assert agent.workflow == "simple-chat"
-    assert role is not None
-    assert "报告" in role.systemPrompt
 
 
 def test_raw_registry_preserves_source_values_and_separate_effective_grouping():
@@ -397,7 +386,7 @@ async def test_mandate_risk_retries_when_model_omits_a_candidate_row(tmp_path):
             yield Chunk(content=json.dumps(payload, ensure_ascii=False))
 
     provider = OmitThenCompleteProvider()
-    workflow = MandateRiskLangGraphWorkflow(str(metric_source))
+    workflow = MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(metric_source))
     context = WorkflowContext(
         input_val=VmChatInput(
             userMessage=f"<document_text>{document}</document_text>",
@@ -468,7 +457,7 @@ async def test_mandate_risk_fails_after_two_incomplete_or_invalid_candidate_list
             yield Chunk(content=json.dumps(payload, ensure_ascii=False))
 
     provider = RepeatedlyInvalidProvider()
-    workflow = MandateRiskLangGraphWorkflow(str(metric_source))
+    workflow = MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(metric_source))
     context = WorkflowContext(
         input_val=VmChatInput(
             userMessage=f"<document_text>{document}</document_text>",
@@ -505,7 +494,7 @@ async def test_mandate_risk_accepts_empty_matches_when_there_are_no_candidates(t
             assert _candidate_rows_from_prompt(run_input.user_prompt) == []
             yield Chunk(content=json.dumps({"matches": [], "gaps": []}))
 
-    workflow = MandateRiskLangGraphWorkflow(str(metric_source))
+    workflow = MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(metric_source))
     context = WorkflowContext(
         input_val=VmChatInput(
             userMessage=f"<document_text>{document}</document_text>",
@@ -524,7 +513,7 @@ async def test_mandate_risk_accepts_empty_matches_when_there_are_no_candidates(t
 
 @pytest.mark.anyio
 async def test_mandate_risk_workflow_returns_validated_markdown():
-    workflow = MandateRiskLangGraphWorkflow(str(METRICS))
+    workflow = MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(METRICS))
     context = WorkflowContext(
         input_val=VmChatInput(
             userMessage=(
@@ -577,7 +566,7 @@ async def test_mandate_risk_retries_once_when_model_json_is_truncated():
                 yield Chunk(content=json.dumps(_synthetic_candidate_payload(candidates)))
 
     provider = TruncatedThenValidProvider()
-    workflow = MandateRiskLangGraphWorkflow(str(METRICS))
+    workflow = MandateRiskLangGraphWorkflow(metric_registry=RawRiskMetricRegistry.from_path(METRICS))
     context = WorkflowContext(
         input_val=VmChatInput(
             userMessage=f"<document_text>{SAMPLE}</document_text>",

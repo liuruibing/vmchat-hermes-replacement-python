@@ -9,6 +9,8 @@ from app.mandate_risk_v2.models import (
     CanonicalEvidence,
     ContextFact,
     Definition,
+    DocumentProfileDraft,
+    DocumentProfileEntry,
     ExtractionBatch,
     Requirement,
     RequirementIR,
@@ -61,6 +63,65 @@ def _validate_evidence_ids(
         raise ValueError(f"{owner} evidence contains unknown clause_id: {', '.join(unknown)}")
 
 
+def validate_document_profile_draft(
+    draft: DocumentProfileDraft,
+    *,
+    known_clause_ids: set[str],
+) -> None:
+    for key in ("asset_scope", "instruments", "benchmark", "investment_strategy"):
+        item = getattr(draft, key, None)
+        if item is None:
+            continue
+        if not isinstance(item.summary, str) or not item.summary.strip():
+            raise ValueError(f"document_profile.{key}: summary must be a non-empty string")
+        if not item.evidence_clause_ids:
+            raise ValueError(f"document_profile.{key}: evidence_clause_ids cannot be empty")
+        _validate_evidence_ids(
+            item.evidence_clause_ids,
+            known_clause_ids=known_clause_ids,
+            owner=f"document_profile.{key}",
+        )
+
+
+def canonicalize_document_profile(
+    drafts: Sequence[DocumentProfileDraft | None],
+    clauses: Sequence[DocumentClause],
+) -> Dict[str, Any]:
+    """Merge document_profile drafts across windows/batches into canonical document_profile."""
+    keys = ("asset_scope", "instruments", "benchmark", "investment_strategy")
+    result: Dict[str, Any] = {k: None for k in keys}
+
+    for key in keys:
+        summaries: list[str] = []
+        clause_ids: list[str] = []
+        for draft in drafts:
+            if draft is None:
+                continue
+            item = getattr(draft, key, None)
+            if item is None:
+                continue
+            if item.summary and item.summary.strip():
+                s = item.summary.strip()
+                if s not in summaries:
+                    summaries.append(s)
+            for cid in item.evidence_clause_ids:
+                if cid not in clause_ids:
+                    clause_ids.append(cid)
+
+        if not clause_ids or not summaries:
+            result[key] = None
+        else:
+            merged_summary = "\n".join(summaries)
+            evidence = canonical_evidence(clause_ids, clauses)
+            evidence.sort(key=lambda item: item.source_start)
+            result[key] = DocumentProfileEntry(
+                summary=merged_summary,
+                evidence=evidence,
+            ).model_dump()
+
+    return result
+
+
 def validate_extraction_payload(
     payload: dict,
     *,
@@ -70,6 +131,9 @@ def validate_extraction_payload(
 
     batch = ExtractionBatch.model_validate(payload)
     known = _known_clause_ids(allowed_clauses)
+
+    if batch.document_profile is not None:
+        validate_document_profile_draft(batch.document_profile, known_clause_ids=known)
 
     requirement_ids = [item.local_id for item in batch.requirements]
     if len(set(requirement_ids)) != len(requirement_ids):
@@ -133,6 +197,7 @@ def build_requirement_ir(
     *,
     document_name: str,
     batches: Sequence[ExtractionBatch],
+    clauses: Sequence[DocumentClause] | None = None,
 ) -> RequirementIR:
     requirements: List[Requirement] = []
     definitions: List[Definition] = []
@@ -214,11 +279,23 @@ def build_requirement_ir(
             )
             seen_context.add(fingerprint)
 
+    profile_drafts = [batch.document_profile for batch in batches if batch.document_profile is not None]
+    if clauses:
+        document_profile = canonicalize_document_profile(profile_drafts, clauses)
+    else:
+        document_profile = {
+            "asset_scope": None,
+            "instruments": None,
+            "benchmark": None,
+            "investment_strategy": None,
+        }
+
     return RequirementIR(
         document_name=document_name,
         requirements=requirements,
         definitions=definitions,
         contextual_facts=contextual_facts,
+        document_profile=document_profile,
     )
 
 

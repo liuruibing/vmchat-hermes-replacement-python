@@ -1,0 +1,5630 @@
+{
+  "snippets": [
+    {
+      "id": "request",
+      "title": "把 HTTP 请求变成业务输入",
+      "path": "app/compatibility/hermes_request.py",
+      "start": 233,
+      "end": 274,
+      "why": "兼容请求结构与业务结构隔离。后续工作流读取 userMessage/currentDsls/documentIds，不必反复分析原始聊天数组。",
+      "notes": [
+        "从后往前找最后一条 user 消息；它之前的内容作为历史候选。",
+        "优先读取结构化 context；旧前端的文字标记仅作兼容回退。",
+        "这里解析数据，不调用模型，也不执行 SQL。"
+      ],
+      "lines": [
+        {
+          "n": 233,
+          "text": "def normalize_vm_chat_input(request: HermesCreateRunRequest) -> VmChatInput:"
+        },
+        {
+          "n": 234,
+          "text": "    user_message = \"\""
+        },
+        {
+          "n": 235,
+          "text": "    last_user_index = -1"
+        },
+        {
+          "n": 236,
+          "text": "    for idx in range(len(request.input) - 1, -1, -1):"
+        },
+        {
+          "n": 237,
+          "text": "        item = request.input[idx]"
+        },
+        {
+          "n": 238,
+          "text": "        if item.role == \"user\":"
+        },
+        {
+          "n": 239,
+          "text": "            user_message = item.content"
+        },
+        {
+          "n": 240,
+          "text": "            last_user_index = idx"
+        },
+        {
+          "n": 241,
+          "text": "            break"
+        },
+        {
+          "n": 242,
+          "text": ""
+        },
+        {
+          "n": 243,
+          "text": "    history_source = request.input[:last_user_index] if last_user_index >= 0 else request.input"
+        },
+        {
+          "n": 244,
+          "text": "    history_messages = ["
+        },
+        {
+          "n": 245,
+          "text": "        item"
+        },
+        {
+          "n": 246,
+          "text": "        for item in history_source"
+        },
+        {
+          "n": 247,
+          "text": "        if item.role in (\"user\", \"assistant\")"
+        },
+        {
+          "n": 248,
+          "text": "        and not ("
+        },
+        {
+          "n": 249,
+          "text": "            item.role == \"user\""
+        },
+        {
+          "n": 250,
+          "text": "            and item.content.strip().startswith(\"vmChat 会话锚点：\")"
+        },
+        {
+          "n": 251,
+          "text": "        )"
+        },
+        {
+          "n": 252,
+          "text": "    ]"
+        },
+        {
+          "n": 253,
+          "text": ""
+        },
+        {
+          "n": 254,
+          "text": "    # Prefer structured machine context. The legacy instruction markers remain a"
+        },
+        {
+          "n": 255,
+          "text": "    # compatibility fallback for older frontends."
+        },
+        {
+          "n": 256,
+          "text": "    context = request.context if isinstance(request.context, dict) else {}"
+        },
+        {
+          "n": 257,
+          "text": "    text_to_search = \"\\n\".join([request.instructions] + [i.content for i in request.input])"
+        },
+        {
+          "n": 258,
+          "text": ""
+        },
+        {
+          "n": 259,
+          "text": "    selected_block_id: Optional[str] = None"
+        },
+        {
+          "n": 260,
+          "text": "    context_selected = context.get(\"selectedBlockId\")"
+        },
+        {
+          "n": 261,
+          "text": "    if isinstance(context_selected, str) and context_selected.strip():"
+        },
+        {
+          "n": 262,
+          "text": "        selected_block_id = context_selected.strip()"
+        },
+        {
+          "n": 263,
+          "text": "    else:"
+        },
+        {
+          "n": 264,
+          "text": "        sel_block_match = re.search(r\"当前 selectedBlockId：\\s*([^\\n]+)\", text_to_search)"
+        },
+        {
+          "n": 265,
+          "text": "        if sel_block_match and sel_block_match.group(1):"
+        },
+        {
+          "n": 266,
+          "text": "            val = sel_block_match.group(1).strip()"
+        },
+        {
+          "n": 267,
+          "text": "            if val and val != \"null\" and val != \"undefined\":"
+        },
+        {
+          "n": 268,
+          "text": "                selected_block_id = val"
+        },
+        {
+          "n": 269,
+          "text": ""
+        },
+        {
+          "n": 270,
+          "text": "    current_dsls: List[CurrentDslItem] = []"
+        },
+        {
+          "n": 271,
+          "text": "    if \"currentDsls\" in context:"
+        },
+        {
+          "n": 272,
+          "text": "        parsed = context.get(\"currentDsls\")"
+        },
+        {
+          "n": 273,
+          "text": "        if not isinstance(parsed, list):"
+        },
+        {
+          "n": 274,
+          "text": "            raise ValueError(\"INVALID_VMCHAT_CONTEXT: currentDsls is not an array\")"
+        }
+      ]
+    },
+    {
+      "id": "create",
+      "title": "创建 run：准备好，再排队",
+      "path": "app/main.py",
+      "start": 680,
+      "end": 720,
+      "why": "先验证 Agent、文档和权限，再准备受预算约束的输入；创建任务和执行任务是两步。",
+      "notes": [
+        "agent.workflow 决定业务流程；模型由启动时 Provider 配置决定。",
+        "require_ready 检查上传文档已解析，不重复发送 PDF。",
+        "ContextManager 返回 prepared_input 和遥测报告；RunStore.create 保存 queued 记录。"
+      ],
+      "lines": [
+        {
+          "n": 680,
+          "text": ""
+        },
+        {
+          "n": 681,
+          "text": "        try:"
+        },
+        {
+          "n": 682,
+          "text": "            vm_input = normalize_vm_chat_input(normalized_req)"
+        },
+        {
+          "n": 683,
+          "text": ""
+        },
+        {
+          "n": 684,
+          "text": "            agent_id = normalized_req.agent_id or default_agent_id"
+        },
+        {
+          "n": 685,
+          "text": "            role_id = normalized_req.role_id or default_role_id"
+        },
+        {
+          "n": 686,
+          "text": "            agent = agent_registry.get(agent_id) if agent_registry else None"
+        },
+        {
+          "n": 687,
+          "text": "            if agent_registry and agent is None:"
+        },
+        {
+          "n": 688,
+          "text": "                raise ValueError(f\"UNKNOWN_AGENT: {agent_id}\")"
+        },
+        {
+          "n": 689,
+          "text": "            if agent is not None and agent.workflow == \"vm-report\" and not resource_loader.is_ready():"
+        },
+        {
+          "n": 690,
+          "text": "                raise RuntimeError(\"SERVICE_DEGRADED: Resources not loaded\")"
+        },
+        {
+          "n": 691,
+          "text": "            role = agent_registry.get_role(agent_id, role_id) if agent_registry else None"
+        },
+        {
+          "n": 692,
+          "text": "            if agent is not None and role is None and agent.defaultRole:"
+        },
+        {
+          "n": 693,
+          "text": "                role_id = agent.defaultRole"
+        },
+        {
+          "n": 694,
+          "text": "                role = agent_registry.get_role(agent_id, role_id) if agent_registry else None"
+        },
+        {
+          "n": 695,
+          "text": ""
+        },
+        {
+          "n": 696,
+          "text": "            for document_id in normalized_req.documents:"
+        },
+        {
+          "n": 697,
+          "text": "                document_service.require_ready(document_id)"
+        },
+        {
+          "n": 698,
+          "text": ""
+        },
+        {
+          "n": 699,
+          "text": "            if normalized_req.skills:"
+        },
+        {
+          "n": 700,
+          "text": "                allowed_skills = set(role.allowedSkills if role is not None else [])"
+        },
+        {
+          "n": 701,
+          "text": "                denied = [skill for skill in normalized_req.skills if skill not in allowed_skills]"
+        },
+        {
+          "n": 702,
+          "text": "                if denied:"
+        },
+        {
+          "n": 703,
+          "text": "                    raise ValueError("
+        },
+        {
+          "n": 704,
+          "text": "                        \"SKILL_NOT_ALLOWED: \" + \", \".join(denied)"
+        },
+        {
+          "n": 705,
+          "text": "                    )"
+        },
+        {
+          "n": 706,
+          "text": ""
+        },
+        {
+          "n": 707,
+          "text": "            session_state = session_manager.get_or_create("
+        },
+        {
+          "n": 708,
+          "text": "                normalized_req.session_id,"
+        },
+        {
+          "n": 709,
+          "text": "                agent_id=agent_id,"
+        },
+        {
+          "n": 710,
+          "text": "                role_id=role_id,"
+        },
+        {
+          "n": 711,
+          "text": "            )"
+        },
+        {
+          "n": 712,
+          "text": "            prepared_input, context_report = context_manager.prepare(session_state, vm_input)"
+        },
+        {
+          "n": 713,
+          "text": "            session_manager.update_ui_state(session_state, vm_input)"
+        },
+        {
+          "n": 714,
+          "text": "        except Exception as err:"
+        },
+        {
+          "n": 715,
+          "text": "            return JSONResponse("
+        },
+        {
+          "n": 716,
+          "text": "                status_code=400,"
+        },
+        {
+          "n": 717,
+          "text": "                content={\"error\": f\"INVALID_INPUT: {err}\"}"
+        },
+        {
+          "n": 718,
+          "text": "            )"
+        },
+        {
+          "n": 719,
+          "text": ""
+        },
+        {
+          "n": 720,
+          "text": "        try:"
+        }
+      ]
+    },
+    {
+      "id": "claim",
+      "title": "一次任务只允许一个执行者",
+      "path": "app/runs/run_store.py",
+      "start": 141,
+      "end": 158,
+      "why": "claim 像任务认领：已完成任务回放，正在执行拒绝再次执行，queued 才能开始。",
+      "notes": [
+        "completed/failed → replay，不再次调用模型。",
+        "running/validating/repairing → streaming；HTTP 层返回 409。",
+        "queued → running，同时创建本次 AbortController。"
+      ],
+      "lines": [
+        {
+          "n": 141,
+          "text": "    def claim(self, id: str) -> ClaimOutcome:"
+        },
+        {
+          "n": 142,
+          "text": "        record = self.get(id)"
+        },
+        {
+          "n": 143,
+          "text": "        if not record:"
+        },
+        {
+          "n": 144,
+          "text": "            return ClaimOutcome(outcome=\"not_found\")"
+        },
+        {
+          "n": 145,
+          "text": ""
+        },
+        {
+          "n": 146,
+          "text": "        if record.status in (\"completed\", \"failed\"):"
+        },
+        {
+          "n": 147,
+          "text": "            return ClaimOutcome(outcome=\"replay\", record=record)"
+        },
+        {
+          "n": 148,
+          "text": ""
+        },
+        {
+          "n": 149,
+          "text": "        if record.status in (\"running\", \"validating\", \"repairing\"):"
+        },
+        {
+          "n": 150,
+          "text": "            return ClaimOutcome(outcome=\"streaming\", record=record)"
+        },
+        {
+          "n": 151,
+          "text": ""
+        },
+        {
+          "n": 152,
+          "text": "        if record.status == \"queued\":"
+        },
+        {
+          "n": 153,
+          "text": "            record.status = \"running\""
+        },
+        {
+          "n": 154,
+          "text": "            record.startedAt = time.time() * 1000"
+        },
+        {
+          "n": 155,
+          "text": "            record.controller = AbortController()"
+        },
+        {
+          "n": 156,
+          "text": "            return ClaimOutcome(outcome=\"claimed\", record=record)"
+        },
+        {
+          "n": 157,
+          "text": ""
+        },
+        {
+          "n": 158,
+          "text": "        return ClaimOutcome(outcome=\"not_found\")"
+        }
+      ]
+    },
+    {
+      "id": "context",
+      "title": "WorkflowContext：数据与能力的交接",
+      "path": "app/workflow/engine.py",
+      "start": 29,
+      "end": 53,
+      "why": "把本次参数和回调装进一个对象；工作流拿到能力，不必拥有整套服务。",
+      "notes": [
+        "@dataclass 自动生成构造方法，类型注解本身不做运行时数据校验。",
+        "document_loader 是函数引用，稍后按 document_id 加载正文。",
+        "default_factory=list 让不同任务拥有各自的列表。"
+      ],
+      "lines": [
+        {
+          "n": 29,
+          "text": "    A workflow only receives the bounded, current-run context it needs."
+        },
+        {
+          "n": 30,
+          "text": "    Uploaded document bodies are resolved lazily by document id so they are not"
+        },
+        {
+          "n": 31,
+          "text": "    copied into chat history or generic run prompts."
+        },
+        {
+          "n": 32,
+          "text": "    \"\"\""
+        },
+        {
+          "n": 33,
+          "text": ""
+        },
+        {
+          "n": 34,
+          "text": "    input_val: VmChatInput  # 已规范化的请求，包含用户问题、历史消息和当前报表等。"
+        },
+        {
+          "n": 35,
+          "text": "    provider: Any  # 模型调用接口；流程不必知道底层是 LangChain、OMP 还是测试实现。"
+        },
+        {
+          "n": 36,
+          "text": "    agent_id: str"
+        },
+        {
+          "n": 37,
+          "text": "    role_id: str"
+        },
+        {
+          "n": 38,
+          "text": "    role_prompt: str = \"\""
+        },
+        {
+          "n": 39,
+          "text": "    skill_md: str = \"\""
+        },
+        {
+          "n": 40,
+          "text": "    # Callable 类似 TS 的 (query: string) => string；None 表示本次没有提供检索能力。"
+        },
+        {
+          "n": 41,
+          "text": "    knowledge_search: Optional[Callable[[str], str]] = None"
+        },
+        {
+          "n": 42,
+          "text": "    resources: Any = None"
+        },
+        {
+          "n": 43,
+          "text": "    signal: Optional[Any] = None  # 类似前端 AbortController 的取消信号，节点和 Provider 都会检查。"
+        },
+        {
+          "n": 44,
+          "text": "    message_chunk_chars: int = 256"
+        },
+        {
+          "n": 45,
+          "text": "    run_id: Optional[str] = None"
+        },
+        {
+          "n": 46,
+          "text": "    session_id: Optional[str] = None"
+        },
+        {
+          "n": 47,
+          "text": "    # 每次创建 context 都生成自己的空列表，避免不同任务共享同一个可变列表。"
+        },
+        {
+          "n": 48,
+          "text": "    document_ids: List[str] = field(default_factory=list)"
+        },
+        {
+          "n": 49,
+          "text": "    document_loader: Optional[Callable[[str], Any]] = None  # 按 id 读取已解析的 PDF，按需加载。"
+        },
+        {
+          "n": 50,
+          "text": ""
+        },
+        {
+          "n": 51,
+          "text": ""
+        },
+        {
+          "n": 52,
+          "text": "# Protocol 类似 TS interface：约定对象有 id 和 stream()，不同类可以实现同一约定。"
+        },
+        {
+          "n": 53,
+          "text": "# @runtime_checkable 允许用 isinstance 做结构检查，但不负责校验参数类型。"
+        }
+      ]
+    },
+    {
+      "id": "engine",
+      "title": "Engine 只负责分派",
+      "path": "app/workflow/engine.py",
+      "start": 62,
+      "end": 77,
+      "why": "统一 stream(context) 接口，让 Runtime 能消费不同实现返回的事件。",
+      "notes": [
+        "require(workflow_id) 取出已登记的实例，找不到就抛错。",
+        "return workflow.stream(context) 返回异步生成器。",
+        "这里不决定图节点顺序，也不选择模型。"
+      ],
+      "lines": [
+        {
+          "n": 62,
+          "text": ""
+        },
+        {
+          "n": 63,
+          "text": "class WorkflowEngine:"
+        },
+        {
+          "n": 64,
+          "text": "    \"\"\"Dispatch a named workflow without coupling the runtime to LangGraph.\"\"\""
+        },
+        {
+          "n": 65,
+          "text": ""
+        },
+        {
+          "n": 66,
+          "text": "    def __init__(self, registry: Any) -> None:"
+        },
+        {
+          "n": 67,
+          "text": "        self.registry = registry"
+        },
+        {
+          "n": 68,
+          "text": ""
+        },
+        {
+          "n": 69,
+          "text": "    def stream("
+        },
+        {
+          "n": 70,
+          "text": "        self,"
+        },
+        {
+          "n": 71,
+          "text": "        workflow_id: str,"
+        },
+        {
+          "n": 72,
+          "text": "        context: WorkflowContext,"
+        },
+        {
+          "n": 73,
+          "text": "    ) -> AsyncGenerator[Any, None]:"
+        },
+        {
+          "n": 74,
+          "text": "        # registry 类似按 key 保存实例的 Map；require 找不到时会抛错，不会悄悄换流程。"
+        },
+        {
+          "n": 75,
+          "text": "        workflow = self.registry.require(workflow_id)"
+        },
+        {
+          "n": 76,
+          "text": "        # 返回事件生成器，由 main.py 消费并转成 SSE；这里不执行模型选择或图节点调度。"
+        },
+        {
+          "n": 77,
+          "text": "        return workflow.stream(context)"
+        }
+      ]
+    },
+    {
+      "id": "registry",
+      "title": "登记默认工作流",
+      "path": "app/workflow/legacy.py",
+      "start": 73,
+      "end": 91,
+      "why": "文件名 legacy 不代表默认还在用旧函数。默认列表实际创建图工作流与 V2 Python 工作流。",
+      "notes": [
+        "四个独立 id，对应四个实现对象。",
+        "simple_chat_stream/vm_report_stream 参数保留兼容，默认实例列表没有使用它们。",
+        "实例创建与登记不是模型执行。"
+      ],
+      "lines": [
+        {
+          "n": 73,
+          "text": ""
+        },
+        {
+          "n": 74,
+          "text": "    from app.workflow.graphs.mandate_risk import MandateRiskLangGraphWorkflow"
+        },
+        {
+          "n": 75,
+          "text": "    from app.workflow.graphs.mandate_risk_v2 import MandateRiskV2Workflow"
+        },
+        {
+          "n": 76,
+          "text": "    from app.workflow.graphs.performance_report import PerformanceReportLangGraphWorkflow"
+        },
+        {
+          "n": 77,
+          "text": "    from app.workflow.graphs.simple_chat import SimpleChatLangGraphWorkflow"
+        },
+        {
+          "n": 78,
+          "text": ""
+        },
+        {
+          "n": 79,
+          "text": "    # V2 is registered under a separate workflow id only. Existing agents stay"
+        },
+        {
+          "n": 80,
+          "text": "    # on mandate-risk-analysis until the V2 accuracy gates are proven on real"
+        },
+        {
+          "n": 81,
+          "text": "    # PDFs; registering it here merely makes explicit lab invocation possible."
+        },
+        {
+          "n": 82,
+          "text": "    # 注册是建立 id → 实例的映射，不会立即调用模型或执行任何流程。"
+        },
+        {
+          "n": 83,
+          "text": "    # simple-chat / vm-report / mandate-risk-analysis 使用 LangGraph；V2 是普通 Python 异步流程。"
+        },
+        {
+          "n": 84,
+          "text": "    return WorkflowRegistry("
+        },
+        {
+          "n": 85,
+          "text": "        ["
+        },
+        {
+          "n": 86,
+          "text": "            SimpleChatLangGraphWorkflow(),"
+        },
+        {
+          "n": 87,
+          "text": "            PerformanceReportLangGraphWorkflow(),"
+        },
+        {
+          "n": 88,
+          "text": "            MandateRiskLangGraphWorkflow(),"
+        },
+        {
+          "n": 89,
+          "text": "            MandateRiskV2Workflow(),"
+        },
+        {
+          "n": 90,
+          "text": "        ]"
+        },
+        {
+          "n": 91,
+          "text": "    )"
+        }
+      ]
+    },
+    {
+      "id": "simplegraph",
+      "title": "普通聊天：把顺序变成图",
+      "path": "app/workflow/graphs/simple_chat.py",
+      "start": 202,
+      "end": 211,
+      "why": "add_node 定义工作，add_edge 定义顺序，compile 产生可执行对象。",
+      "notes": [
+        "retrieve_knowledge 是 Python 检索；answer 才调用 Provider。",
+        "StateGraph 的节点返回局部 state 更新。",
+        "compile 不会立即运行图；真正执行在 ainvoke。"
+      ],
+      "lines": [
+        {
+          "n": 202,
+          "text": "        # StateGraph 接收状态的类型；add_node 注册“节点名 → 函数”，不会在这里执行函数。"
+        },
+        {
+          "n": 203,
+          "text": "        builder = StateGraph(SimpleChatGraphState)"
+        },
+        {
+          "n": 204,
+          "text": "        builder.add_node(\"retrieve_knowledge\", retrieve_knowledge)"
+        },
+        {
+          "n": 205,
+          "text": "        builder.add_node(\"answer\", answer)"
+        },
+        {
+          "n": 206,
+          "text": "        # add_edge 定义固定顺序；与 Promise.then 链相似，但中间数据统一通过 state 传递。"
+        },
+        {
+          "n": 207,
+          "text": "        builder.add_edge(START, \"retrieve_knowledge\")"
+        },
+        {
+          "n": 208,
+          "text": "        builder.add_edge(\"retrieve_knowledge\", \"answer\")"
+        },
+        {
+          "n": 209,
+          "text": "        builder.add_edge(\"answer\", END)"
+        },
+        {
+          "n": 210,
+          "text": "        # compile 将定义变成可执行的图，并接入内存检查点；此时仍没有调用模型。"
+        },
+        {
+          "n": 211,
+          "text": "        return builder.compile(checkpointer=self._checkpointer)"
+        }
+      ]
+    },
+    {
+      "id": "invoke",
+      "title": "图完成后，才向外交付",
+      "path": "app/workflow/graphs/simple_chat.py",
+      "start": 218,
+      "end": 261,
+      "why": "内部模型迭代和外部 SSE 迭代是不同的边界。",
+      "notes": [
+        "thread_id 优先使用 run_id；它是检查点的分组键，不是操作系统线程。",
+        "await graph.ainvoke 等整张图完成，再读取最终 state。",
+        "code_point_chunks 拆的是已经完成的答案，yield 的是业务事件。"
+      ],
+      "lines": [
+        {
+          "n": 218,
+          "text": "        # 本次执行的初始 store；历史和摘要由 Runtime 提供，不由 InMemorySaver 自动补齐。"
+        },
+        {
+          "n": 219,
+          "text": "        initial: SimpleChatGraphState = {"
+        },
+        {
+          "n": 220,
+          "text": "            \"user_message\": context.input_val.userMessage,"
+        },
+        {
+          "n": 221,
+          "text": "            \"session_summary\": context.input_val.sessionSummary or \"\","
+        },
+        {
+          "n": 222,
+          "text": "            \"history\": _history_payload(context),"
+        },
+        {
+          "n": 223,
+          "text": "            \"knowledge_context\": \"\","
+        },
+        {
+          "n": 224,
+          "text": "            \"answer\": \"\","
+        },
+        {
+          "n": 225,
+          "text": "            \"reasoning\": [],"
+        },
+        {
+          "n": 226,
+          "text": "            \"usage\": {},"
+        },
+        {
+          "n": 227,
+          "text": "            \"error\": \"\","
+        },
+        {
+          "n": 228,
+          "text": "        }"
+        },
+        {
+          "n": 229,
+          "text": ""
+        },
+        {
+          "n": 230,
+          "text": "        try:"
+        },
+        {
+          "n": 231,
+          "text": "            # thread_id 是检查点分组标识，不是 Python 线程；这里优先使用独立的 run_id。"
+        },
+        {
+          "n": 232,
+          "text": "            thread_id = context.run_id or context.session_id or \"simple-chat\""
+        },
+        {
+          "n": 233,
+          "text": "            # ainvoke 等整张图跑完，result 是最终 state；这里没用图的 astream 逐步转发。"
+        },
+        {
+          "n": 234,
+          "text": "            result = await graph.ainvoke("
+        },
+        {
+          "n": 235,
+          "text": "                initial,"
+        },
+        {
+          "n": 236,
+          "text": "                config={\"configurable\": {\"thread_id\": thread_id}},"
+        },
+        {
+          "n": 237,
+          "text": "            )"
+        },
+        {
+          "n": 238,
+          "text": "        except Exception as err:"
+        },
+        {
+          "n": 239,
+          "text": "            yield RunFailedEvent(error=f\"AI 助手任务执行失败: {err}\")"
+        },
+        {
+          "n": 240,
+          "text": "            return"
+        },
+        {
+          "n": 241,
+          "text": ""
+        },
+        {
+          "n": 242,
+          "text": "        if result.get(\"error\"):"
+        },
+        {
+          "n": 243,
+          "text": "            yield RunFailedEvent(error=str(result[\"error\"]))"
+        },
+        {
+          "n": 244,
+          "text": "            return"
+        },
+        {
+          "n": 245,
+          "text": ""
+        },
+        {
+          "n": 246,
+          "text": "        # enumerate(..., start=1) 类似带索引的遍历，从 1 编号后交给前端按顺序展示。"
+        },
+        {
+          "n": 247,
+          "text": "        for sequence, delta in enumerate(result.get(\"reasoning\") or [], start=1):"
+        },
+        {
+          "n": 248,
+          "text": "            yield ReasoningDeltaEvent(delta=str(delta), sequence=sequence)"
+        },
+        {
+          "n": 249,
+          "text": ""
+        },
+        {
+          "n": 250,
+          "text": "        answer = str(result.get(\"answer\") or \"\")"
+        },
+        {
+          "n": 251,
+          "text": "        chunk_size = max(64, int(context.message_chunk_chars or 256))"
+        },
+        {
+          "n": 252,
+          "text": "        # yield 类似 async function* 的 yield：交出一个事件，调用方再读取时继续往下执行。"
+        },
+        {
+          "n": 253,
+          "text": "        # 这些片段是图完成后的答案拆分，不能据此认为前端实时收到了模型 token。"
+        },
+        {
+          "n": 254,
+          "text": "        for chunk in code_point_chunks(answer, chunk_size):"
+        },
+        {
+          "n": 255,
+          "text": "            yield MessageDeltaEvent(delta=chunk)"
+        },
+        {
+          "n": 256,
+          "text": ""
+        },
+        {
+          "n": 257,
+          "text": "        # 完成事件携带完整输出与用量，main.py 会负责保存任务结果并序列化为 SSE。"
+        },
+        {
+          "n": 258,
+          "text": "        yield RunCompletedEvent("
+        },
+        {
+          "n": 259,
+          "text": "            output=answer,"
+        },
+        {
+          "n": 260,
+          "text": "            usage=result.get(\"usage\") or {},"
+        },
+        {
+          "n": 261,
+          "text": "        )"
+        }
+      ]
+    },
+    {
+      "id": "semantic",
+      "title": "先用 Python 确定报表语义",
+      "path": "app/workflow/graphs/performance_report.py",
+      "start": 137,
+      "end": 153,
+      "why": "确定性解析先制定指标与合并计划，随后注入模型提示，但最终仍由业务校验器把关。",
+      "notes": [
+        "resolve_metrics 根据用户措辞和资源目录解析明确指标。",
+        "build_semantic_plan 分析 entity/shape/grain/joinKey 等口径。",
+        "返回字典是 state patch，不是模型回答。"
+      ],
+      "lines": [
+        {
+          "n": 137,
+          "text": "        async def resolve_semantics(_state: PerformanceReportGraphState) -> Dict[str, Any]:"
+        },
+        {
+          "n": 138,
+          "text": "            # 先用 Python 根据用户措辞和资源目录解析指标、制定语义计划，此步骤不调用模型。"
+        },
+        {
+          "n": 139,
+          "text": "            metrics = resolve_metrics(input_val.userMessage, resources)"
+        },
+        {
+          "n": 140,
+          "text": "            plan = build_semantic_plan(metrics, resources)"
+        },
+        {
+          "n": 141,
+          "text": "            return {"
+        },
+        {
+          "n": 142,
+          "text": "                \"resolved_metrics\": metrics,"
+        },
+        {
+          "n": 143,
+          "text": "                \"semantic_plan\": plan,"
+        },
+        {
+          "n": 144,
+          "text": "            }"
+        },
+        {
+          "n": 145,
+          "text": ""
+        },
+        {
+          "n": 146,
+          "text": "        def enriched_input(state: PerformanceReportGraphState):"
+        },
+        {
+          "n": 147,
+          "text": "            # model_copy(update=...) 类似 {...input, resolvedMetrics: ...}，生成新输入对象。"
+        },
+        {
+          "n": 148,
+          "text": "            return input_val.model_copy("
+        },
+        {
+          "n": 149,
+          "text": "                update={"
+        },
+        {
+          "n": 150,
+          "text": "                    \"resolvedMetrics\": state.get(\"resolved_metrics\") or [],"
+        },
+        {
+          "n": 151,
+          "text": "                    \"semanticPlan\": state.get(\"semantic_plan\") or {},"
+        },
+        {
+          "n": 152,
+          "text": "                }"
+        },
+        {
+          "n": 153,
+          "text": "            )"
+        }
+      ]
+    },
+    {
+      "id": "validate",
+      "title": "DSL 必须经过 Python 校验",
+      "path": "app/workflow/graphs/performance_report.py",
+      "start": 258,
+      "end": 303,
+      "why": "模型候选只是草稿；通过校验才成为 validated_dsls。",
+      "notes": [
+        "普通文本走 finalize_text；结构化 DSL 走 validate。",
+        "candidate_dirty=False 且已有错误时，避免重复验证没改变的候选。",
+        "通过 → finalize_dsl；未通过且次数未满 → repair；次数耗尽 → failed。"
+      ],
+      "lines": [
+        {
+          "n": 258,
+          "text": "        def route_after_generate(state: PerformanceReportGraphState) -> str:"
+        },
+        {
+          "n": 259,
+          "text": "            # 路由函数返回下一站的名称；文字答复不必走报表 DSL 校验。"
+        },
+        {
+          "n": 260,
+          "text": "            return \"finalize_text\" if state.get(\"result_type\") == \"text\" else \"validate\""
+        },
+        {
+          "n": 261,
+          "text": ""
+        },
+        {
+          "n": 262,
+          "text": "        async def validate(state: PerformanceReportGraphState) -> Dict[str, Any]:"
+        },
+        {
+          "n": 263,
+          "text": "            # 节点二：由 Python 校验器检查配置；模型不能自己宣布“校验通过”。"
+        },
+        {
+          "n": 264,
+          "text": "            existing_errors = state.get(\"validation_errors\") or []"
+        },
+        {
+          "n": 265,
+          "text": "            # 内容未变化且已有错误时保留失败状态，等待修复，避免重复校验同一份无效候选。"
+        },
+        {
+          "n": 266,
+          "text": "            if existing_errors and not state.get(\"candidate_dirty\", True):"
+        },
+        {
+          "n": 267,
+          "text": "                return {\"validation_ok\": False}"
+        },
+        {
+          "n": 268,
+          "text": ""
+        },
+        {
+          "n": 269,
+          "text": "            result = _call_validate_vm_report_dsl_set("
+        },
+        {
+          "n": 270,
+          "text": "                state.get(\"candidate\"),"
+        },
+        {
+          "n": 271,
+          "text": "                resources,"
+        },
+        {
+          "n": 272,
+          "text": "                current_block_ids,"
+        },
+        {
+          "n": 273,
+          "text": "            )"
+        },
+        {
+          "n": 274,
+          "text": "            if getattr(result, \"ok\", False):"
+        },
+        {
+          "n": 275,
+          "text": "                dsls = getattr(result, \"dsls\", []) or []"
+        },
+        {
+          "n": 276,
+          "text": "                return {"
+        },
+        {
+          "n": 277,
+          "text": "                    \"validation_ok\": True,"
+        },
+        {
+          "n": 278,
+          "text": "                    \"validation_errors\": [],"
+        },
+        {
+          "n": 279,
+          "text": "                    \"validated_dsls\": ["
+        },
+        {
+          "n": 280,
+          "text": "                        item.model_dump(exclude_none=True)"
+        },
+        {
+          "n": 281,
+          "text": "                        if hasattr(item, \"model_dump\")"
+        },
+        {
+          "n": 282,
+          "text": "                        else item"
+        },
+        {
+          "n": 283,
+          "text": "                        for item in dsls"
+        },
+        {
+          "n": 284,
+          "text": "                    ],"
+        },
+        {
+          "n": 285,
+          "text": "                    \"candidate_dirty\": False,"
+        },
+        {
+          "n": 286,
+          "text": "                }"
+        },
+        {
+          "n": 287,
+          "text": "            return {"
+        },
+        {
+          "n": 288,
+          "text": "                \"validation_ok\": False,"
+        },
+        {
+          "n": 289,
+          "text": "                \"validation_errors\": ["
+        },
+        {
+          "n": 290,
+          "text": "                    _issue_to_dict(issue)"
+        },
+        {
+          "n": 291,
+          "text": "                    for issue in (getattr(result, \"errors\", []) or [])"
+        },
+        {
+          "n": 292,
+          "text": "                ],"
+        },
+        {
+          "n": 293,
+          "text": "                \"candidate_dirty\": False,"
+        },
+        {
+          "n": 294,
+          "text": "            }"
+        },
+        {
+          "n": 295,
+          "text": ""
+        },
+        {
+          "n": 296,
+          "text": "        def route_validation(state: PerformanceReportGraphState) -> str:"
+        },
+        {
+          "n": 297,
+          "text": "            # 类似根据表单校验结果选择页面下一步：通过就输出，次数用尽就失败，否则修复。"
+        },
+        {
+          "n": 298,
+          "text": "            if state.get(\"validation_ok\"):"
+        },
+        {
+          "n": 299,
+          "text": "                return \"finalize_dsl\""
+        },
+        {
+          "n": 300,
+          "text": "            if int(state.get(\"repair_attempts\") or 0) >= MAX_DSL_REPAIR_ATTEMPTS:"
+        },
+        {
+          "n": 301,
+          "text": "                return \"failed\""
+        },
+        {
+          "n": 302,
+          "text": "            return \"repair\""
+        },
+        {
+          "n": 303,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "repair",
+      "title": "修复后必须再校验",
+      "path": "app/workflow/graphs/performance_report.py",
+      "start": 363,
+      "end": 378,
+      "why": "每次生成新候选都标记 dirty，清除旧通过状态，让下一轮 validate 重新检查。",
+      "notes": [
+        "usage 与计数由节点显式累加，不靠 TypedDict 自动处理。",
+        "新候选仍不可信，validation_ok 必须为 False。",
+        "repair_attempts 在此前递增；最大修复次数常量当前为 5。"
+      ],
+      "lines": [
+        {
+          "n": 363,
+          "text": "                    ],"
+        },
+        {
+          "n": 364,
+          "text": "                }"
+        },
+        {
+          "n": 365,
+          "text": ""
+        },
+        {
+          "n": 366,
+          "text": "            candidate = getattr(repair_result, \"dsl\", None) or ("
+        },
+        {
+          "n": 367,
+          "text": "                repair_result.get(\"dsl\") if isinstance(repair_result, dict) else None"
+        },
+        {
+          "n": 368,
+          "text": "            )"
+        },
+        {
+          "n": 369,
+          "text": "            # 新候选被标记为 dirty，下一次 validate 必须重新检查它。"
+        },
+        {
+          "n": 370,
+          "text": "            return {"
+        },
+        {
+          "n": 371,
+          "text": "                \"candidate\": candidate,"
+        },
+        {
+          "n": 372,
+          "text": "                \"usage\": usage,"
+        },
+        {
+          "n": 373,
+          "text": "                \"repair_attempts\": repair_attempts,"
+        },
+        {
+          "n": 374,
+          "text": "                \"attempt_count\": attempt_count,"
+        },
+        {
+          "n": 375,
+          "text": "                \"validation_errors\": [],"
+        },
+        {
+          "n": 376,
+          "text": "                \"validation_ok\": False,"
+        },
+        {
+          "n": 377,
+          "text": "                \"candidate_dirty\": True,"
+        },
+        {
+          "n": 378,
+          "text": "            }"
+        }
+      ]
+    },
+    {
+      "id": "reportedgelist",
+      "title": "报表的条件边与回边",
+      "path": "app/workflow/graphs/performance_report.py",
+      "start": 428,
+      "end": 452,
+      "why": "固定边串主线，条件边选择路径，回边形成有次数上限的修复循环。",
+      "notes": [
+        "add_conditional_edges 的返回字符串决定目标节点。",
+        "repair → validate 是控制流回边，不是数据库事务重试。",
+        "文本、DSL 和失败三个终点都通向 END。"
+      ],
+      "lines": [
+        {
+          "n": 428,
+          "text": "        builder.add_edge(START, \"resolve_semantics\")"
+        },
+        {
+          "n": 429,
+          "text": "        builder.add_edge(\"resolve_semantics\", \"generate\")"
+        },
+        {
+          "n": 430,
+          "text": "        # 条件边：源节点执行后，调用路由函数，用返回值查后面的“返回值 → 目标节点”映射。"
+        },
+        {
+          "n": 431,
+          "text": "        builder.add_conditional_edges("
+        },
+        {
+          "n": 432,
+          "text": "            \"generate\","
+        },
+        {
+          "n": 433,
+          "text": "            route_after_generate,"
+        },
+        {
+          "n": 434,
+          "text": "            {\"finalize_text\": \"finalize_text\", \"validate\": \"validate\"},"
+        },
+        {
+          "n": 435,
+          "text": "        )"
+        },
+        {
+          "n": 436,
+          "text": "        builder.add_conditional_edges("
+        },
+        {
+          "n": 437,
+          "text": "            \"validate\","
+        },
+        {
+          "n": 438,
+          "text": "            route_validation,"
+        },
+        {
+          "n": 439,
+          "text": "            {"
+        },
+        {
+          "n": 440,
+          "text": "                \"finalize_dsl\": \"finalize_dsl\","
+        },
+        {
+          "n": 441,
+          "text": "                \"repair\": \"repair\","
+        },
+        {
+          "n": 442,
+          "text": "                \"failed\": \"failed\","
+        },
+        {
+          "n": 443,
+          "text": "            },"
+        },
+        {
+          "n": 444,
+          "text": "        )"
+        },
+        {
+          "n": 445,
+          "text": "        # 这条回边形成修复循环；route_validation 中的修复次数上限让循环有终点。"
+        },
+        {
+          "n": 446,
+          "text": "        builder.add_edge(\"repair\", \"validate\")"
+        },
+        {
+          "n": 447,
+          "text": "        builder.add_edge(\"finalize_text\", END)"
+        },
+        {
+          "n": 448,
+          "text": "        builder.add_edge(\"finalize_dsl\", END)"
+        },
+        {
+          "n": 449,
+          "text": "        builder.add_edge(\"failed\", END)"
+        },
+        {
+          "n": 450,
+          "text": "        # compile 返回可运行对象，检查点供图记录状态；真正的执行在下面 ainvoke 中开始。"
+        },
+        {
+          "n": 451,
+          "text": "        return builder.compile(checkpointer=self._checkpointer)"
+        },
+        {
+          "n": 452,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "state",
+      "title": "TypedDict 是字段约定",
+      "path": "app/workflow/graphs/performance_report_state.py",
+      "start": 23,
+      "end": 39,
+      "why": "图 state 只放本次执行的中间结果，服务实例留在 WorkflowContext 的闭包中。",
+      "notes": [
+        "total=False 允许部分字段暂时缺失。",
+        "没有 reducer，同名字段更新覆盖旧值；列表不会自动追加。",
+        "Pydantic model_validate 才承担运行时形状验证；TypedDict 主要服务类型检查。"
+      ],
+      "lines": [
+        {
+          "n": 23,
+          "text": "    resolved_metrics: List[Dict[str, Any]]"
+        },
+        {
+          "n": 24,
+          "text": "    semantic_plan: Dict[str, Any]"
+        },
+        {
+          "n": 25,
+          "text": "    raw_output: str  # 模型的原始回答，还没通过报表业务校验。"
+        },
+        {
+          "n": 26,
+          "text": "    candidate: Any  # 从回答中解析出的待校验 DSL（报表 JSON 配置）。"
+        },
+        {
+          "n": 27,
+          "text": "    validation_errors: List[Dict[str, Any]]  # 校验问题，修复时作为反馈交给模型。"
+        },
+        {
+          "n": 28,
+          "text": "    validated_dsls: List[Any]  # 校验器认可的报表配置。"
+        },
+        {
+          "n": 29,
+          "text": "    validation_ok: bool  # 路由函数据此选择输出或修复。"
+        },
+        {
+          "n": 30,
+          "text": "    candidate_dirty: bool  # 候选内容已更新、需要重校验；不是前端页面的未保存标记。"
+        },
+        {
+          "n": 31,
+          "text": "    result_type: str"
+        },
+        {
+          "n": 32,
+          "text": "    final_text: str"
+        },
+        {
+          "n": 33,
+          "text": "    reasoning: List[str]"
+        },
+        {
+          "n": 34,
+          "text": "    usage: Dict[str, int]"
+        },
+        {
+          "n": 35,
+          "text": "    read_resource_paths: List[str]  # 生成时读取的资源，修复时可以复用相同上下文。"
+        },
+        {
+          "n": 36,
+          "text": "    attempt_count: int  # 首次生成和修复的总尝试次数。"
+        },
+        {
+          "n": 37,
+          "text": "    repair_attempts: int  # 只计修复次数，用来控制循环上限。"
+        },
+        {
+          "n": 38,
+          "text": "    error_code: str"
+        },
+        {
+          "n": 39,
+          "text": "    error_message: str"
+        }
+      ]
+    },
+    {
+      "id": "budget",
+      "title": "上下文总预算与裁剪",
+      "path": "app/context/manager.py",
+      "start": 282,
+      "end": 323,
+      "why": "会话保存的数据可以很多，但发给模型的本次输入必须有界。",
+      "notes": [
+        "预留 system/role/skill/本次问题/知识检索空间。",
+        "DSL 自身超预算会明确失败，而非继续堆上下文。",
+        "先移除较老的历史，再裁剪摘要；token 是估算值，不是供应商精确计数。"
+      ],
+      "lines": [
+        {
+          "n": 282,
+          "text": "        dynamic_budget = max(2000, self.max_context_tokens - self.reserved_prompt_tokens)"
+        },
+        {
+          "n": 283,
+          "text": "        if dsl_tokens > dynamic_budget:"
+        },
+        {
+          "n": 284,
+          "text": "            raise ValueError("
+        },
+        {
+          "n": 285,
+          "text": "                \"CONTEXT_DSL_TOO_LARGE: selected/relevant DSL context alone \""
+        },
+        {
+          "n": 286,
+          "text": "                f\"needs about {dsl_tokens} tokens, budget is {dynamic_budget}\""
+        },
+        {
+          "n": 287,
+          "text": "            )"
+        },
+        {
+          "n": 288,
+          "text": ""
+        },
+        {
+          "n": 289,
+          "text": "        dropped_history_messages = 0"
+        },
+        {
+          "n": 290,
+          "text": "        while ("
+        },
+        {
+          "n": 291,
+          "text": "            bounded_history"
+        },
+        {
+          "n": 292,
+          "text": "            and history_tokens + summary_tokens + dsl_tokens > dynamic_budget"
+        },
+        {
+          "n": 293,
+          "text": "        ):"
+        },
+        {
+          "n": 294,
+          "text": "            removed = bounded_history.pop(0)"
+        },
+        {
+          "n": 295,
+          "text": "            history_tokens = max(0, history_tokens - _estimate_tokens(removed.content))"
+        },
+        {
+          "n": 296,
+          "text": "            dropped_history_messages += 1"
+        },
+        {
+          "n": 297,
+          "text": ""
+        },
+        {
+          "n": 298,
+          "text": "        summary_truncated = False"
+        },
+        {
+          "n": 299,
+          "text": "        remaining_for_summary = max(0, dynamic_budget - history_tokens - dsl_tokens)"
+        },
+        {
+          "n": 300,
+          "text": "        if summary_tokens > remaining_for_summary:"
+        },
+        {
+          "n": 301,
+          "text": "            if remaining_for_summary <= 0:"
+        },
+        {
+          "n": 302,
+          "text": "                summary = \"\""
+        },
+        {
+          "n": 303,
+          "text": "            else:"
+        },
+        {
+          "n": 304,
+          "text": "                # Conservative char/token conversion for mixed Chinese text."
+        },
+        {
+          "n": 305,
+          "text": "                max_chars = max(200, int(remaining_for_summary * 1.35))"
+        },
+        {
+          "n": 306,
+          "text": "                summary = summary[-max_chars:]"
+        },
+        {
+          "n": 307,
+          "text": "            summary_tokens = _estimate_tokens(summary)"
+        },
+        {
+          "n": 308,
+          "text": "            summary_truncated = True"
+        },
+        {
+          "n": 309,
+          "text": ""
+        },
+        {
+          "n": 310,
+          "text": "        prepared = incoming.model_copy("
+        },
+        {
+          "n": 311,
+          "text": "            update={"
+        },
+        {
+          "n": 312,
+          "text": "                \"historyMessages\": bounded_history,"
+        },
+        {
+          "n": 313,
+          "text": "                \"currentDsls\": compact_dsls,"
+        },
+        {
+          "n": 314,
+          "text": "                \"sessionSummary\": summary,"
+        },
+        {
+          "n": 315,
+          "text": "                \"agentId\": state.agentId,"
+        },
+        {
+          "n": 316,
+          "text": "                \"roleId\": state.roleId,"
+        },
+        {
+          "n": 317,
+          "text": "            }"
+        },
+        {
+          "n": 318,
+          "text": "        )"
+        },
+        {
+          "n": 319,
+          "text": ""
+        },
+        {
+          "n": 320,
+          "text": "        report = ContextBudgetReport("
+        },
+        {
+          "n": 321,
+          "text": "            history_tokens=history_tokens,"
+        },
+        {
+          "n": 322,
+          "text": "            dsl_tokens=dsl_tokens,"
+        },
+        {
+          "n": 323,
+          "text": "            summary_tokens=summary_tokens,"
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "title": "服务端接管会话历史",
+      "path": "app/session/manager.py",
+      "start": 65,
+      "end": 82,
+      "why": "前端历史只用于空会话的初始化，已有历史以服务端为准。",
+      "notes": [
+        "state.messages 已存在时不再次灌入前端历史。",
+        "最多初始化最近 20 条，并限制每条长度。",
+        "这一步是兼容旧前端，避免每轮重复记忆。"
+      ],
+      "lines": [
+        {
+          "n": 65,
+          "text": "    def bootstrap_history(self, state: SessionState, incoming: VmChatInput) -> None:"
+        },
+        {
+          "n": 66,
+          "text": "        # Compatibility path for old frontends. Only seed an empty server-side"
+        },
+        {
+          "n": 67,
+          "text": "        # session; once Python owns the session, frontend history is ignored."
+        },
+        {
+          "n": 68,
+          "text": "        if state.messages or not incoming.historyMessages:"
+        },
+        {
+          "n": 69,
+          "text": "            return"
+        },
+        {
+          "n": 70,
+          "text": "        now = time.time()"
+        },
+        {
+          "n": 71,
+          "text": "        for item in incoming.historyMessages[-20:]:"
+        },
+        {
+          "n": 72,
+          "text": "            state.messages.append("
+        },
+        {
+          "n": 73,
+          "text": "                SessionMessage("
+        },
+        {
+          "n": 74,
+          "text": "                    role=item.role,"
+        },
+        {
+          "n": 75,
+          "text": "                    content=item.content[:16000],"
+        },
+        {
+          "n": 76,
+          "text": "                    created_at=now,"
+        },
+        {
+          "n": 77,
+          "text": "                )"
+        },
+        {
+          "n": 78,
+          "text": "            )"
+        },
+        {
+          "n": 79,
+          "text": "        state.updatedAt = now"
+        },
+        {
+          "n": 80,
+          "text": "        self.store.put(state)"
+        },
+        {
+          "n": 81,
+          "text": ""
+        },
+        {
+          "n": 82,
+          "text": "    def select_history(self, state: SessionState, query: str) -> List[HermesChatMessage]:"
+        }
+      ]
+    },
+    {
+      "id": "persist",
+      "title": "成功轮次保存在哪里",
+      "path": "app/session/manager.py",
+      "start": 184,
+      "end": 221,
+      "why": "任务完成后，保存用户/助手轮次；大型 DSL 使用 artifact 引用，减少下一轮重复输入。",
+      "notes": [
+        "artifact_id 存在时，助手消息保存引用提示。",
+        "没有 artifact 的文本会截到 12000 字符；会话也有条数上限。",
+        "确定性摘要由 _refresh_summary 维护，当前不是另一次 LLM 总结。"
+      ],
+      "lines": [
+        {
+          "n": 184,
+          "text": "    def complete_turn("
+        },
+        {
+          "n": 185,
+          "text": "        self,"
+        },
+        {
+          "n": 186,
+          "text": "        state: SessionState,"
+        },
+        {
+          "n": 187,
+          "text": "        user_message: str,"
+        },
+        {
+          "n": 188,
+          "text": "        assistant_output: str,"
+        },
+        {
+          "n": 189,
+          "text": "        run_id: Optional[str] = None,"
+        },
+        {
+          "n": 190,
+          "text": "        artifact_id: Optional[str] = None,"
+        },
+        {
+          "n": 191,
+          "text": "    ) -> SessionState:"
+        },
+        {
+          "n": 192,
+          "text": "        now = time.time()"
+        },
+        {
+          "n": 193,
+          "text": "        state.messages.extend("
+        },
+        {
+          "n": 194,
+          "text": "            ["
+        },
+        {
+          "n": 195,
+          "text": "                SessionMessage("
+        },
+        {
+          "n": 196,
+          "text": "                    role=\"user\","
+        },
+        {
+          "n": 197,
+          "text": "                    content=str(user_message or \"\")[:16000],"
+        },
+        {
+          "n": 198,
+          "text": "                    created_at=now,"
+        },
+        {
+          "n": 199,
+          "text": "                    run_id=run_id,"
+        },
+        {
+          "n": 200,
+          "text": "                ),"
+        },
+        {
+          "n": 201,
+          "text": "                SessionMessage("
+        },
+        {
+          "n": 202,
+          "text": "                    role=\"assistant\","
+        },
+        {
+          "n": 203,
+          "text": "                    content=("
+        },
+        {
+          "n": 204,
+          "text": "                        f\"[artifact:{artifact_id}] 已生成或更新结构化报表结果。\""
+        },
+        {
+          "n": 205,
+          "text": "                        if artifact_id"
+        },
+        {
+          "n": 206,
+          "text": "                        else str(assistant_output or \"\")[:12000]"
+        },
+        {
+          "n": 207,
+          "text": "                    ),"
+        },
+        {
+          "n": 208,
+          "text": "                    created_at=now,"
+        },
+        {
+          "n": 209,
+          "text": "                    run_id=run_id,"
+        },
+        {
+          "n": 210,
+          "text": "                ),"
+        },
+        {
+          "n": 211,
+          "text": "            ]"
+        },
+        {
+          "n": 212,
+          "text": "        )"
+        },
+        {
+          "n": 213,
+          "text": "        if len(state.messages) > self.max_messages_per_session:"
+        },
+        {
+          "n": 214,
+          "text": "            state.messages = state.messages[-self.max_messages_per_session :]"
+        },
+        {
+          "n": 215,
+          "text": "        if artifact_id and artifact_id not in state.artifactIds:"
+        },
+        {
+          "n": 216,
+          "text": "            state.artifactIds.append(artifact_id)"
+        },
+        {
+          "n": 217,
+          "text": "            state.artifactIds = state.artifactIds[-100:]"
+        },
+        {
+          "n": 218,
+          "text": "        self._refresh_summary(state)"
+        },
+        {
+          "n": 219,
+          "text": "        state.updatedAt = now"
+        },
+        {
+          "n": 220,
+          "text": "        self.store.put(state)"
+        },
+        {
+          "n": 221,
+          "text": "        return state"
+        }
+      ]
+    },
+    {
+      "id": "pdf",
+      "title": "PDF → 页文本 → 原文来源",
+      "path": "app/documents/parser.py",
+      "start": 47,
+      "end": 72,
+      "why": "按页抽取可复制文字并保留页码，让后续证据能回查解析源。",
+      "notes": [
+        "enumerate(..., start=1) 让页码从 1 开始。",
+        "每页保存 DocumentPage；拼接文本带 [Page n] 标记。",
+        "没有可提取文本时直接报 PDF_NO_EXTRACTABLE_TEXT，当前不启用 OCR。"
+      ],
+      "lines": [
+        {
+          "n": 47,
+          "text": "        pages: list[DocumentPage] = []"
+        },
+        {
+          "n": 48,
+          "text": "        text_parts: list[str] = []"
+        },
+        {
+          "n": 49,
+          "text": "        for index, page in enumerate(reader.pages, start=1):"
+        },
+        {
+          "n": 50,
+          "text": "            try:"
+        },
+        {
+          "n": 51,
+          "text": "                text = str(page.extract_text() or \"\").strip()"
+        },
+        {
+          "n": 52,
+          "text": "            except Exception as err:"
+        },
+        {
+          "n": 53,
+          "text": "                raise ValueError(f\"PDF_TEXT_EXTRACTION_FAILED: page {index}: {err}\") from err"
+        },
+        {
+          "n": 54,
+          "text": "            pages.append(DocumentPage(page_number=index, text=text))"
+        },
+        {
+          "n": 55,
+          "text": "            if text:"
+        },
+        {
+          "n": 56,
+          "text": "                text_parts.append(f\"[Page {index}]\\n{text}\")"
+        },
+        {
+          "n": 57,
+          "text": ""
+        },
+        {
+          "n": 58,
+          "text": "        if not pages:"
+        },
+        {
+          "n": 59,
+          "text": "            raise ValueError(\"PDF_HAS_NO_PAGES\")"
+        },
+        {
+          "n": 60,
+          "text": "        if not text_parts:"
+        },
+        {
+          "n": 61,
+          "text": "            raise ValueError(\"PDF_NO_EXTRACTABLE_TEXT: OCR is not enabled yet\")"
+        },
+        {
+          "n": 62,
+          "text": ""
+        },
+        {
+          "n": 63,
+          "text": "        return ParsedDocument("
+        },
+        {
+          "n": 64,
+          "text": "            document_id=document_id,"
+        },
+        {
+          "n": 65,
+          "text": "            filename=filename,"
+        },
+        {
+          "n": 66,
+          "text": "            mime_type=mime_type,"
+        },
+        {
+          "n": 67,
+          "text": "            sha256=sha256,"
+        },
+        {
+          "n": 68,
+          "text": "            size_bytes=size_bytes,"
+        },
+        {
+          "n": 69,
+          "text": "            page_count=len(pages),"
+        },
+        {
+          "n": 70,
+          "text": "            pages=pages,"
+        },
+        {
+          "n": 71,
+          "text": "            text=\"\\n\\n\".join(text_parts),"
+        },
+        {
+          "n": 72,
+          "text": "        )"
+        }
+      ]
+    },
+    {
+      "id": "v2branch",
+      "title": "V2 默认分支：screening",
+      "path": "app/workflow/graphs/mandate_risk_v2.py",
+      "start": 79,
+      "end": 116,
+      "why": "筛选直接读 PDF 条款与指标库，不先提取 Requirement IR。",
+      "notes": [
+        "phase_a_only=True 会绕开 screening，进入 Phase A。",
+        "reasoning.delta 是程序写好的阶段进度。",
+        "output 是 Markdown；metadata.mandate_risk_v2.result 是结构化表格数据。"
+      ],
+      "lines": [
+        {
+          "n": 79,
+          "text": "            yield RunFailedEvent(error=f\"V2 文档加载失败: {err}\")"
+        },
+        {
+          "n": 80,
+          "text": "            return"
+        },
+        {
+          "n": 81,
+          "text": ""
+        },
+        {
+          "n": 82,
+          "text": "        if self.mode == \"screening\" and not self.phase_a_only:"
+        },
+        {
+          "n": 83,
+          "text": "            # 默认快速路径。这里 yield 的是明确的阶段进度，不是模型内部逐 token 的输出。"
+        },
+        {
+          "n": 84,
+          "text": "            yield ReasoningDeltaEvent("
+        },
+        {
+          "n": 85,
+          "text": "                delta=\"快速筛选：直接阅读 PDF 和完整指标库，筛选相关指标并给出匹配分、原文依据。\", sequence=1,"
+        },
+        {
+          "n": 86,
+          "text": "            )"
+        },
+        {
+          "n": 87,
+          "text": "            try:"
+        },
+        {
+          "n": 88,
+          "text": "                # await 类似等待 Promise；左侧一次解包两个返回值：结构化分析结果、用量统计。"
+        },
+        {
+          "n": 89,
+          "text": "                analysis, usage = await ScreeningPipeline().run("
+        },
+        {
+          "n": 90,
+          "text": "                    document_name=document_name, document_text=document_text,"
+        },
+        {
+          "n": 91,
+          "text": "                    registry=self._load_registry(), provider=context.provider, signal=context.signal,"
+        },
+        {
+          "n": 92,
+          "text": "                )"
+        },
+        {
+          "n": 93,
+          "text": "                # 报告由 Python 将已校验的结果排版，前端也会从完成事件 metadata 中取得表格数据。"
+        },
+        {
+          "n": 94,
+          "text": "                markdown = render_screening_report(analysis)"
+        },
+        {
+          "n": 95,
+          "text": "            except Exception as err:"
+        },
+        {
+          "n": 96,
+          "text": "                yield RunFailedEvent(error=f\"V2 快速指标筛选失败: {err}\")"
+        },
+        {
+          "n": 97,
+          "text": "                return"
+        },
+        {
+          "n": 98,
+          "text": "            yield ReasoningDeltaEvent("
+        },
+        {
+          "n": 99,
+          "text": "                delta=f\"筛选完成：{len(analysis.screened_metrics)} 个相关指标，原文引用和库行校验已完成，供人工选择。\", sequence=2,"
+        },
+        {
+          "n": 100,
+          "text": "            )"
+        },
+        {
+          "n": 101,
+          "text": "            # 完整报告已经生成后再切片；前端接到多个 message.delta 不等于模型仍在实时生成。"
+        },
+        {
+          "n": 102,
+          "text": "            for chunk in code_point_chunks(markdown, context.message_chunk_chars):"
+        },
+        {
+          "n": 103,
+          "text": "                yield MessageDeltaEvent(delta=chunk)"
+        },
+        {
+          "n": 104,
+          "text": "            usage[\"result_counts\"] = {"
+        },
+        {
+          "n": 105,
+          "text": "                \"screened_metrics\": len(analysis.screened_metrics),"
+        },
+        {
+          "n": 106,
+          "text": "                \"matched_metrics\": len(analysis.matched_metrics),"
+        },
+        {
+          "n": 107,
+          "text": "                \"candidate_metrics\": len(analysis.candidate_metrics),"
+        },
+        {
+          "n": 108,
+          "text": "            }"
+        },
+        {
+          "n": 109,
+          "text": "            # model_dump(mode='json') 转成适合 JSON 序列化的数据，类似向接口提交普通 JS 对象。"
+        },
+        {
+          "n": 110,
+          "text": "            # metadata 中有评分、指标和原文依据，供前端表格/抽屉使用；output 用于报告正文。"
+        },
+        {
+          "n": 111,
+          "text": "            yield RunCompletedEvent(output=markdown, usage=usage, metadata={"
+        },
+        {
+          "n": 112,
+          "text": "                \"mandate_risk_v2\": {\"phase\": \"complete\", \"mode\": \"screening\","
+        },
+        {
+          "n": 113,
+          "text": "                                    \"result\": analysis.model_dump(mode=\"json\")},"
+        },
+        {
+          "n": 114,
+          "text": "            })"
+        },
+        {
+          "n": 115,
+          "text": "            # return 结束生成器，避免快速筛选完成后又继续执行下面的 detailed 流程。"
+        },
+        {
+          "n": 116,
+          "text": "            return"
+        }
+      ]
+    },
+    {
+      "id": "screen",
+      "title": "筛选批次：全库账目和真实引用",
+      "path": "app/mandate_risk_v2/screening.py",
+      "start": 95,
+      "end": 128,
+      "why": "每批每个库行都必须出现一次；DIRECT/REVIEW 必须有本窗口真实原文 ID。",
+      "notes": [
+        "Semaphore 限制并发，默认 2；每批默认 40 个库行。",
+        "range(2) 是首次 + 一次结构反馈重试。",
+        "gather 保持输入顺序，响应快慢不改变最终聚合顺序。"
+      ],
+      "lines": [
+        {
+          "n": 95,
+          "text": "            async with semaphore:"
+        },
+        {
+          "n": 96,
+          "text": "                for attempt in range(2):"
+        },
+        {
+          "n": 97,
+          "text": "                    try:"
+        },
+        {
+          "n": 98,
+          "text": "                        call_count += 1"
+        },
+        {
+          "n": 99,
+          "text": "                        payload, usage = await self._model._call_model("
+        },
+        {
+          "n": 100,
+          "text": "                            provider=provider, system_prompt=SCREENING_SYSTEM_PROMPT,"
+        },
+        {
+          "n": 101,
+          "text": "                            user_prompt=\"\\n\".join(parts), signal=signal, stage=\"screening\","
+        },
+        {
+          "n": 102,
+          "text": "                        )"
+        },
+        {
+          "n": 103,
+          "text": "                        reports.append(usage)"
+        },
+        {
+          "n": 104,
+          "text": "                        batch = ScreeningBatch.model_validate(payload)"
+        },
+        {
+          "n": 105,
+          "text": "                        ids = [item.raw_row_id for item in batch.rows]"
+        },
+        {
+          "n": 106,
+          "text": "                        if len(ids) != len(set(ids)) or set(ids) != allowed_rows:"
+        },
+        {
+          "n": 107,
+          "text": "                            raise ValueError(\"each assigned catalogue row must appear exactly once\")"
+        },
+        {
+          "n": 108,
+          "text": "                        for item in batch.rows:"
+        },
+        {
+          "n": 109,
+          "text": "                            if item.level != \"NOT_RELEVANT\" and not item.evidence_clause_ids:"
+        },
+        {
+          "n": 110,
+          "text": "                                raise ValueError(f\"row {item.raw_row_id}: selected metric needs PDF evidence\")"
+        },
+        {
+          "n": 111,
+          "text": "                            if not set(item.evidence_clause_ids) <= allowed_clauses:"
+        },
+        {
+          "n": 112,
+          "text": "                                raise ValueError(f\"row {item.raw_row_id}: unknown evidence clause_id\")"
+        },
+        {
+          "n": 113,
+          "text": "                            if not item.reason.strip():"
+        },
+        {
+          "n": 114,
+          "text": "                                raise ValueError(f\"row {item.raw_row_id}: empty reason\")"
+        },
+        {
+          "n": 115,
+          "text": "                        return batch.rows"
+        },
+        {
+          "n": 116,
+          "text": "                    except (ValueError, TypeError) as exc:"
+        },
+        {
+          "n": 117,
+          "text": "                        if attempt:"
+        },
+        {
+          "n": 118,
+          "text": "                            raise ValueError(f\"MANDATE_SCREENING_INVALID: {exc}\") from exc"
+        },
+        {
+          "n": 119,
+          "text": "                        feedback = str(exc)[:2000]"
+        },
+        {
+          "n": 120,
+          "text": "                        validation_errors.append(feedback)"
+        },
+        {
+          "n": 121,
+          "text": "                        parts.extend([\"# Previous output failed structural validation\", feedback])"
+        },
+        {
+          "n": 122,
+          "text": ""
+        },
+        {
+          "n": 123,
+          "text": "        # gather preserves window order, making aggregation independent of response timing."
+        },
+        {
+          "n": 124,
+          "text": "        batches = await asyncio.gather(*("
+        },
+        {
+          "n": 125,
+          "text": "            screen(window, rows[offset:offset + self.batch_size], index)"
+        },
+        {
+          "n": 126,
+          "text": "            for index, window in enumerate(windows)"
+        },
+        {
+          "n": 127,
+          "text": "            for offset in range(0, len(rows), self.batch_size)"
+        },
+        {
+          "n": 128,
+          "text": "        ))"
+        }
+      ]
+    },
+    {
+      "id": "screenresult",
+      "title": "筛选聚合：指标名称与原文回填",
+      "path": "app/mandate_risk_v2/screening.py",
+      "start": 133,
+      "end": 169,
+      "why": "按真实库行聚合窗口关联，Python 回填权威名称和证据。",
+      "notes": [
+        "SRC-xxxx 是展示兼容用的证据包装，OTHER + screening_evidence，不是提取的合同要求。",
+        "任一窗口 DIRECT → matched；否则 REVIEW → candidate。",
+        "总分取选中关联中最高分，coverage_status 明确为 not_audited。"
+      ],
+      "lines": [
+        {
+          "n": 133,
+          "text": ""
+        },
+        {
+          "n": 134,
+          "text": "        screened, matched, candidates, requirements, assessments = [], [], [], [], []"
+        },
+        {
+          "n": 135,
+          "text": "        for metric in rows:"
+        },
+        {
+          "n": 136,
+          "text": "            selected = [item for item in by_row[metric.row_id] if item.level != \"NOT_RELEVANT\"]"
+        },
+        {
+          "n": 137,
+          "text": "            assessments.append(MetricRowAssessment("
+        },
+        {
+          "n": 138,
+          "text": "                raw_row_id=metric.row_id, outcome=\"LINKED\" if selected else \"NOT_RELEVANT\","
+        },
+        {
+          "n": 139,
+          "text": "                reason=\"；\".join(dict.fromkeys(item.reason for item in by_row[metric.row_id])),"
+        },
+        {
+          "n": 140,
+          "text": "            ))"
+        },
+        {
+          "n": 141,
+          "text": "            if not selected:"
+        },
+        {
+          "n": 142,
+          "text": "                continue"
+        },
+        {
+          "n": 143,
+          "text": "            associations = []"
+        },
+        {
+          "n": 144,
+          "text": "            for item in selected:"
+        },
+        {
+          "n": 145,
+          "text": "                evidence = canonical_evidence(list(dict.fromkeys(item.evidence_clause_ids)), clauses)"
+        },
+        {
+          "n": 146,
+          "text": "                requirement = RequirementResultItem("
+        },
+        {
+          "n": 147,
+          "text": "                    requirement=Requirement("
+        },
+        {
+          "n": 148,
+          "text": "                        requirement_id=f\"SRC-{len(requirements) + 1:04d}\", requirement_type=\"OTHER\","
+        },
+        {
+          "n": 149,
+          "text": "                        semantic_summary=\"\\n\".join(quote.text for quote in evidence),"
+        },
+        {
+          "n": 150,
+          "text": "                        evidence=EvidenceRef(clause_ids=[quote.clause_id for quote in evidence]),"
+        },
+        {
+          "n": 151,
+          "text": "                        attributes={\"screening_evidence\": True},"
+        },
+        {
+          "n": 152,
+          "text": "                    ), evidence=evidence,"
+        },
+        {
+          "n": 153,
+          "text": "                )"
+        },
+        {
+          "n": 154,
+          "text": "                requirements.append(requirement)"
+        },
+        {
+          "n": 155,
+          "text": "                associations.append(MetricRequirementResult("
+        },
+        {
+          "n": 156,
+          "text": "                    requirement=requirement, mapping_level=item.level, mapping_reason=item.reason,"
+        },
+        {
+          "n": 157,
+          "text": "                    mapping_evidence=evidence, match_score=item.match_score, score_reason=item.reason,"
+        },
+        {
+          "n": 158,
+          "text": "                    review_notes=[item.differences] if item.differences.strip() else [],"
+        },
+        {
+          "n": 159,
+          "text": "                ))"
+        },
+        {
+          "n": 160,
+          "text": "            strongest = max(selected, key=lambda item: item.match_score)"
+        },
+        {
+          "n": 161,
+          "text": "            result = MatchedMetricResult(metric=_metric_reference(metric), requirements=associations,"
+        },
+        {
+          "n": 162,
+          "text": "                                         match_score=strongest.match_score, score_reason=strongest.reason)"
+        },
+        {
+          "n": 163,
+          "text": "            screened.append(result)"
+        },
+        {
+          "n": 164,
+          "text": "            (matched if any(item.level == \"DIRECT\" for item in selected) else candidates).append(result)"
+        },
+        {
+          "n": 165,
+          "text": "        screened.sort(key=lambda item: (-item.match_score, item.metric.raw_row_id))"
+        },
+        {
+          "n": 166,
+          "text": "        analysis = V2AnalysisResult("
+        },
+        {
+          "n": 167,
+          "text": "            document_name=document_name, analysis_mode=\"screening\", coverage_status=\"not_audited\","
+        },
+        {
+          "n": 168,
+          "text": "            metric_catalogue_name=_catalogue_name(registry), metric_catalogue_sha256=registry.source_sha256 or None,"
+        },
+        {
+          "n": 169,
+          "text": "            catalogue_assessments=assessments, requirements=requirements,"
+        }
+      ]
+    },
+    {
+      "id": "ir",
+      "title": "Requirement IR：保留要求的维度",
+      "path": "app/mandate_risk_v2/models.py",
+      "start": 122,
+      "end": 158,
+      "why": "不把合同要求压成一句“风险类型”，而是把测量对象、约束、条件、例外和证据结构化。",
+      "notes": [
+        "Requirement 允许保存 measurement、constraint、scope、conditions 等维度。",
+        "REQ/DEF/CTX 编号经 Python 统一后用于后续关联。",
+        "它是语义中间表示，尚不是指标选择，更不是计算结果。"
+      ],
+      "lines": [
+        {
+          "n": 122,
+          "text": "class Requirement(StrictModel):"
+        },
+        {
+          "n": 123,
+          "text": "    requirement_id: str"
+        },
+        {
+          "n": 124,
+          "text": "    requirement_type: RequirementType"
+        },
+        {
+          "n": 125,
+          "text": "    semantic_summary: str"
+        },
+        {
+          "n": 126,
+          "text": "    subject: RequirementSubject = Field(default_factory=RequirementSubject)"
+        },
+        {
+          "n": 127,
+          "text": "    measurement: RequirementMeasurement = Field(default_factory=RequirementMeasurement)"
+        },
+        {
+          "n": 128,
+          "text": "    constraint: RequirementConstraint | None = None"
+        },
+        {
+          "n": 129,
+          "text": "    scope: Dict[str, Any] = Field(default_factory=dict)"
+        },
+        {
+          "n": 130,
+          "text": "    conditions: List[Union[RequirementCondition, Dict[str, Any], str]] = Field(default_factory=list)"
+        },
+        {
+          "n": 131,
+          "text": "    exceptions: List[Union[Dict[str, Any], str]] = Field(default_factory=list)"
+        },
+        {
+          "n": 132,
+          "text": "    relations: List[RequirementRelation] = Field(default_factory=list)"
+        },
+        {
+          "n": 133,
+          "text": "    evidence: EvidenceRef"
+        },
+        {
+          "n": 134,
+          "text": "    attributes: Dict[str, Any] = Field(default_factory=dict)"
+        },
+        {
+          "n": 135,
+          "text": ""
+        },
+        {
+          "n": 136,
+          "text": ""
+        },
+        {
+          "n": 137,
+          "text": "class Definition(StrictModel):"
+        },
+        {
+          "n": 138,
+          "text": "    definition_id: str"
+        },
+        {
+          "n": 139,
+          "text": "    term: str"
+        },
+        {
+          "n": 140,
+          "text": "    semantic_summary: str"
+        },
+        {
+          "n": 141,
+          "text": "    evidence: EvidenceRef"
+        },
+        {
+          "n": 142,
+          "text": ""
+        },
+        {
+          "n": 143,
+          "text": ""
+        },
+        {
+          "n": 144,
+          "text": "class ContextFact(StrictModel):"
+        },
+        {
+          "n": 145,
+          "text": "    fact_id: str"
+        },
+        {
+          "n": 146,
+          "text": "    fact_type: str"
+        },
+        {
+          "n": 147,
+          "text": "    semantic_summary: str"
+        },
+        {
+          "n": 148,
+          "text": "    value: Any = None"
+        },
+        {
+          "n": 149,
+          "text": "    evidence: EvidenceRef"
+        },
+        {
+          "n": 150,
+          "text": "    attributes: Dict[str, Any] = Field(default_factory=dict)"
+        },
+        {
+          "n": 151,
+          "text": ""
+        },
+        {
+          "n": 152,
+          "text": ""
+        },
+        {
+          "n": 153,
+          "text": "class RequirementIR(StrictModel):"
+        },
+        {
+          "n": 154,
+          "text": "    document_name: str"
+        },
+        {
+          "n": 155,
+          "text": "    requirements: List[Requirement] = Field(default_factory=list)"
+        },
+        {
+          "n": 156,
+          "text": "    definitions: List[Definition] = Field(default_factory=list)"
+        },
+        {
+          "n": 157,
+          "text": "    contextual_facts: List[ContextFact] = Field(default_factory=list)"
+        },
+        {
+          "n": 158,
+          "text": "    document_profile: Dict[str, Any] = Field(default_factory=dict)"
+        }
+      ]
+    },
+    {
+      "id": "coveragegate",
+      "title": "Phase A：完整性闸门",
+      "path": "app/mandate_risk_v2/pipeline.py",
+      "start": 359,
+      "end": 424,
+      "why": "只有提取与覆盖审计通过才允许进入 Phase B；遗漏会反馈给下一轮重读。",
+      "notes": [
+        "条款切分 → 窗口提取 → 全文审计。",
+        "MAX_REPAIR_ROUNDS=2：最多三轮完整提取/审计。",
+        "最后仍不完整抛 RequirementCoverageIncomplete，禁止继续映射。"
+      ],
+      "lines": [
+        {
+          "n": 359,
+          "text": "        clauses = split_document_clauses(raw)"
+        },
+        {
+          "n": 360,
+          "text": "        if not clauses:"
+        },
+        {
+          "n": 361,
+          "text": "            raise ValueError(\"MANDATE_REQUIREMENT_NO_CLAUSES\")"
+        },
+        {
+          "n": 362,
+          "text": "        extraction_mode, windows = choose_extraction_windows("
+        },
+        {
+          "n": 363,
+          "text": "            clauses,"
+        },
+        {
+          "n": 364,
+          "text": "            batch_size=self.batch_size,"
+        },
+        {
+          "n": 365,
+          "text": "            overlap=self.overlap,"
+        },
+        {
+          "n": 366,
+          "text": "            full_document_max_clauses=self.full_document_max_clauses,"
+        },
+        {
+          "n": 367,
+          "text": "            full_document_max_chars=self.full_document_max_chars,"
+        },
+        {
+          "n": 368,
+          "text": "        )"
+        },
+        {
+          "n": 369,
+          "text": "        coverage_hints = build_coverage_hints(clauses)"
+        },
+        {
+          "n": 370,
+          "text": "        expected_hint_clause_ids = [str(item[\"clause_id\"]) for item in coverage_hints]"
+        },
+        {
+          "n": 371,
+          "text": ""
+        },
+        {
+          "n": 372,
+          "text": "        extraction_usage: List[Dict[str, int]] = []"
+        },
+        {
+          "n": 373,
+          "text": "        extraction_expected_calls = 0"
+        },
+        {
+          "n": 374,
+          "text": "        coverage_usage: List[Dict[str, int]] = []"
+        },
+        {
+          "n": 375,
+          "text": "        coverage_expected_calls = 0"
+        },
+        {
+          "n": 376,
+          "text": "        review_feedback: dict | None = None"
+        },
+        {
+          "n": 377,
+          "text": "        final_review: CoverageReview | None = None"
+        },
+        {
+          "n": 378,
+          "text": "        attempts = self.max_repair_rounds + 1"
+        },
+        {
+          "n": 379,
+          "text": ""
+        },
+        {
+          "n": 380,
+          "text": "        for attempt_index in range(attempts):"
+        },
+        {
+          "n": 381,
+          "text": "            if _is_aborted(signal):"
+        },
+        {
+          "n": 382,
+          "text": "                raise RuntimeError(\"客户端连接已中断\")"
+        },
+        {
+          "n": 383,
+          "text": ""
+        },
+        {
+          "n": 384,
+          "text": "            final_ir, extraction_calls = await self._extract_attempt("
+        },
+        {
+          "n": 385,
+          "text": "                document_name=document_name,"
+        },
+        {
+          "n": 386,
+          "text": "                windows=windows,"
+        },
+        {
+          "n": 387,
+          "text": "                provider=provider,"
+        },
+        {
+          "n": 388,
+          "text": "                signal=signal,"
+        },
+        {
+          "n": 389,
+          "text": "                review_feedback=review_feedback,"
+        },
+        {
+          "n": 390,
+          "text": "                extraction_usage=extraction_usage,"
+        },
+        {
+          "n": 391,
+          "text": "            )"
+        },
+        {
+          "n": 392,
+          "text": "            extraction_expected_calls += extraction_calls"
+        },
+        {
+          "n": 393,
+          "text": "            final_review, coverage_calls = await self._review_coverage("
+        },
+        {
+          "n": 394,
+          "text": "                document_name=document_name,"
+        },
+        {
+          "n": 395,
+          "text": "                clauses=clauses,"
+        },
+        {
+          "n": 396,
+          "text": "                requirement_ir=final_ir,"
+        },
+        {
+          "n": 397,
+          "text": "                coverage_hints=coverage_hints,"
+        },
+        {
+          "n": 398,
+          "text": "                expected_hint_clause_ids=expected_hint_clause_ids,"
+        },
+        {
+          "n": 399,
+          "text": "                provider=provider,"
+        },
+        {
+          "n": 400,
+          "text": "                signal=signal,"
+        },
+        {
+          "n": 401,
+          "text": "                coverage_usage=coverage_usage,"
+        },
+        {
+          "n": 402,
+          "text": "            )"
+        },
+        {
+          "n": 403,
+          "text": "            coverage_expected_calls += coverage_calls"
+        },
+        {
+          "n": 404,
+          "text": "            if final_review.complete:"
+        },
+        {
+          "n": 405,
+          "text": "                completed_attempts = attempt_index + 1"
+        },
+        {
+          "n": 406,
+          "text": "                usage = _aggregate_usage("
+        },
+        {
+          "n": 407,
+          "text": "                    extraction_usage,"
+        },
+        {
+          "n": 408,
+          "text": "                    extraction_expected_calls,"
+        },
+        {
+          "n": 409,
+          "text": "                    coverage_usage,"
+        },
+        {
+          "n": 410,
+          "text": "                    coverage_expected_calls,"
+        },
+        {
+          "n": 411,
+          "text": "                )"
+        },
+        {
+          "n": 412,
+          "text": "                return RequirementPipelineResult("
+        },
+        {
+          "n": 413,
+          "text": "                    clauses=clauses,"
+        },
+        {
+          "n": 414,
+          "text": "                    requirement_ir=final_ir,"
+        },
+        {
+          "n": 415,
+          "text": "                    coverage_review=final_review,"
+        },
+        {
+          "n": 416,
+          "text": "                    usage=usage,"
+        },
+        {
+          "n": 417,
+          "text": "                    extraction_attempts=completed_attempts,"
+        },
+        {
+          "n": 418,
+          "text": "                    extraction_mode=extraction_mode,"
+        },
+        {
+          "n": 419,
+          "text": "                )"
+        },
+        {
+          "n": 420,
+          "text": ""
+        },
+        {
+          "n": 421,
+          "text": "            review_feedback = final_review.model_dump()"
+        },
+        {
+          "n": 422,
+          "text": ""
+        },
+        {
+          "n": 423,
+          "text": "        assert final_review is not None"
+        },
+        {
+          "n": 424,
+          "text": "        raise RequirementCoverageIncomplete(final_review)"
+        }
+      ]
+    },
+    {
+      "id": "coverage",
+      "title": "每条原文都要有审计结论",
+      "path": "app/mandate_risk_v2/coverage.py",
+      "start": 126,
+      "end": 178,
+      "why": "Python 检查 coverage 的账目与引用，不采信模型一句“complete”。",
+      "notes": [
+        "每个 clause 恰好一个 assessment，禁止缺项和重复。",
+        "COVERED/PARTIAL 必须能沿 Requirement 引用回到该 clause。",
+        "引用合法不等于语义一定正确；语义判断仍依赖模型。"
+      ],
+      "lines": [
+        {
+          "n": 126,
+          "text": "    if expected_hint_clause_ids is not None:"
+        },
+        {
+          "n": 127,
+          "text": "        expected = set(expected_hint_clause_ids)"
+        },
+        {
+          "n": 128,
+          "text": "        actual = set(assessment_ids)"
+        },
+        {
+          "n": 129,
+          "text": "        missing_assessments = expected - actual"
+        },
+        {
+          "n": 130,
+          "text": "        unexpected_assessments = actual - expected"
+        },
+        {
+          "n": 131,
+          "text": "        if missing_assessments:"
+        },
+        {
+          "n": 132,
+          "text": "            raise ValueError("
+        },
+        {
+          "n": 133,
+          "text": "                \"coverage review omitted clause assessments: \""
+        },
+        {
+          "n": 134,
+          "text": "                + \", \".join(sorted(missing_assessments))"
+        },
+        {
+          "n": 135,
+          "text": "            )"
+        },
+        {
+          "n": 136,
+          "text": "        if unexpected_assessments:"
+        },
+        {
+          "n": 137,
+          "text": "            raise ValueError("
+        },
+        {
+          "n": 138,
+          "text": "                \"coverage review assessed unexpected clauses: \""
+        },
+        {
+          "n": 139,
+          "text": "                + \", \".join(sorted(unexpected_assessments))"
+        },
+        {
+          "n": 140,
+          "text": "            )"
+        },
+        {
+          "n": 141,
+          "text": ""
+        },
+        {
+          "n": 142,
+          "text": "    for assessment in review.hint_assessments:"
+        },
+        {
+          "n": 143,
+          "text": "        if len(set(assessment.requirement_ids)) != len(assessment.requirement_ids):"
+        },
+        {
+          "n": 144,
+          "text": "            raise ValueError("
+        },
+        {
+          "n": 145,
+          "text": "                f\"coverage hint {assessment.clause_id} contains duplicate requirement_ids\""
+        },
+        {
+          "n": 146,
+          "text": "            )"
+        },
+        {
+          "n": 147,
+          "text": "        unknown = ["
+        },
+        {
+          "n": 148,
+          "text": "            requirement_id"
+        },
+        {
+          "n": 149,
+          "text": "            for requirement_id in assessment.requirement_ids"
+        },
+        {
+          "n": 150,
+          "text": "            if requirement_id not in known_requirement_ids"
+        },
+        {
+          "n": 151,
+          "text": "        ]"
+        },
+        {
+          "n": 152,
+          "text": "        if unknown:"
+        },
+        {
+          "n": 153,
+          "text": "            raise ValueError("
+        },
+        {
+          "n": 154,
+          "text": "                f\"coverage hint {assessment.clause_id} contains unknown requirement_id: \""
+        },
+        {
+          "n": 155,
+          "text": "                + \", \".join(unknown)"
+        },
+        {
+          "n": 156,
+          "text": "            )"
+        },
+        {
+          "n": 157,
+          "text": "        if assessment.disposition in {\"COVERED\", \"PARTIAL\"}:"
+        },
+        {
+          "n": 158,
+          "text": "            if not assessment.requirement_ids:"
+        },
+        {
+          "n": 159,
+          "text": "                raise ValueError("
+        },
+        {
+          "n": 160,
+          "text": "                    f\"coverage hint {assessment.clause_id} disposition {assessment.disposition} \""
+        },
+        {
+          "n": 161,
+          "text": "                    \"requires at least one requirement_id\""
+        },
+        {
+          "n": 162,
+          "text": "                )"
+        },
+        {
+          "n": 163,
+          "text": "            cited_by = {"
+        },
+        {
+          "n": 164,
+          "text": "                requirement.requirement_id"
+        },
+        {
+          "n": 165,
+          "text": "                for requirement in requirement_ir.requirements"
+        },
+        {
+          "n": 166,
+          "text": "                if assessment.clause_id in requirement.evidence.clause_ids"
+        },
+        {
+          "n": 167,
+          "text": "            }"
+        },
+        {
+          "n": 168,
+          "text": "            if not set(assessment.requirement_ids).issubset(cited_by):"
+        },
+        {
+          "n": 169,
+          "text": "                raise ValueError("
+        },
+        {
+          "n": 170,
+          "text": "                    f\"coverage hint {assessment.clause_id} is marked {assessment.disposition} \""
+        },
+        {
+          "n": 171,
+          "text": "                    \"but some referenced requirements do not cite that clause\""
+        },
+        {
+          "n": 172,
+          "text": "                )"
+        },
+        {
+          "n": 173,
+          "text": "        if assessment.disposition in {\"DEFINITION_OR_CONTEXT\", \"NOT_REQUIREMENT\", \"MISSING\"}:"
+        },
+        {
+          "n": 174,
+          "text": "            if assessment.requirement_ids:"
+        },
+        {
+          "n": 175,
+          "text": "                raise ValueError("
+        },
+        {
+          "n": 176,
+          "text": "                    f\"coverage hint {assessment.clause_id} disposition {assessment.disposition} \""
+        },
+        {
+          "n": 177,
+          "text": "                    \"must not claim requirement_ids\""
+        },
+        {
+          "n": 178,
+          "text": "                )"
+        }
+      ]
+    },
+    {
+      "id": "evidence",
+      "title": "原文引用：ID → 权威文字",
+      "path": "app/mandate_risk_v2/extractor.py",
+      "start": 225,
+      "end": 245,
+      "why": "模型返回 clause_id，最终原文/页码/偏移量从 Python 解析条款重建。",
+      "notes": [
+        "canonical_evidence 按 ID 查源，不采用模型自行复制或改写的引文。",
+        "source_start/source_end 标明相对解析文本的位置，不是 PDF 版式坐标。",
+        "这把语义判断与来源真实性分开。"
+      ],
+      "lines": [
+        {
+          "n": 225,
+          "text": "def canonical_evidence("
+        },
+        {
+          "n": 226,
+          "text": "    clause_ids: Sequence[str], clauses: Sequence[DocumentClause]"
+        },
+        {
+          "n": 227,
+          "text": ") -> List[CanonicalEvidence]:"
+        },
+        {
+          "n": 228,
+          "text": "    \"\"\"Rebuild report evidence from Python-owned clause provenance.\"\"\""
+        },
+        {
+          "n": 229,
+          "text": ""
+        },
+        {
+          "n": 230,
+          "text": "    by_id = {clause.clause_id: clause for clause in clauses}"
+        },
+        {
+          "n": 231,
+          "text": "    result: List[CanonicalEvidence] = []"
+        },
+        {
+          "n": 232,
+          "text": "    for clause_id in clause_ids:"
+        },
+        {
+          "n": 233,
+          "text": "        clause = by_id.get(clause_id)"
+        },
+        {
+          "n": 234,
+          "text": "        if clause is None:"
+        },
+        {
+          "n": 235,
+          "text": "            raise ValueError(f\"unknown clause_id: {clause_id}\")"
+        },
+        {
+          "n": 236,
+          "text": "        result.append("
+        },
+        {
+          "n": 237,
+          "text": "            CanonicalEvidence("
+        },
+        {
+          "n": 238,
+          "text": "                clause_id=clause.clause_id,"
+        },
+        {
+          "n": 239,
+          "text": "                text=clause.text,"
+        },
+        {
+          "n": 240,
+          "text": "                page=clause.page,"
+        },
+        {
+          "n": 241,
+          "text": "                source_start=clause.source_start,"
+        },
+        {
+          "n": 242,
+          "text": "                source_end=clause.source_end,"
+        },
+        {
+          "n": 243,
+          "text": "            )"
+        },
+        {
+          "n": 244,
+          "text": "        )"
+        },
+        {
+          "n": 245,
+          "text": "    return result"
+        }
+      ]
+    },
+    {
+      "id": "mapbatch",
+      "title": "Phase B：分批映射",
+      "path": "app/mandate_risk_v2/mapping.py",
+      "start": 189,
+      "end": 225,
+      "why": "所有 Requirement 与真实指标库分批对照，输出多对多关联。",
+      "notes": [
+        "默认 8 个库行一批，2 批并发；不是向量召回 Top-K。",
+        "模型输出需要形状、库行账目和证据校验。",
+        "一次结构反馈重试与 Critic 的语义异议是两种机制。"
+      ],
+      "lines": [
+        {
+          "n": 189,
+          "text": "        critic_feedback: str | None = None"
+        },
+        {
+          "n": 190,
+          "text": "        for repair in range(self.max_critic_repairs + 1):"
+        },
+        {
+          "n": 191,
+          "text": "            links: list[MappingLink] = []"
+        },
+        {
+          "n": 192,
+          "text": "            row_assessments: list[MetricRowAssessment] = []"
+        },
+        {
+          "n": 193,
+          "text": "            semaphore = asyncio.Semaphore(self.concurrency)"
+        },
+        {
+          "n": 194,
+          "text": ""
+        },
+        {
+          "n": 195,
+          "text": "            async def map_batch(batch_rows):"
+        },
+        {
+          "n": 196,
+          "text": "                feedback: str | None = critic_feedback"
+        },
+        {
+          "n": 197,
+          "text": "                async with semaphore:"
+        },
+        {
+          "n": 198,
+          "text": "                    for validation_attempt in range(2):"
+        },
+        {
+          "n": 199,
+          "text": "                        try:"
+        },
+        {
+          "n": 200,
+          "text": "                            payload = await call("
+        },
+        {
+          "n": 201,
+          "text": "                                \"mapping_batch\","
+        },
+        {
+          "n": 202,
+          "text": "                                MAPPING_SYSTEM_PROMPT,"
+        },
+        {
+          "n": 203,
+          "text": "                                batch_prompt(ir, clauses, batch_rows, feedback),"
+        },
+        {
+          "n": 204,
+          "text": "                            )"
+        },
+        {
+          "n": 205,
+          "text": "                            return validate_batch("
+        },
+        {
+          "n": 206,
+          "text": "                                payload, ir=ir, registry=registry,"
+        },
+        {
+          "n": 207,
+          "text": "                                batch_row_ids={x.row_id for x in batch_rows},"
+        },
+        {
+          "n": 208,
+          "text": "                                require_scores=True,"
+        },
+        {
+          "n": 209,
+          "text": "                            )"
+        },
+        {
+          "n": 210,
+          "text": "                        except (ValueError, TypeError) as exc:"
+        },
+        {
+          "n": 211,
+          "text": "                            if validation_attempt:"
+        },
+        {
+          "n": 212,
+          "text": "                                raise ValueError(f\"MANDATE_MAPPING_BATCH_INVALID: {exc}\") from exc"
+        },
+        {
+          "n": 213,
+          "text": "                            feedback = str(exc)[:2000]"
+        },
+        {
+          "n": 214,
+          "text": "                            validation_errors.append({\"stage\": \"mapping\", \"error\": feedback})"
+        },
+        {
+          "n": 215,
+          "text": ""
+        },
+        {
+          "n": 216,
+          "text": "            batches = await asyncio.gather("
+        },
+        {
+          "n": 217,
+          "text": "                *(map_batch(rows[offset:offset + self.batch_size])"
+        },
+        {
+          "n": 218,
+          "text": "                  for offset in range(0, len(rows), self.batch_size)),"
+        },
+        {
+          "n": 219,
+          "text": "                return_exceptions=True,"
+        },
+        {
+          "n": 220,
+          "text": "            )"
+        },
+        {
+          "n": 221,
+          "text": "            for batch in batches:"
+        },
+        {
+          "n": 222,
+          "text": "                if isinstance(batch, BaseException):"
+        },
+        {
+          "n": 223,
+          "text": "                    raise batch"
+        },
+        {
+          "n": 224,
+          "text": "                links.extend(batch.links)"
+        },
+        {
+          "n": 225,
+          "text": "                row_assessments.extend(batch.row_assessments)"
+        }
+      ]
+    },
+    {
+      "id": "critic",
+      "title": "独立复核：落实异议",
+      "path": "app/mandate_risk_v2/mapping.py",
+      "start": 269,
+      "end": 301,
+      "why": "Critic 可以召回遗漏、拒绝误关联、修正分数，异议去向会降级为待复核。",
+      "notes": [
+        "默认 max_critic_repairs=0 仍调用 Critic 一次。",
+        "只有显式增大该配置，才允许异议反馈后重新映射。",
+        "不能把默认流程画成无限 mapper ↔ Critic 循环。"
+      ],
+      "lines": [
+        {
+          "n": 269,
+          "text": "            objections = [item for item in critic.verdicts if item.verdict != \"CONFIRM\"]"
+        },
+        {
+          "n": 270,
+          "text": "            if not objections or repair >= self.max_critic_repairs:"
+        },
+        {
+          "n": 271,
+          "text": "                if objections or critic.rejected_candidates or critic.missing_aspects:"
+        },
+        {
+          "n": 272,
+          "text": "                    dispositions = _apply_unconfirmed_critic_verdicts(dispositions, critic)"
+        },
+        {
+          "n": 273,
+          "text": "                recalled_ids = {(link.requirement_id, link.raw_row_id) for link in critic.recalled_links}"
+        },
+        {
+          "n": 274,
+          "text": "                links = [link for link in links if (link.requirement_id, link.raw_row_id) not in recalled_ids]"
+        },
+        {
+          "n": 275,
+          "text": "                links.extend(critic.recalled_links)"
+        },
+        {
+          "n": 276,
+          "text": "                adjustments = {(item.requirement_id, item.raw_row_id): item"
+        },
+        {
+          "n": 277,
+          "text": "                               for item in critic.score_adjustments}"
+        },
+        {
+          "n": 278,
+          "text": "                links = [link.model_copy(update={"
+        },
+        {
+          "n": 279,
+          "text": "                    \"match_score\": adjustments[(link.requirement_id, link.raw_row_id)].match_score,"
+        },
+        {
+          "n": 280,
+          "text": "                    \"score_reason\": \"Critic：\" + adjustments[(link.requirement_id, link.raw_row_id)].score_reason,"
+        },
+        {
+          "n": 281,
+          "text": "                }) if (link.requirement_id, link.raw_row_id) in adjustments else link for link in links]"
+        },
+        {
+          "n": 282,
+          "text": "                complete = all("
+        },
+        {
+          "n": 283,
+          "text": "                    report is not None and \"total_tokens\" in report"
+        },
+        {
+          "n": 284,
+          "text": "                    for report in usage_reports"
+        },
+        {
+          "n": 285,
+          "text": "                )"
+        },
+        {
+          "n": 286,
+          "text": "                usage: dict[str, Any] = {"
+        },
+        {
+          "n": 287,
+          "text": "                    \"complete\": complete,"
+        },
+        {
+          "n": 288,
+          "text": "                    \"expected_calls\": len(usage_reports),"
+        },
+        {
+          "n": 289,
+          "text": "                    \"reported_calls\": sum(report is not None for report in usage_reports),"
+        },
+        {
+          "n": 290,
+          "text": "                    \"validation_errors\": validation_errors,"
+        },
+        {
+          "n": 291,
+          "text": "                }"
+        },
+        {
+          "n": 292,
+          "text": "                if complete:"
+        },
+        {
+          "n": 293,
+          "text": "                    usage[\"total_tokens\"] = sum("
+        },
+        {
+          "n": 294,
+          "text": "                        report[\"total_tokens\"] for report in usage_reports if report"
+        },
+        {
+          "n": 295,
+          "text": "                    )"
+        },
+        {
+          "n": 296,
+          "text": "                return MappingResult("
+        },
+        {
+          "n": 297,
+          "text": "                    links=links,"
+        },
+        {
+          "n": 298,
+          "text": "                    dispositions=dispositions,"
+        },
+        {
+          "n": 299,
+          "text": "                    critic=critic,"
+        },
+        {
+          "n": 300,
+          "text": "                    usage=usage,"
+        },
+        {
+          "n": 301,
+          "text": "                    row_assessments=row_assessments,"
+        }
+      ]
+    },
+    {
+      "id": "destinations",
+      "title": "DIRECT 为什么还不一定进主结果",
+      "path": "app/mandate_risk_v2/mapping.py",
+      "start": 31,
+      "end": 58,
+      "why": "详细模式根据匹配级别、最终去向和 Critic 拒绝共同决定最终归类。",
+      "notes": [
+        "direct_links = DIRECT ∩ MAIN_TABLE 选中 − rejected。",
+        "REVIEW 即使被 MAIN_TABLE 选中，也仍落在 candidate_links。",
+        "这个规则和 screening 的按窗口 DIRECT 归类不同。"
+      ],
+      "lines": [
+        {
+          "n": 31,
+          "text": "    @property"
+        },
+        {
+          "n": 32,
+          "text": "    def screening_links(self) -> list[MappingLink]:"
+        },
+        {
+          "n": 33,
+          "text": "        rejected = {(item.requirement_id, item.raw_row_id) for item in self.critic.rejected_candidates}"
+        },
+        {
+          "n": 34,
+          "text": "        return [link for link in self.links if link.level in {\"DIRECT\", \"REVIEW\"}"
+        },
+        {
+          "n": 35,
+          "text": "                and (link.requirement_id, link.raw_row_id) not in rejected]"
+        },
+        {
+          "n": 36,
+          "text": ""
+        },
+        {
+          "n": 37,
+          "text": "    @property"
+        },
+        {
+          "n": 38,
+          "text": "    def direct_links(self) -> list[MappingLink]:"
+        },
+        {
+          "n": 39,
+          "text": "        selected = {"
+        },
+        {
+          "n": 40,
+          "text": "            (item.requirement_id, row_id)"
+        },
+        {
+          "n": 41,
+          "text": "            for item in self.dispositions.dispositions"
+        },
+        {
+          "n": 42,
+          "text": "            for destination in item.destinations"
+        },
+        {
+          "n": 43,
+          "text": "            if destination.destination == \"MAIN_TABLE\""
+        },
+        {
+          "n": 44,
+          "text": "            for row_id in destination.raw_row_ids"
+        },
+        {
+          "n": 45,
+          "text": "        }"
+        },
+        {
+          "n": 46,
+          "text": "        rejected = {(item.requirement_id, item.raw_row_id) for item in self.critic.rejected_candidates}"
+        },
+        {
+          "n": 47,
+          "text": "        return ["
+        },
+        {
+          "n": 48,
+          "text": "            link for link in self.links"
+        },
+        {
+          "n": 49,
+          "text": "            if link.level == \"DIRECT\" and (link.requirement_id, link.raw_row_id) in selected - rejected"
+        },
+        {
+          "n": 50,
+          "text": "        ]"
+        },
+        {
+          "n": 51,
+          "text": ""
+        },
+        {
+          "n": 52,
+          "text": "    @property"
+        },
+        {
+          "n": 53,
+          "text": "    def candidate_links(self) -> list[MappingLink]:"
+        },
+        {
+          "n": 54,
+          "text": "        formal = {(link.requirement_id, link.raw_row_id) for link in self.direct_links}"
+        },
+        {
+          "n": 55,
+          "text": "        rejected = {(item.requirement_id, item.raw_row_id) for item in self.critic.rejected_candidates}"
+        },
+        {
+          "n": 56,
+          "text": "        return [link for link in self.links"
+        },
+        {
+          "n": 57,
+          "text": "                if link.level in {\"DIRECT\", \"REVIEW\"}"
+        },
+        {
+          "n": 58,
+          "text": "                and (link.requirement_id, link.raw_row_id) not in formal | rejected]"
+        }
+      ]
+    },
+    {
+      "id": "sse",
+      "title": "业务事件变成 SSE 文本帧",
+      "path": "app/main.py",
+      "start": 928,
+      "end": 974,
+      "why": "HTTP 层统一序列化，让浏览器不用理解 LangGraph 或 Python 管线。",
+      "notes": [
+        "message.delta 追加 full_output；reasoning.delta 作为过程说明单独发送。",
+        "stream.done 检查拼接输出一致性；run.completed 保存用量和 metadata。",
+        "run.failed 直接终止成功路径，不伪造完成结果。"
+      ],
+      "lines": [
+        {
+          "n": 928,
+          "text": "                            # 图/普通 Python 流程都输出同一种业务事件；浏览器不需要认识 LangGraph。"
+        },
+        {
+          "n": 929,
+          "text": "                            event_type = getattr(event, \"event\", None) or getattr(event, \"type\", None) or ("
+        },
+        {
+          "n": 930,
+          "text": "                                (event.get(\"event\") or event.get(\"type\")) if isinstance(event, dict) else None"
+        },
+        {
+          "n": 931,
+          "text": "                            )"
+        },
+        {
+          "n": 932,
+          "text": ""
+        },
+        {
+          "n": 933,
+          "text": "                            # 在这里才把事件转成 SSE 文本帧：过程说明和正文分开，正文同时累积用于保存。"
+        },
+        {
+          "n": 934,
+          "text": "                            if event_type == \"reasoning.delta\":"
+        },
+        {
+          "n": 935,
+          "text": "                                has_reasoning = True"
+        },
+        {
+          "n": 936,
+          "text": "                                sequence += 1"
+        },
+        {
+          "n": 937,
+          "text": "                                delta = getattr(event, \"delta\", None) or (event.get(\"delta\") if isinstance(event, dict) else \"\")"
+        },
+        {
+          "n": 938,
+          "text": "                                frame = write_sse_frame(serialize_sse_event({"
+        },
+        {
+          "n": 939,
+          "text": "                                    \"event\": \"reasoning.delta\","
+        },
+        {
+          "n": 940,
+          "text": "                                    \"delta\": delta,"
+        },
+        {
+          "n": 941,
+          "text": "                                    \"sequence\": sequence,"
+        },
+        {
+          "n": 942,
+          "text": "                                }))"
+        },
+        {
+          "n": 943,
+          "text": "                                yield frame"
+        },
+        {
+          "n": 944,
+          "text": "                            elif event_type == \"message.delta\":"
+        },
+        {
+          "n": 945,
+          "text": "                                delta = getattr(event, \"delta\", None) or (event.get(\"delta\") if isinstance(event, dict) else \"\")"
+        },
+        {
+          "n": 946,
+          "text": "                                full_output += delta"
+        },
+        {
+          "n": 947,
+          "text": "                                frame = write_sse_frame(serialize_sse_event({"
+        },
+        {
+          "n": 948,
+          "text": "                                    \"event\": \"message.delta\","
+        },
+        {
+          "n": 949,
+          "text": "                                    \"delta\": delta,"
+        },
+        {
+          "n": 950,
+          "text": "                                }))"
+        },
+        {
+          "n": 951,
+          "text": "                                yield frame"
+        },
+        {
+          "n": 952,
+          "text": "                            elif event_type == \"stream.done\":"
+        },
+        {
+          "n": 953,
+          "text": "                                event_output = getattr(event, \"output\", None) or (event.get(\"output\") if isinstance(event, dict) else \"\")"
+        },
+        {
+          "n": 954,
+          "text": "                                if event_output != full_output:"
+        },
+        {
+          "n": 955,
+          "text": "                                    raise VmChatRunError("
+        },
+        {
+          "n": 956,
+          "text": "                                        \"STREAM_OUTPUT_MISMATCH\","
+        },
+        {
+          "n": 957,
+          "text": "                                        \"AI 助手输出校验失败，请重试\","
+        },
+        {
+          "n": 958,
+          "text": "                                    )"
+        },
+        {
+          "n": 959,
+          "text": "                                last_usage = getattr(event, \"usage\", None) or (event.get(\"usage\") if isinstance(event, dict) else {}) or {}"
+        },
+        {
+          "n": 960,
+          "text": "                            elif event_type == \"run.completed\":"
+        },
+        {
+          "n": 961,
+          "text": "                                event_output = getattr(event, \"output\", None) or (event.get(\"output\") if isinstance(event, dict) else \"\")"
+        },
+        {
+          "n": 962,
+          "text": "                                full_output = event_output or full_output"
+        },
+        {
+          "n": 963,
+          "text": "                                last_usage = getattr(event, \"usage\", None) or (event.get(\"usage\") if isinstance(event, dict) else {}) or {}"
+        },
+        {
+          "n": 964,
+          "text": "                                completion_metadata = getattr(event, \"metadata\", None) if not isinstance(event, dict) else event.get(\"metadata\")"
+        },
+        {
+          "n": 965,
+          "text": "                            elif event_type == \"run.failed\":"
+        },
+        {
+          "n": 966,
+          "text": "                                fail_msg = getattr(event, \"error\", None) or (event.get(\"error\") if isinstance(event, dict) else \"\") or \"AI 助手任务执行失败\""
+        },
+        {
+          "n": 967,
+          "text": "                                err_frame = serialize_sse_event({\"event\": \"run.failed\", \"error\": fail_msg})"
+        },
+        {
+          "n": 968,
+          "text": "                                run_store.fail(runId, err_frame)"
+        },
+        {
+          "n": 969,
+          "text": "                                yield err_frame"
+        },
+        {
+          "n": 970,
+          "text": "                                return"
+        },
+        {
+          "n": 971,
+          "text": "                    finally:"
+        },
+        {
+          "n": 972,
+          "text": "                        if not next_event_task.done():"
+        },
+        {
+          "n": 973,
+          "text": "                            next_event_task.cancel()"
+        },
+        {
+          "n": 974,
+          "text": "                        await asyncio.gather(next_event_task, return_exceptions=True)"
+        }
+      ]
+    },
+    {
+      "id": "keepalive",
+      "title": "等待下一事件与保活",
+      "path": "app/main.py",
+      "start": 903,
+      "end": 923,
+      "why": "asyncio.wait 的超时只是发送保活的机会，待取事件任务还在运行。",
+      "notes": [
+        "__anext__() 类似迭代器 next()，但返回可等待对象。",
+        "create_task 启动取下一事件的任务。",
+        "12 秒没事件就发注释帧 : keep-alive，不取消模型或重新执行工作流。"
+      ],
+      "lines": [
+        {
+          "n": 903,
+          "text": ""
+        },
+        {
+          "n": 904,
+          "text": "                if stream_gen is not None:"
+        },
+        {
+          "n": 905,
+          "text": "                    # __anext__() 取下一个事件；create_task 类似启动一个正在进行的 Promise。"
+        },
+        {
+          "n": 906,
+          "text": "                    next_event_task = asyncio.create_task(stream_gen.__anext__())"
+        },
+        {
+          "n": 907,
+          "text": ""
+        },
+        {
+          "n": 908,
+          "text": "                    try:"
+        },
+        {
+          "n": 909,
+          "text": "                        while True:"
+        },
+        {
+          "n": 910,
+          "text": "                            # wait 最多等 12 秒；超时返回但不取消任务，便于发送 SSE 保活后继续等待。"
+        },
+        {
+          "n": 911,
+          "text": "                            done, _ = await asyncio.wait({next_event_task}, timeout=12.0)"
+        },
+        {
+          "n": 912,
+          "text": "                            if not done:"
+        },
+        {
+          "n": 913,
+          "text": "                                if not is_aborted():"
+        },
+        {
+          "n": 914,
+          "text": "                                    yield \": keep-alive\\n\\n\""
+        },
+        {
+          "n": 915,
+          "text": "                                continue"
+        },
+        {
+          "n": 916,
+          "text": ""
+        },
+        {
+          "n": 917,
+          "text": "                            try:"
+        },
+        {
+          "n": 918,
+          "text": "                                event = next_event_task.result()"
+        },
+        {
+          "n": 919,
+          "text": "                            except StopAsyncIteration:"
+        },
+        {
+          "n": 920,
+          "text": "                                # 异步生成器没有更多事件，相当于迭代器返回 done: true。"
+        },
+        {
+          "n": 921,
+          "text": "                                break"
+        },
+        {
+          "n": 922,
+          "text": ""
+        },
+        {
+          "n": 923,
+          "text": "                            next_event_task = asyncio.create_task(stream_gen.__anext__())"
+        }
+      ]
+    },
+    {
+      "id": "artifact",
+      "title": "交付完成后：产物与会话",
+      "path": "app/main.py",
+      "start": 979,
+      "end": 1029,
+      "why": "HTTP 层发完成帧后继续保存产物和轮次，最后将 RunStore 标记 complete。",
+      "notes": [
+        "只有能解析为 DSL 的 JSON 输出才创建 vm-report-dsl artifact。",
+        "风险 V2 的 Markdown 不会被这里存成 DSL artifact。",
+        "完成帧先发出，所以浏览器看到 completed 不严格等于数据库落盘已全部结束。"
+      ],
+      "lines": [
+        {
+          "n": 979,
+          "text": ""
+        },
+        {
+          "n": 980,
+          "text": "                completion_event = {"
+        },
+        {
+          "n": 981,
+          "text": "                    \"event\": \"run.completed\","
+        },
+        {
+          "n": 982,
+          "text": "                    \"output\": full_output,"
+        },
+        {
+          "n": 983,
+          "text": "                    \"usage\": last_usage,"
+        },
+        {
+          "n": 984,
+          "text": "                }"
+        },
+        {
+          "n": 985,
+          "text": "                if completion_metadata is not None:"
+        },
+        {
+          "n": 986,
+          "text": "                    completion_event[\"metadata\"] = completion_metadata"
+        },
+        {
+          "n": 987,
+          "text": "                frame = write_sse_frame(serialize_sse_event(completion_event))"
+        },
+        {
+          "n": 988,
+          "text": "                yield frame"
+        },
+        {
+          "n": 989,
+          "text": ""
+        },
+        {
+          "n": 990,
+          "text": "                artifact_id = None"
+        },
+        {
+          "n": 991,
+          "text": "                try:"
+        },
+        {
+          "n": 992,
+          "text": "                    parsed_output = json.loads(full_output)"
+        },
+        {
+          "n": 993,
+          "text": "                    is_dsl_artifact = isinstance(parsed_output, list) or ("
+        },
+        {
+          "n": 994,
+          "text": "                        isinstance(parsed_output, dict)"
+        },
+        {
+          "n": 995,
+          "text": "                        and any(key in parsed_output for key in (\"action\", \"requests\", \"view\", \"views\"))"
+        },
+        {
+          "n": 996,
+          "text": "                    )"
+        },
+        {
+          "n": 997,
+          "text": "                    if is_dsl_artifact:"
+        },
+        {
+          "n": 998,
+          "text": "                        artifact = artifact_store.create("
+        },
+        {
+          "n": 999,
+          "text": "                            session_id=getattr(getattr(record, \"request\", None), \"session_id\", None) or runId,"
+        },
+        {
+          "n": 1000,
+          "text": "                            kind=\"vm-report-dsl\","
+        },
+        {
+          "n": 1001,
+          "text": "                            payload=parsed_output,"
+        },
+        {
+          "n": 1002,
+          "text": "                            metadata={\"runId\": runId},"
+        },
+        {
+          "n": 1003,
+          "text": "                        )"
+        },
+        {
+          "n": 1004,
+          "text": "                        artifact_id = artifact.id"
+        },
+        {
+          "n": 1005,
+          "text": "                except Exception:"
+        },
+        {
+          "n": 1006,
+          "text": "                    artifact_id = None"
+        },
+        {
+          "n": 1007,
+          "text": ""
+        },
+        {
+          "n": 1008,
+          "text": "                request_obj = getattr(record, \"request\", None)"
+        },
+        {
+          "n": 1009,
+          "text": "                session_id_for_turn = ("
+        },
+        {
+          "n": 1010,
+          "text": "                    getattr(request_obj, \"session_id\", None)"
+        },
+        {
+          "n": 1011,
+          "text": "                    if request_obj is not None"
+        },
+        {
+          "n": 1012,
+          "text": "                    else None"
+        },
+        {
+          "n": 1013,
+          "text": "                ) or runId"
+        },
+        {
+          "n": 1014,
+          "text": "                session_state = session_manager.get_or_create("
+        },
+        {
+          "n": 1015,
+          "text": "                    session_id_for_turn,"
+        },
+        {
+          "n": 1016,
+          "text": "                    agent_id=getattr(vm_input, \"agentId\", default_agent_id),"
+        },
+        {
+          "n": 1017,
+          "text": "                    role_id=getattr(vm_input, \"roleId\", default_role_id),"
+        },
+        {
+          "n": 1018,
+          "text": "                )"
+        },
+        {
+          "n": 1019,
+          "text": "                session_manager.complete_turn("
+        },
+        {
+          "n": 1020,
+          "text": "                    session_state,"
+        },
+        {
+          "n": 1021,
+          "text": "                    vm_input.userMessage,"
+        },
+        {
+          "n": 1022,
+          "text": "                    full_output,"
+        },
+        {
+          "n": 1023,
+          "text": "                    run_id=runId,"
+        },
+        {
+          "n": 1024,
+          "text": "                    artifact_id=artifact_id,"
+        },
+        {
+          "n": 1025,
+          "text": "                )"
+        },
+        {
+          "n": 1026,
+          "text": ""
+        },
+        {
+          "n": 1027,
+          "text": "                is_normal_ended = True"
+        },
+        {
+          "n": 1028,
+          "text": "                run_store.complete(runId, full_output)"
+        },
+        {
+          "n": 1029,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "title": "Provider：工具描述与工具执行分开",
+      "path": "app/provider/langchain_provider.py",
+      "start": 444,
+      "end": 475,
+      "why": "@tool/bind_tools 是让模型知道可用工具；真正读取资源由后续代码调用白名单回调。",
+      "notes": [
+        "read_resource 由 WorkflowContext 提供；Provider 不自行读取任意路径。",
+        "search_knowledge 只有本次提供回调才绑定。",
+        "Provider 配置决定接入客户端，Agent 配置决定业务流程。"
+      ],
+      "lines": [
+        {
+          "n": 444,
+          "text": "    async def run_skill(self, input: ModelSkillRunInput):"
+        },
+        {
+          "n": 445,
+          "text": "        if is_aborted(input.signal):"
+        },
+        {
+          "n": 446,
+          "text": "            raise RuntimeError(\"ABORTED: Request aborted\")"
+        },
+        {
+          "n": 447,
+          "text": ""
+        },
+        {
+          "n": 448,
+          "text": "        model = (self.build_model(timeout_seconds=input.timeout_seconds)"
+        },
+        {
+          "n": 449,
+          "text": "                 if input.timeout_seconds is not None else self.build_model())"
+        },
+        {
+          "n": 450,
+          "text": "        # @tool 把函数名、参数结构和 docstring 变成模型可读的工具说明；此时还没执行读取。"
+        },
+        {
+          "n": 451,
+          "text": "        @tool(\"read_vmchat_skill_resource\", args_schema=ReadSkillResourceInput)"
+        },
+        {
+          "n": 452,
+          "text": "        def read_resource_tool(path: str) -> str:"
+        },
+        {
+          "n": 453,
+          "text": "            \"\"\"Read one allow-listed agent resource by relative path.\"\"\""
+        },
+        {
+          "n": 454,
+          "text": "            if input.read_resource:"
+        },
+        {
+          "n": 455,
+          "text": "                return input.read_resource(path)"
+        },
+        {
+          "n": 456,
+          "text": "            return \"\""
+        },
+        {
+          "n": 457,
+          "text": ""
+        },
+        {
+          "n": 458,
+          "text": "        tools = [read_resource_tool]"
+        },
+        {
+          "n": 459,
+          "text": "        if input.search_knowledge:"
+        },
+        {
+          "n": 460,
+          "text": "            @tool(\"search_agent_knowledge\", args_schema=SearchKnowledgeInput)"
+        },
+        {
+          "n": 461,
+          "text": "            def search_knowledge_tool(query: str) -> str:"
+        },
+        {
+          "n": 462,
+          "text": "                \"\"\"Search the active agent knowledge base and return only relevant chunks.\"\"\""
+        },
+        {
+          "n": 463,
+          "text": "                if input.search_knowledge:"
+        },
+        {
+          "n": 464,
+          "text": "                    return input.search_knowledge(query)"
+        },
+        {
+          "n": 465,
+          "text": "                return \"KNOWLEDGE_NOT_FOUND\""
+        },
+        {
+          "n": 466,
+          "text": "            tools.append(search_knowledge_tool)"
+        },
+        {
+          "n": 467,
+          "text": ""
+        },
+        {
+          "n": 468,
+          "text": "        # bind_tools 声明“可请求哪些工具”，不会自动执行函数。下面根据工具名调用业务回调。"
+        },
+        {
+          "n": 469,
+          "text": "        bound_model = model.bind_tools(tools)"
+        },
+        {
+          "n": 470,
+          "text": "        "
+        },
+        {
+          "n": 471,
+          "text": "        messages: List[Any] = ["
+        },
+        {
+          "n": 472,
+          "text": "            {\"role\": \"system\", \"content\": input.systemPrompt},"
+        },
+        {
+          "n": 473,
+          "text": "            {\"role\": \"user\", \"content\": input.userPrompt},"
+        },
+        {
+          "n": 474,
+          "text": "        ]"
+        },
+        {
+          "n": 475,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "allowlist",
+      "title": "资源读取：白名单和预算",
+      "path": "app/resources/skill_resource_reader.py",
+      "start": 38,
+      "end": 73,
+      "why": "把模型工具请求当外部数据，限制路径、重复读取和回填字符量。",
+      "notes": [
+        "拒绝绝对路径、反斜杠和 ..；只能读取 toolResourceTextByPath 已登记的资源。",
+        "重复读取返回 RESOURCE_ALREADY_READ。",
+        "全局 prompt 字符预算与独立资源字符预算都要通过；字符不是 token。"
+      ],
+      "lines": [
+        {
+          "n": 38,
+          "text": "    def read(self, resource_path: str = \"\", **kwargs: str) -> str:"
+        },
+        {
+          "n": 39,
+          "text": "        res_path = resource_path or kwargs.get(\"resourcePath\", \"\")"
+        },
+        {
+          "n": 40,
+          "text": "        if not res_path or not isinstance(res_path, str):"
+        },
+        {
+          "n": 41,
+          "text": "            return \"RESOURCE_NOT_ALLOWED\""
+        },
+        {
+          "n": 42,
+          "text": ""
+        },
+        {
+          "n": 43,
+          "text": "        # Safety checks: no backslashes, no relative path escaping, no absolute paths"
+        },
+        {
+          "n": 44,
+          "text": "        if \"\\\\\" in res_path or res_path.startswith(\"/\") or \"..\" in res_path:"
+        },
+        {
+          "n": 45,
+          "text": "            return \"RESOURCE_NOT_ALLOWED\""
+        },
+        {
+          "n": 46,
+          "text": ""
+        },
+        {
+          "n": 47,
+          "text": "        # Check whitelist"
+        },
+        {
+          "n": 48,
+          "text": "        tool_resources = getattr(self._resources, \"toolResourceTextByPath\", None)"
+        },
+        {
+          "n": 49,
+          "text": "        if tool_resources is None:"
+        },
+        {
+          "n": 50,
+          "text": "            tool_resources = getattr(self._resources, \"tool_resource_text_by_path\", None)"
+        },
+        {
+          "n": 51,
+          "text": ""
+        },
+        {
+          "n": 52,
+          "text": "        if tool_resources is None or res_path not in tool_resources:"
+        },
+        {
+          "n": 53,
+          "text": "            return \"RESOURCE_NOT_ALLOWED\""
+        },
+        {
+          "n": 54,
+          "text": ""
+        },
+        {
+          "n": 55,
+          "text": "        content = tool_resources[res_path]"
+        },
+        {
+          "n": 56,
+          "text": ""
+        },
+        {
+          "n": 57,
+          "text": "        # Check repeated read"
+        },
+        {
+          "n": 58,
+          "text": "        if res_path in self._read_resources_map:"
+        },
+        {
+          "n": 59,
+          "text": "            return \"RESOURCE_ALREADY_READ\""
+        },
+        {
+          "n": 60,
+          "text": ""
+        },
+        {
+          "n": 61,
+          "text": "        # Check both the global prompt budget and the dedicated knowledge budget."
+        },
+        {
+          "n": 62,
+          "text": "        # This prevents tool-driven context from filling the entire model window."
+        },
+        {
+          "n": 63,
+          "text": "        new_length = len(content)"
+        },
+        {
+          "n": 64,
+          "text": "        if self._initial_context_chars + self._current_read_chars + new_length > self._max_context_chars:"
+        },
+        {
+          "n": 65,
+          "text": "            return \"RESOURCE_CONTEXT_TOO_LARGE\""
+        },
+        {
+          "n": 66,
+          "text": "        if self._current_read_chars + new_length > self._max_resource_chars:"
+        },
+        {
+          "n": 67,
+          "text": "            return \"RESOURCE_BUDGET_EXCEEDED\""
+        },
+        {
+          "n": 68,
+          "text": ""
+        },
+        {
+          "n": 69,
+          "text": "        # Record successful read"
+        },
+        {
+          "n": 70,
+          "text": "        self._read_resources_map[res_path] = content"
+        },
+        {
+          "n": 71,
+          "text": "        self._current_read_chars += new_length"
+        },
+        {
+          "n": 72,
+          "text": ""
+        },
+        {
+          "n": 73,
+          "text": "        return content"
+        }
+      ]
+    },
+    {
+      "id": "v1prepare",
+      "title": "V1：准备文档与候选",
+      "path": "app/workflow/graphs/mandate_risk.py",
+      "start": 263,
+      "end": 289,
+      "why": "先确定文档与策略，再从真实指标库形成候选，供覆盖审计与模型判断。",
+      "notes": [
+        "V1 候选召回与 V2 全库逐批筛选是不同路线。",
+        "document_text 与 candidates 返回到本次 graph state。",
+        "后续 allowed_row_ids 限制模型只能选择已有候选。"
+      ],
+      "lines": [
+        {
+          "n": 263,
+          "text": "        async def prepare(state: MandateRiskGraphState) -> Dict[str, Any]:"
+        },
+        {
+          "n": 264,
+          "text": "            # 节点返回局部字典更新，类似 store.patch；这里先用确定性 Python 规则建立候选池。"
+        },
+        {
+          "n": 265,
+          "text": "            if _is_aborted(context.signal):"
+        },
+        {
+          "n": 266,
+          "text": "                return {\"error\": \"客户端连接已中断\"}"
+        },
+        {
+          "n": 267,
+          "text": "            document_text = str(state.get(\"document_text\") or \"\").strip()"
+        },
+        {
+          "n": 268,
+          "text": "            if not document_text:"
+        },
+        {
+          "n": 269,
+          "text": "                return {\"error\": \"没有可分析的投资策略文本\"}"
+        },
+        {
+          "n": 270,
+          "text": "            strategy_type, confidence = infer_strategy_type(document_text)"
+        },
+        {
+          "n": 271,
+          "text": "            eligible = registry.eligible_for_strategy(strategy_type)"
+        },
+        {
+          "n": 272,
+          "text": ""
+        },
+        {
+          "n": 273,
+          "text": "            # Keep the original high-precision concept matcher as the primary"
+        },
+        {
+          "n": 274,
+          "text": "            # pool. A separate fallback pool may add metrics only through"
+        },
+        {
+          "n": 275,
+          "text": "            # distinctive, authoritative Mandate phrases. This raises recall"
+        },
+        {
+          "n": 276,
+          "text": "            # without weakening the precision semantics of the primary matcher."
+        },
+        {
+          "n": 277,
+          "text": "            primary = select_candidates(build_candidates(document_text, eligible))"
+        },
+        {
+          "n": 278,
+          "text": "            fallback = select_candidates("
+        },
+        {
+          "n": 279,
+          "text": "                build_mandate_recall_candidates(document_text, eligible)"
+        },
+        {
+          "n": 280,
+          "text": "            )"
+        },
+        {
+          "n": 281,
+          "text": "            # 两组候选合并后再交给模型，模型后续只能在真实库行与原文条款范围内判断。"
+        },
+        {
+          "n": 282,
+          "text": "            candidates = merge_candidate_sets(primary, fallback)"
+        },
+        {
+          "n": 283,
+          "text": ""
+        },
+        {
+          "n": 284,
+          "text": "            return {"
+        },
+        {
+          "n": 285,
+          "text": "                \"strategy_type\": strategy_type,"
+        },
+        {
+          "n": 286,
+          "text": "                \"strategy_confidence\": confidence,"
+        },
+        {
+          "n": 287,
+          "text": "                \"candidate_row_ids\": [item.raw_row_id for item in candidates],"
+        },
+        {
+          "n": 288,
+          "text": "                \"candidates\": [item.model_dump() for item in candidates],"
+        },
+        {
+          "n": 289,
+          "text": "            }"
+        }
+      ]
+    },
+    {
+      "id": "v1audit",
+      "title": "V1：补充覆盖候选",
+      "path": "app/workflow/graphs/mandate_risk.py",
+      "start": 291,
+      "end": 314,
+      "why": "覆盖审计是候选召回补充，不是 V2 的 Requirement IR coverage gate。",
+      "notes": [
+        "本次候选按真实 row_id 关联。",
+        "新增召回来源保存在 coverage_audit_row_ids。",
+        "用量和审计来源显式追踪，后续验证对它们有级别保护。"
+      ],
+      "lines": [
+        {
+          "n": 291,
+          "text": "        async def coverage_audit(state: MandateRiskGraphState) -> Dict[str, Any]:"
+        },
+        {
+          "n": 292,
+          "text": "            # 查漏节点：让模型检查适用目录中有无遗漏，但每个提案仍需绑定真实库行和条款 id。"
+        },
+        {
+          "n": 293,
+          "text": "            if state.get(\"error\"):"
+        },
+        {
+          "n": 294,
+          "text": "                # 此图使用固定边；前一步失败时后续节点仍会进入，但立即跳过自己的业务处理。"
+        },
+        {
+          "n": 295,
+          "text": "                return {}"
+        },
+        {
+          "n": 296,
+          "text": "            if _is_aborted(context.signal):"
+        },
+        {
+          "n": 297,
+          "text": "                return {\"error\": \"客户端连接已中断\"}"
+        },
+        {
+          "n": 298,
+          "text": ""
+        },
+        {
+          "n": 299,
+          "text": "            strategy_type = str(state.get(\"strategy_type\") or \"未知\")"
+        },
+        {
+          "n": 300,
+          "text": "            eligible = registry.eligible_for_strategy(strategy_type)"
+        },
+        {
+          "n": 301,
+          "text": "            if not eligible:"
+        },
+        {
+          "n": 302,
+          "text": "                return {"
+        },
+        {
+          "n": 303,
+          "text": "                    \"coverage_audit_row_ids\": [],"
+        },
+        {
+          "n": 304,
+          "text": "                    \"coverage_audit_calls\": 0,"
+        },
+        {
+          "n": 305,
+          "text": "                    \"coverage_audit_usage_reports\": [],"
+        },
+        {
+          "n": 306,
+          "text": "                    \"coverage_audit_reasoning\": [\"受控覆盖审计完成：当前策略适用目录为空，未调用模型。\"],"
+        },
+        {
+          "n": 307,
+          "text": "                }"
+        },
+        {
+          "n": 308,
+          "text": "            # 列表切片类似 array.slice(start, end)；分批控制单次 Prompt 的规模，不是并行请求。"
+        },
+        {
+          "n": 309,
+          "text": "            batches = ["
+        },
+        {
+          "n": 310,
+          "text": "                eligible[index : index + COVERAGE_AUDIT_BATCH_SIZE]"
+        },
+        {
+          "n": 311,
+          "text": "                for index in range(0, len(eligible), COVERAGE_AUDIT_BATCH_SIZE)"
+        },
+        {
+          "n": 312,
+          "text": "            ]"
+        },
+        {
+          "n": 313,
+          "text": "            # 字典推导式建立 clause_id → 条款的索引，类似前端把数组转成按 id 查找的 Map。"
+        },
+        {
+          "n": 314,
+          "text": "            clauses_by_id = {"
+        }
+      ]
+    },
+    {
+      "id": "v1judge",
+      "title": "V1：候选交给模型判断",
+      "path": "app/workflow/graphs/mandate_risk.py",
+      "start": 457,
+      "end": 484,
+      "why": "原文与候选资料形成语义判断输入，模型返回的匹配仍待校验。",
+      "notes": [
+        "判断只针对本次召回的候选，不是生成新的指标目录。",
+        "Prompt 指定依据与匹配等级。",
+        "答案进入 model_payload，尚未成为最终报告。"
+      ],
+      "lines": [
+        {
+          "n": 457,
+          "text": "        async def semantic_judge(state: MandateRiskGraphState) -> Dict[str, Any]:"
+        },
+        {
+          "n": 458,
+          "text": "            # 模型判断候选与文档的语义关系，结果先放 model_payload，尚未通过最终业务校验。"
+        },
+        {
+          "n": 459,
+          "text": "            if state.get(\"error\"):"
+        },
+        {
+          "n": 460,
+          "text": "                return {}"
+        },
+        {
+          "n": 461,
+          "text": "            if _is_aborted(context.signal):"
+        },
+        {
+          "n": 462,
+          "text": "                return {\"error\": \"客户端连接已中断\"}"
+        },
+        {
+          "n": 463,
+          "text": ""
+        },
+        {
+          "n": 464,
+          "text": "            # 从 state 中的字典恢复成 Pydantic 对象，model_validate 在这里执行实际结构校验。"
+        },
+        {
+          "n": 465,
+          "text": "            candidate_models = ["
+        },
+        {
+          "n": 466,
+          "text": "                MetricCandidate.model_validate(item)"
+        },
+        {
+          "n": 467,
+          "text": "                for item in (state.get(\"candidates\") or [])"
+        },
+        {
+          "n": 468,
+          "text": "            ]"
+        },
+        {
+          "n": 469,
+          "text": "            user_prompt = build_semantic_judge_prompt("
+        },
+        {
+          "n": 470,
+          "text": "                document_text=str(state.get(\"document_text\") or \"\"),"
+        },
+        {
+          "n": 471,
+          "text": "                document_name=str(state.get(\"document_name\") or \"\"),"
+        },
+        {
+          "n": 472,
+          "text": "                strategy_type=str(state.get(\"strategy_type\") or \"未知\"),"
+        },
+        {
+          "n": 473,
+          "text": "                registry=registry,"
+        },
+        {
+          "n": 474,
+          "text": "                candidates=candidate_models,"
+        },
+        {
+          "n": 475,
+          "text": "            )"
+        },
+        {
+          "n": 476,
+          "text": "            system_prompt = \"\\n\\n\".join("
+        },
+        {
+          "n": 477,
+          "text": "                part"
+        },
+        {
+          "n": 478,
+          "text": "                for part in ["
+        },
+        {
+          "n": 479,
+          "text": "                    context.role_prompt.strip() if context.role_prompt else \"\","
+        },
+        {
+          "n": 480,
+          "text": "                    SYSTEM_PROMPT,"
+        },
+        {
+          "n": 481,
+          "text": "                    \"# Agent Skill\\n\" + context.skill_md.strip() if context.skill_md else \"\","
+        },
+        {
+          "n": 482,
+          "text": "                ]"
+        },
+        {
+          "n": 483,
+          "text": "                if part"
+        },
+        {
+          "n": 484,
+          "text": "            )"
+        }
+      ]
+    },
+    {
+      "id": "v1validate",
+      "title": "V1：校验与来源保护",
+      "path": "app/workflow/graphs/mandate_risk.py",
+      "start": 591,
+      "end": 636,
+      "why": "校验真实指标库行与原文引用，并对补召回来源做保守的匹配等级处理。",
+      "notes": [
+        "新增审计召回来源的 DIRECT 在此降为 STRONG_INFERRED。",
+        "validate_model_result 接收 registry、allowed_row_ids 与 candidate_clause_ids。",
+        "异常返回 error，外层 stream 转成失败事件；成功 result 才供 render。"
+      ],
+      "lines": [
+        {
+          "n": 591,
+          "text": "        async def validate(state: MandateRiskGraphState) -> Dict[str, Any]:"
+        },
+        {
+          "n": 592,
+          "text": "            # Python 用真实库行、条款和原文校验模型答案；图不会自动判断业务正确性。"
+        },
+        {
+          "n": 593,
+          "text": "            if state.get(\"error\"):"
+        },
+        {
+          "n": 594,
+          "text": "                return {}"
+        },
+        {
+          "n": 595,
+          "text": "            try:"
+        },
+        {
+          "n": 596,
+          "text": "                payload = dict(state.get(\"model_payload\") or {})"
+        },
+        {
+          "n": 597,
+          "text": "                payload[\"matches\"] = [dict(item) for item in (payload.get(\"matches\") or [])]"
+        },
+        {
+          "n": 598,
+          "text": "                # 新增召回来源有单独的级别保护：不能直接当作已确认的 DIRECT 匹配。"
+        },
+        {
+          "n": 599,
+          "text": "                audit_row_ids = set(state.get(\"coverage_audit_row_ids\") or [])"
+        },
+        {
+          "n": 600,
+          "text": "                for match in payload[\"matches\"]:"
+        },
+        {
+          "n": 601,
+          "text": "                    if match.get(\"raw_row_id\") in audit_row_ids and match.get(\"match_level\") == \"DIRECT\":"
+        },
+        {
+          "n": 602,
+          "text": "                        match[\"match_level\"] = \"STRONG_INFERRED\""
+        },
+        {
+          "n": 603,
+          "text": "                        reason = str(match.get(\"reason\") or \"\").strip()"
+        },
+        {
+          "n": 604,
+          "text": "                        match[\"reason\"] = ("
+        },
+        {
+          "n": 605,
+          "text": "                            reason + \"；阶段2受控召回保护：该来源暂不允许 DIRECT，需阶段3单独验证。\""
+        },
+        {
+          "n": 606,
+          "text": "                        ).strip(\"；\")"
+        },
+        {
+          "n": 607,
+          "text": "                candidate_models = ["
+        },
+        {
+          "n": 608,
+          "text": "                    MetricCandidate.model_validate(item)"
+        },
+        {
+          "n": 609,
+          "text": "                    for item in (state.get(\"candidates\") or [])"
+        },
+        {
+          "n": 610,
+          "text": "                ]"
+        },
+        {
+          "n": 611,
+          "text": "                clause_map = {"
+        },
+        {
+          "n": 612,
+          "text": "                    item.raw_row_id: [hint.clause_id for hint in item.matched_clauses]"
+        },
+        {
+          "n": 613,
+          "text": "                    for item in candidate_models"
+        },
+        {
+          "n": 614,
+          "text": "                }"
+        },
+        {
+          "n": 615,
+          "text": "                result = validate_model_result("
+        },
+        {
+          "n": 616,
+          "text": "                    payload=payload,"
+        },
+        {
+          "n": 617,
+          "text": "                    registry=registry,"
+        },
+        {
+          "n": 618,
+          "text": "                    allowed_row_ids=state.get(\"candidate_row_ids\") or [],"
+        },
+        {
+          "n": 619,
+          "text": "                    document_text=str(state.get(\"document_text\") or \"\"),"
+        },
+        {
+          "n": 620,
+          "text": "                    document_name=str(state.get(\"document_name\") or \"\"),"
+        },
+        {
+          "n": 621,
+          "text": "                    strategy_type=str(state.get(\"strategy_type\") or \"未知\"),"
+        },
+        {
+          "n": 622,
+          "text": "                    candidate_clause_ids=clause_map,"
+        },
+        {
+          "n": 623,
+          "text": "                )"
+        },
+        {
+          "n": 624,
+          "text": "                return {\"result\": result.model_dump()}"
+        },
+        {
+          "n": 625,
+          "text": "            except Exception as err:"
+        },
+        {
+          "n": 626,
+          "text": "                return {\"error\": f\"风险指标匹配校验失败: {err}\"}"
+        },
+        {
+          "n": 627,
+          "text": ""
+        },
+        {
+          "n": 628,
+          "text": "        async def render(state: MandateRiskGraphState) -> Dict[str, Any]:"
+        },
+        {
+          "n": 629,
+          "text": "            # 将已校验结果转成 Markdown；这里只排版，不再次调用模型生成报告。"
+        },
+        {
+          "n": 630,
+          "text": "            if state.get(\"error\"):"
+        },
+        {
+          "n": 631,
+          "text": "                return {}"
+        },
+        {
+          "n": 632,
+          "text": "            from app.mandate_risk.models import RiskAnalysisResult"
+        },
+        {
+          "n": 633,
+          "text": ""
+        },
+        {
+          "n": 634,
+          "text": "            result = RiskAnalysisResult.model_validate(state.get(\"result\") or {})"
+        },
+        {
+          "n": 635,
+          "text": "            return {\"markdown\": render_markdown(result, registry)}"
+        },
+        {
+          "n": 636,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "network",
+      "title": "V2：网络重试与业务修复分开",
+      "path": "app/mandate_risk_v2/pipeline.py",
+      "start": 209,
+      "end": 252,
+      "why": "瞬态传输错误可以重试，超时与业务输出校验有各自的控制边界。",
+      "notes": [
+        "最多三次瞬态网络调用，不等于三轮合同重新提取。",
+        "240 秒默认调用超时直接失败。",
+        "成功返回模型 payload 和本次用量，随后才开始业务验证。"
+      ],
+      "lines": [
+        {
+          "n": 209,
+          "text": "    async def _call_model("
+        },
+        {
+          "n": 210,
+          "text": "        self,"
+        },
+        {
+          "n": 211,
+          "text": "        *,"
+        },
+        {
+          "n": 212,
+          "text": "        provider: Any,"
+        },
+        {
+          "n": 213,
+          "text": "        system_prompt: str,"
+        },
+        {
+          "n": 214,
+          "text": "        user_prompt: str,"
+        },
+        {
+          "n": 215,
+          "text": "        signal: Any,"
+        },
+        {
+          "n": 216,
+          "text": "        stage: str = \"model\","
+        },
+        {
+          "n": 217,
+          "text": "        timeout_seconds: float | None = None,"
+        },
+        {
+          "n": 218,
+          "text": "    ) -> Tuple[dict, Dict[str, int] | None]:"
+        },
+        {
+          "n": 219,
+          "text": "        run_skill = getattr(provider, \"run_skill\", None) or getattr(provider, \"runSkill\", None)"
+        },
+        {
+          "n": 220,
+          "text": "        if run_skill is None:"
+        },
+        {
+          "n": 221,
+          "text": "            raise RuntimeError(\"AI Provider 不支持 Skill 运行\")"
+        },
+        {
+          "n": 222,
+          "text": "        timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds"
+        },
+        {
+          "n": 223,
+          "text": "        run_input = ModelSkillRunInput("
+        },
+        {
+          "n": 224,
+          "text": "            system_prompt=system_prompt,"
+        },
+        {
+          "n": 225,
+          "text": "            user_prompt=user_prompt,"
+        },
+        {
+          "n": 226,
+          "text": "            read_resource=lambda _path: \"RESOURCE_NOT_ALLOWED\","
+        },
+        {
+          "n": 227,
+          "text": "            search_knowledge=None,"
+        },
+        {
+          "n": 228,
+          "text": "            signal=signal,"
+        },
+        {
+          "n": 229,
+          "text": "            timeout_seconds=timeout,"
+        },
+        {
+          "n": 230,
+          "text": "        )"
+        },
+        {
+          "n": 231,
+          "text": "        last_err = None"
+        },
+        {
+          "n": 232,
+          "text": "        for attempt in range(3):"
+        },
+        {
+          "n": 233,
+          "text": "            try:"
+        },
+        {
+          "n": 234,
+          "text": "                content, usage, usage_reported = await asyncio.wait_for("
+        },
+        {
+          "n": 235,
+          "text": "                    _collect_skill_output(run_skill, run_input, signal),"
+        },
+        {
+          "n": 236,
+          "text": "                    timeout=timeout,"
+        },
+        {
+          "n": 237,
+          "text": "                )"
+        },
+        {
+          "n": 238,
+          "text": "                return extract_first_json_object(content), usage if usage_reported else None"
+        },
+        {
+          "n": 239,
+          "text": "            except asyncio.TimeoutError as exc:"
+        },
+        {
+          "n": 240,
+          "text": "                raise TimeoutError("
+        },
+        {
+          "n": 241,
+          "text": "                    f\"MANDATE_MODEL_TIMEOUT: stage={stage}; timeout_seconds={timeout}\""
+        },
+        {
+          "n": 242,
+          "text": "                ) from exc"
+        },
+        {
+          "n": 243,
+          "text": "            except Exception as e:"
+        },
+        {
+          "n": 244,
+          "text": "                last_err = e"
+        },
+        {
+          "n": 245,
+          "text": "                err_msg = str(e)"
+        },
+        {
+          "n": 246,
+          "text": "                transient = isinstance(e, (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError))"
+        },
+        {
+          "n": 247,
+          "text": "                transient = transient or any(marker in err_msg for marker in (\"503\", \"UNAVAILABLE\", \"high demand\", \"502\"))"
+        },
+        {
+          "n": 248,
+          "text": "                if transient and attempt < 2 and not _is_aborted(signal):"
+        },
+        {
+          "n": 249,
+          "text": "                    await asyncio.sleep(2.0 * (attempt + 1))"
+        },
+        {
+          "n": 250,
+          "text": "                    continue"
+        },
+        {
+          "n": 251,
+          "text": "                raise e"
+        },
+        {
+          "n": 252,
+          "text": "        raise last_err or RuntimeError(\"Model call failed after retries\")"
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "title": "详细结果：按指标汇总关联",
+      "path": "app/mandate_risk_v2/result.py",
+      "start": 179,
+      "end": 191,
+      "why": "保持要求与指标的多对多关系，再按指标聚合为前端展示结构。",
+      "notes": [
+        "同一库行下可以保留多个要求。",
+        "原文来自 canonical_evidence，指标引用来自 registry。",
+        "分数是关联分的聚合，不能当作持仓风险计算值。"
+      ],
+      "lines": [
+        {
+          "n": 179,
+          "text": "        screened_links = screening_by_row.get(metric.row_id, [])"
+        },
+        {
+          "n": 180,
+          "text": "        if screened_links:"
+        },
+        {
+          "n": 181,
+          "text": "            scored = [link for link in screened_links if link.match_score is not None]"
+        },
+        {
+          "n": 182,
+          "text": "            strongest = max(scored, key=lambda link: link.match_score) if scored else None"
+        },
+        {
+          "n": 183,
+          "text": "            screened_metrics.append(MatchedMetricResult("
+        },
+        {
+          "n": 184,
+          "text": "                metric=_metric_reference(metric),"
+        },
+        {
+          "n": 185,
+          "text": "                requirements=[metric_requirement(link) for link in screened_links],"
+        },
+        {
+          "n": 186,
+          "text": "                match_score=strongest.match_score if strongest else None,"
+        },
+        {
+          "n": 187,
+          "text": "                score_reason=strongest.score_reason if strongest else None,"
+        },
+        {
+          "n": 188,
+          "text": "            ))"
+        },
+        {
+          "n": 189,
+          "text": "    screened_metrics.sort(key=lambda item: ("
+        },
+        {
+          "n": 190,
+          "text": "        item.match_score is None, -(item.match_score or 0), item.metric.raw_row_id,"
+        },
+        {
+          "n": 191,
+          "text": "    ))"
+        }
+      ]
+    }
+  ],
+  "routes": {
+    "chat": {
+      "label": "普通聊天",
+      "id": "simple-chat",
+      "intro": "先由 Python 取相关知识，再让模型回答。图完成后交出文字。",
+      "steps": [
+        {
+          "title": "检索知识",
+          "input": "问题 + Agent 身份",
+          "process": "KnowledgeService 选相关片段；无结果允许继续回答并说明证据不足。",
+          "output": "knowledge_context",
+          "snippet": "simplegraph"
+        },
+        {
+          "title": "生成答案",
+          "input": "Role + Skill + 摘要 + 历史 + 知识 + 问题",
+          "process": "answer 调 Provider.run_skill，把模型片段累积为完整答案。",
+          "output": "answer / reasoning / usage",
+          "snippet": "tools"
+        },
+        {
+          "title": "完成图执行",
+          "input": "本次 initial state",
+          "process": "ainvoke 等待 END，图状态同名字段以返回 patch 更新。",
+          "output": "最终 SimpleChatGraphState",
+          "snippet": "invoke"
+        },
+        {
+          "title": "交付文字",
+          "input": "已完成 answer",
+          "process": "先交过程事件，再按 Unicode 字符切正文，最后交完成事件。",
+          "output": "MessageDeltaEvent → RunCompletedEvent",
+          "snippet": "invoke"
+        }
+      ]
+    },
+    "report": {
+      "label": "绩效报表",
+      "id": "vm-report",
+      "intro": "先解析指标语义，再生成候选；文本和 DSL 分支不同，DSL 要校验并可修复。",
+      "steps": [
+        {
+          "title": "解析语义",
+          "input": "问题 + Module Profiles",
+          "process": "Python 解析用户明确指标，制定 entity/shape/grain/joinKey 计划。",
+          "output": "resolved_metrics / semantic_plan",
+          "snippet": "semantic"
+        },
+        {
+          "title": "模型生成",
+          "input": "语义计划 + 页面 DSL + Skill",
+          "process": "Provider.run_skill 可请求白名单资源；模型输出先分类。",
+          "output": "普通文本或 candidate DSL",
+          "snippet": "tools"
+        },
+        {
+          "title": "Python 校验",
+          "input": "candidate + 资源 + 当前 block ids",
+          "process": "普通文本直接 finalize_text；DSL 验证结构和业务约束。",
+          "output": "validated_dsls 或 validation_errors",
+          "snippet": "validate"
+        },
+        {
+          "title": "反馈修复",
+          "input": "旧候选 + 错误 + 已读资料",
+          "process": "provider.generate 返回新候选，dirty=True，回到 validate；最多 5 次。",
+          "output": "新 candidate；仍要重新校验",
+          "snippet": "repair"
+        },
+        {
+          "title": "序列化交付",
+          "input": "校验通过的 DSL",
+          "process": "finalize_dsl 保持对象/数组形状，输出 JSON；main 可保存 artifact。",
+          "output": "JSON 文本 + artifact 引用",
+          "snippet": "artifact"
+        }
+      ]
+    },
+    "v1": {
+      "label": "风险 V1",
+      "id": "mandate-risk-analysis",
+      "intro": "保留的旧风险图：召回候选、补充覆盖、语义判断、验证和报告。没有 V2 的 Requirement IR 管线。",
+      "steps": [
+        {
+          "title": "准备与候选召回",
+          "input": "文档 + 真实指标库",
+          "process": "prepare 读取文档并形成候选，候选只携带真实库行身份。",
+          "output": "document_text / candidates",
+          "snippet": "v1prepare"
+        },
+        {
+          "title": "覆盖补充",
+          "input": "文档条款 + 候选",
+          "process": "coverage_audit 补召回，记录新增候选来源与用量。",
+          "output": "coverage_audit_row_ids",
+          "snippet": "v1audit"
+        },
+        {
+          "title": "语义判断",
+          "input": "候选与原文依据",
+          "process": "semantic_judge 请求模型形成候选匹配判断。",
+          "output": "model_payload",
+          "snippet": "v1judge"
+        },
+        {
+          "title": "校验与报告",
+          "input": "模型判断 + 允许库行 + clause map",
+          "process": "Python validate_model_result 验证，render 形成 Markdown。新增审计来源的 DIRECT 受保护降级。",
+          "output": "result / markdown → 完成事件",
+          "snippet": "v1validate"
+        }
+      ]
+    },
+    "screen": {
+      "label": "V2 默认筛选",
+      "id": "mandate-risk-analysis-v2 / screening",
+      "intro": "完整指标库逐批审核，直接根据 PDF 关联指标。输出是筛选报告，coverage_status=not_audited。",
+      "steps": [
+        {
+          "title": "加载与条款切分",
+          "input": "document_ids + document_loader",
+          "process": "按 ID 取已解析 PDF；split_document_clauses 保留原文 ID、页码和偏移。",
+          "output": "DocumentClause[]",
+          "snippet": "pdf"
+        },
+        {
+          "title": "构造批次",
+          "input": "文档窗口 × 全部库行",
+          "process": "默认文档窗口约 60000 字符，每 40 个库行一批，并发上限 2。",
+          "output": "模型输入中的 allowed rows/clauses",
+          "snippet": "screen"
+        },
+        {
+          "title": "筛选与引用验证",
+          "input": "模型 ScreeningBatch.rows",
+          "process": "每库行必须恰好一项；检查分数 0–100、真实 ID、DIRECT/REVIEW 的证据。",
+          "output": "已校验 ScreeningRow[]",
+          "snippet": "screen"
+        },
+        {
+          "title": "指标聚合",
+          "input": "所有窗口选择 + 原始库",
+          "process": "按 row_id 合并；任一 DIRECT 归 matched；最高关联分排序；原文来自 canonical_evidence。",
+          "output": "V2AnalysisResult / SRC 证据包装",
+          "snippet": "screenresult"
+        },
+        {
+          "title": "双通道交付",
+          "input": "结构化分析结果",
+          "process": "Python render Markdown；output 给正文，metadata.result 给表格。",
+          "output": "output + metadata.mandate_risk_v2.result",
+          "snippet": "v2branch"
+        }
+      ]
+    },
+    "detail": {
+      "label": "V2 详细审计",
+      "id": "mandate-risk-analysis-v2 / detailed",
+      "intro": "先完整提取要求，再对指标库做多对多映射并独立复核。缺少要求时禁止进入映射。",
+      "steps": [
+        {
+          "title": "提取要求 IR",
+          "input": "文档条款 / 窗口",
+          "process": "模型草稿经形状与引用验证；Python 编号、保守去重，保留条件与关系。",
+          "output": "RequirementIR：REQ / DEF / CTX",
+          "snippet": "ir"
+        },
+        {
+          "title": "逐条覆盖审计",
+          "input": "全部 clauses + IR",
+          "process": "每条原文要有一个结论。遗漏/部分覆盖反馈重新提取，最多三轮。",
+          "output": "完整 IR 或 RequirementCoverageIncomplete",
+          "snippet": "coveragegate"
+        },
+        {
+          "title": "全库映射",
+          "input": "完整 IR + 全部库行",
+          "process": "默认 8 行一批，2 并发；每行需账目；每要求决定一个含多个 aspect 的 disposition。",
+          "output": "MappingLink[] + FinalMappingReview",
+          "snippet": "mapbatch"
+        },
+        {
+          "title": "Critic 独立复核",
+          "input": "映射 + 去向 + 原文",
+          "process": "逐个审查 MAIN_TABLE/LIBRARY_GAP/NON_METRIC；拒绝、召回、调分；异议降级待复核。",
+          "output": "CriticReview + 保留的映射",
+          "snippet": "critic"
+        },
+        {
+          "title": "按指标归类交付",
+          "input": "IR + 复核后映射",
+          "process": "DIRECT 且 MAIN_TABLE 且未拒绝才进 matched；其它保留关联进 candidate。",
+          "output": "V2AnalysisResult + Markdown + metadata",
+          "snippet": "destinations"
+        }
+      ]
+    }
+  },
+  "meta": {
+    "date": "2026-10-08",
+    "revision": "5d1e91255f6f66771a8302675ff3fbbc179411dc",
+    "branch": "optimize/mandate-risk-generic-recall",
+    "root": "/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python"
+  }
+}

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import re
 import os
-from pathlib import Path
 from typing import Any, AsyncGenerator, Tuple
 
 from app.compatibility.hermes_events import (
@@ -25,12 +24,16 @@ from app.compatibility.hermes_events import (
     RunFailedEvent,
     code_point_chunks,
 )
-from app.mandate_risk_v2.extractor import canonical_evidence
+from app.mandate_risk.clauses import split_document_clauses
 from app.mandate_risk.registry import RawRiskMetricRegistry
+from app.mandate_risk.catalogue import load_prebuilt_registry
+from app.mandate_risk_v2.extractor import canonical_evidence
 from app.mandate_risk_v2.mapping import MappingPipeline
+from app.mandate_risk_v2.reference_portfolio import ReferencePortfolioResolver
 from app.mandate_risk_v2.report import render_screening_report, render_v2_report
 from app.mandate_risk_v2.screening import ScreeningPipeline
 from app.mandate_risk_v2.result import build_v2_analysis_result
+from app.mandate_risk_v2.strategy_evidence import StrategyEvidencePipeline
 from app.mandate_risk_v2.pipeline import (
     RequirementCoverageIncomplete,
     RequirementExtractionPipeline,
@@ -42,34 +45,30 @@ class MandateRiskV2Workflow:
     """V2 defaults to fast screening; detailed Requirement IR analysis is opt-in."""
 
     id = "mandate-risk-analysis-v2"
-
     def __init__(self, pipeline: RequirementExtractionPipeline | None = None,
                  mapping_pipeline: MappingPipeline | None = None,
+                 strategy_evidence_pipeline: StrategyEvidencePipeline | None = None,
                  metric_registry: RawRiskMetricRegistry | None = None,
+                 reference_portfolio_resolver: ReferencePortfolioResolver | None = None,
                  phase_a_only: bool = False, mode: str | None = None) -> None:
         # A | None 类似 TS 的 A | null；允许注入实现，否则创建默认 Pipeline（分阶段处理对象）。
         self.pipeline = pipeline or RequirementExtractionPipeline()
         self.mapping_pipeline = mapping_pipeline or MappingPipeline()
+        self.strategy_evidence_pipeline = strategy_evidence_pipeline or StrategyEvidencePipeline()
         self.metric_registry = metric_registry
+        self.reference_portfolio_resolver = reference_portfolio_resolver or ReferencePortfolioResolver()
         self.phase_a_only = phase_a_only
+
         # Python 条件表达式“值 if 条件 else 其它值”类似 JS 三元表达式。
         self.mode = mode if mode is not None else os.getenv("MANDATE_RISK_V2_MODE", "screening")
         if self.mode not in {"screening", "detailed"}:
             raise ValueError("MANDATE_RISK_V2_MODE must be screening or detailed")
-
     def _load_registry(self) -> RawRiskMetricRegistry:
-        # 真实指标目录由 Python 读取，模型只能选择其中的条目，不能把新名称写回库中。
-        if self.metric_registry is not None:
-            return self.metric_registry
-        configured = (os.getenv("MANDATE_RISK_METRIC_SOURCE") or
-                      os.getenv("MANDATE_RISK_METRIC_XLSX") or
-                      "agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv")
-        path = Path(configured)
-        if not path.is_absolute():
-            path = Path(__file__).resolve().parents[3] / path
-        if not path.is_file():
-            raise RuntimeError(f"MANDATE_RISK_METRIC_LIBRARY_NOT_FOUND: {path}")
-        return RawRiskMetricRegistry.from_path(path)
+        # Default application startup injects the prevalidated snapshot shared with V1.
+        # Standalone workflows load once on first use; runs never reparse the source.
+        if self.metric_registry is None:
+            self.metric_registry = load_prebuilt_registry()
+        return self.metric_registry
 
     async def stream(self, context: WorkflowContext) -> AsyncGenerator[Any, None]:
         # 含 yield 的 async def 是异步生成器：先交出进度事件，再 await 分析，最后交出完成事件。
@@ -85,34 +84,54 @@ class MandateRiskV2Workflow:
                 delta="快速筛选：直接阅读 PDF 和完整指标库，筛选相关指标并给出匹配分、原文依据。", sequence=1,
             )
             try:
-                # await 类似等待 Promise；左侧一次解包两个返回值：结构化分析结果、用量统计。
-                analysis, usage = await ScreeningPipeline().run(
+                analysis, screening_usage = await ScreeningPipeline().run(
                     document_name=document_name, document_text=document_text,
                     registry=self._load_registry(), provider=context.provider, signal=context.signal,
+                    reference_portfolio_resolver=self.reference_portfolio_resolver,
                 )
-                # 报告由 Python 将已校验的结果排版，前端也会从完成事件 metadata 中取得表格数据。
-                markdown = render_screening_report(analysis)
             except Exception as err:
                 yield RunFailedEvent(error=f"V2 快速指标筛选失败: {err}")
                 return
             yield ReasoningDeltaEvent(
-                delta=f"筛选完成：{len(analysis.screened_metrics)} 个相关指标，原文引用和库行校验已完成，供人工选择。", sequence=2,
+                delta=f"筛选完成：{len(analysis.screened_metrics)} 个相关指标；开始策略依据与指标关联分析。", sequence=2,
             )
-            # 完整报告已经生成后再切片；前端接到多个 message.delta 不等于模型仍在实时生成。
+            clauses = split_document_clauses(document_text)
+            try:
+                strategy_evidence, strategy_usage = await self.strategy_evidence_pipeline.run(
+                    document_name=document_name,
+                    clauses=clauses,
+                    displayed_metrics=analysis.screened_metrics,
+                    provider=context.provider,
+                    signal=context.signal,
+                )
+                analysis.strategy_evidence = strategy_evidence
+            except Exception as err:
+                yield RunFailedEvent(error=f"V2 策略依据与指标关联分析失败: {err}")
+                return
+            yield ReasoningDeltaEvent(
+                delta="策略依据与指标关联分析完成，结果供用户筛选判断。", sequence=3,
+            )
+            markdown = render_screening_report(analysis)
             for chunk in code_point_chunks(markdown, context.message_chunk_chars):
                 yield MessageDeltaEvent(delta=chunk)
-            usage["result_counts"] = {
-                "screened_metrics": len(analysis.screened_metrics),
-                "matched_metrics": len(analysis.matched_metrics),
-                "candidate_metrics": len(analysis.candidate_metrics),
+            complete = bool(screening_usage.get("complete") and strategy_usage.get("complete"))
+            usage = {
+                "complete": complete,
+                "analysis_mode": "screening",
+                "screening_phase": screening_usage,
+                "strategy_evidence_phase": strategy_usage,
+                "result_counts": {
+                    "screened_metrics": len(analysis.screened_metrics),
+                    "matched_metrics": len(analysis.matched_metrics),
+                    "candidate_metrics": len(analysis.candidate_metrics),
+                },
             }
-            # model_dump(mode='json') 转成适合 JSON 序列化的数据，类似向接口提交普通 JS 对象。
-            # metadata 中有评分、指标和原文依据，供前端表格/抽屉使用；output 用于报告正文。
+            if complete:
+                usage["total_tokens"] = screening_usage.get("total_tokens", 0) + strategy_usage.get("total_tokens", 0)
             yield RunCompletedEvent(output=markdown, usage=usage, metadata={
                 "mandate_risk_v2": {"phase": "complete", "mode": "screening",
                                     "result": analysis.model_dump(mode="json")},
             })
-            # return 结束生成器，避免快速筛选完成后又继续执行下面的 detailed 流程。
             return
 
         yield ReasoningDeltaEvent(
@@ -156,7 +175,6 @@ class MandateRiskV2Workflow:
             )
             try:
                 registry = self._load_registry()
-                # 顺序等待 Phase B；使用的是同一个 context.provider，但输入变成要求、条款与指标库。
                 mapping = await self.mapping_pipeline.run(
                     ir=result.requirement_ir, clauses=result.clauses,
                     registry=registry, provider=context.provider, signal=context.signal,
@@ -166,43 +184,63 @@ class MandateRiskV2Workflow:
                     clauses=result.clauses,
                     registry=registry,
                     mapping=mapping,
+                    reference_portfolio_resolver=self.reference_portfolio_resolver,
                 )
-                markdown = render_v2_report(
-                    ir=result.requirement_ir, clauses=result.clauses,
-                    registry=registry, mapping=mapping, analysis=analysis,
-                )
-                completion_metadata = {
-                    "mandate_risk_v2": {
-                        "phase": "complete",
-                        "result": analysis.model_dump(mode="json"),
-                    }
-                }
-                # 只有两个阶段的用量都完整才给出完整总数，不把缺失报告当成零消耗。
-                usage = {
-                    "complete": bool(result.usage.get("complete") and mapping.usage.get("complete")),
-                    "requirement_phase": result.usage,
-                    "mapping_phase": mapping.usage,
-                    "result_counts": {
-                        "requirements": len(analysis.requirements),
-                        "matched_metrics": len(analysis.matched_metrics),
-                        "candidate_metrics": len(analysis.candidate_metrics),
-                        "screened_metrics": len(analysis.screened_metrics),
-                        "pending_review": len(analysis.pending_review),
-                        "library_gaps": len(analysis.library_gaps),
-                        "non_metric_requirements": len(analysis.non_metric_requirements),
-                        "unresolved_requirements": len(analysis.unresolved_requirements),
-                    },
-                }
-                if usage["complete"]:
-                    usage["total_tokens"] = (result.usage["total_tokens"] +
-                                             mapping.usage["total_tokens"])
             except Exception as err:
                 yield RunFailedEvent(error=f"V2 指标映射或 Critic 复核失败: {err}")
                 return
+
             yield ReasoningDeltaEvent(
-                delta="Phase B 完成：相关指标筛选、匹配评分和独立复核已完成，结果供用户筛选判断。",
-                sequence=3,
+                delta="Phase B 完成：相关指标筛选与独立复核已完成；开始策略依据与指标关联分析。", sequence=3,
             )
+            try:
+                displayed_metrics = analysis.matched_metrics + analysis.candidate_metrics
+                strategy_evidence, strategy_usage = await self.strategy_evidence_pipeline.run(
+                    document_name=document_name,
+                    clauses=result.clauses,
+                    displayed_metrics=displayed_metrics,
+                    provider=context.provider,
+                    signal=context.signal,
+                )
+                analysis.strategy_evidence = strategy_evidence
+            except Exception as err:
+                yield RunFailedEvent(error=f"V2 策略依据与指标关联分析失败: {err}")
+                return
+            yield ReasoningDeltaEvent(
+                delta="策略依据与指标关联分析完成，结果供用户筛选判断。", sequence=4,
+            )
+            markdown = render_v2_report(
+                ir=result.requirement_ir, clauses=result.clauses,
+                registry=registry, mapping=mapping, analysis=analysis,
+            )
+            completion_metadata = {
+                "mandate_risk_v2": {
+                    "phase": "complete",
+                    "result": analysis.model_dump(mode="json"),
+                }
+            }
+            complete = bool(result.usage.get("complete") and mapping.usage.get("complete") and strategy_usage.get("complete"))
+            usage = {
+                "complete": complete,
+                "requirement_phase": result.usage,
+                "mapping_phase": mapping.usage,
+                "strategy_evidence_phase": strategy_usage,
+                "result_counts": {
+                    "requirements": len(analysis.requirements),
+                    "matched_metrics": len(analysis.matched_metrics),
+                    "candidate_metrics": len(analysis.candidate_metrics),
+                    "screened_metrics": len(analysis.screened_metrics),
+                    "pending_review": len(analysis.pending_review),
+                    "library_gaps": len(analysis.library_gaps),
+                    "non_metric_requirements": len(analysis.non_metric_requirements),
+                    "unresolved_requirements": len(analysis.unresolved_requirements),
+                },
+            }
+            if complete:
+                usage["total_tokens"] = (result.usage["total_tokens"] +
+                                         mapping.usage["total_tokens"] +
+                                         strategy_usage["total_tokens"])
+
         for chunk in code_point_chunks(markdown, context.message_chunk_chars):
             yield MessageDeltaEvent(delta=chunk)
         yield RunCompletedEvent(

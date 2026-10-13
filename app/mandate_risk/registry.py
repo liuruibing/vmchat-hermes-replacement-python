@@ -226,6 +226,10 @@ class RawRiskMetricRegistry:
         sheet_name: str = "风险指标库",
     ) -> "RawRiskMetricRegistry":
         source = Path(path)
+        if source.suffix.lower() == ".json":
+            from app.mandate_risk.catalogue import load_prebuilt_registry
+
+            return load_prebuilt_registry(source)
         if source.suffix.lower() == ".xlsx":
             return cls.from_xlsx(source, sheet_name)
         if source.suffix.lower() == ".csv":

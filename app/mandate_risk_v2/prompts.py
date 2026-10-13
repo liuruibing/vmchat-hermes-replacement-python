@@ -27,8 +27,9 @@ EXTRACTION_SYSTEM_PROMPT = """你是投资委托文件（Mandate）的文档理�
 11. relations 可选；type 只能是 BRANCH_OF、QUALIFIES、EXCEPTION_TO、DEFINES_SCOPE_FOR、DEPENDS_ON，target_local_id 必须指向当前批次真实 Requirement local_id。不确定时留空。
 12. local_id 只需在当前批次唯一，例如 r1、r2、d1、c1。
 13. Coverage Reviewer 的反馈只是重新检查线索。必须重新依据原始 clauses 判断，不能无条件接受反馈。
-14. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
-15. 省略没有信息的可选字段（null、空字典、空列表），不要为每条 Requirement 复制完整空模板。保留 local_id、requirement_type、semantic_summary、evidence 以及原文确实支持的字段；不因精简而省略真实数值、条件或分支。
+14. 同时在根节点提取文档概览 document_profile，含 asset_scope、instruments、benchmark、investment_strategy 四个键。提取依据对文档全文的语义理解，不受固定章节编号、特定标题、关键字或语言限制；非空字段返回中文简述 summary 以及覆盖对应信息完整主文的 evidence_clause_ids。asset_scope 用简短中文短语描述实际资产类别与市场/地域范围，不罗列禁投政策；instruments 概括所有允许投资的资产类别与工具；benchmark 逐字保留原文具体基准名称、权重、币种及代码（若存在）；investment_strategy 中文简述需涵盖投资目标、目标收益/期限、投资风格及对理解策略有实质影响的限制条件（若存在），不强加固定条数或排斥相关实质限制。不得拼入其他无关组合内容，不得捏造数值或目标，不得将页眉页脚、一般定义或无关页脚格式化为正文。未明确提及的字段置为 null。后续要求省略空模板不适用于这四个概览字段。
+15. 只输出一个 JSON 对象，不要输出 Markdown 或解释文字。
+16. 省略没有信息的可选字段（null、空字典、空列表），不要为每条 Requirement 复制完整空模板。保留 local_id、requirement_type、semantic_summary、evidence 以及原文确实支持的字段；不因精简而省略真实数值、条件或分支。
 """
 
 
@@ -129,6 +130,12 @@ def build_extraction_prompt(
                 "attributes": {},
             }
         ],
+        "document_profile": {
+            "asset_scope": {"summary": "仅据原文填写资产范围中文简述", "evidence_clause_ids": ["c0001"]},
+            "instruments": {"summary": "仅据原文填写投资工具简述", "evidence_clause_ids": ["c0002"]},
+            "benchmark": {"summary": "仅据原文填写基准简述", "evidence_clause_ids": ["c0003"]},
+            "investment_strategy": {"summary": "仅据原文填写完整投资策略简述", "evidence_clause_ids": ["c0004"]},
+        },
     }
     parts = [
         "# Requirement extraction batch",

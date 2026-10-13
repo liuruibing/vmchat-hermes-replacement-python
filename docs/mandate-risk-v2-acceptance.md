@@ -32,7 +32,7 @@ git diff --check
 | 权益sample.pdf | `3aaf3f50e4015129d6d388425fe6b6503eed5e7391b0ef6d20950afd30c117d6` | 7 / 136 |
 | 固收sample.pdf | `316c96750fc2395222bcab9e191f2e5190795c28d843f8899375b9b10eb761f8` | 6 / 109 |
 
-指标源为 `agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv`，34 个数据行，SHA-256 为 `cd097edb49be7b73152292722db71d41e7f65d40444b35cd7fc3e96a071fc4d5`。库行 ID 为源行身份，不等于数据行总数。
+指标源为 `agents/mandate_risk_ai/knowledge/raw/risk_metrics.raw.csv`（注：本节为 2026-09-30 静态历史快照记录。现已全量迁移至预编译指标库契约：根目录 Markdown 知识库 `指标知识库.md` 为权威源，运行时加载预编译产物 `指标知识库.generated.json`，原 CSV 仅作为离线归档保留），34 个数据行，SHA-256 为 `cd097edb49be7b73152292722db71d41e7f65d40444b35cd7fc3e96a071fc4d5`。库行 ID 为源行身份，不等于数据行总数。
 
 ## 真实模型记录
 

@@ -256,6 +256,7 @@ class RequirementExtractionPipeline:
         *,
         document_name: str,
         windows: Sequence[Sequence[DocumentClause]],
+        clauses: Sequence[DocumentClause] | None = None,
         provider: Any,
         signal: Any,
         review_feedback: dict | None,
@@ -291,7 +292,7 @@ class RequirementExtractionPipeline:
                     if validation_attempt:
                         raise ValueError(f"MANDATE_EXTRACTION_INVALID: {exc}") from exc
                     validation_feedback = str(exc)[:2000]
-        return build_requirement_ir(document_name=document_name, batches=batches), call_count
+        return build_requirement_ir(document_name=document_name, batches=batches, clauses=clauses), call_count
 
     async def _review_coverage(
         self,
@@ -384,6 +385,7 @@ class RequirementExtractionPipeline:
             final_ir, extraction_calls = await self._extract_attempt(
                 document_name=document_name,
                 windows=windows,
+                clauses=clauses,
                 provider=provider,
                 signal=signal,
                 review_feedback=review_feedback,

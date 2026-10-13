@@ -19,6 +19,11 @@ from app.mandate_risk_v2.models import (
     RequirementIR,
     StrictModel,
 )
+from app.mandate_risk_v2.reference_portfolio import (
+    ReferencePortfolioItem,
+    ReferencePortfolioResolver,
+    ReferencePortfolioSource,
+)
 
 
 class RequirementResultItem(StrictModel):
@@ -59,6 +64,7 @@ class MatchedMetricResult(StrictModel):
     requirements: list[MetricRequirementResult] = Field(default_factory=list)
     match_score: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     score_reason: str | None = None
+    reference_portfolios: list[ReferencePortfolioItem] = Field(default_factory=list)
 
 
 class DestinationResultItem(StrictModel):
@@ -70,6 +76,52 @@ class DestinationResultItem(StrictModel):
     evidence: list[CanonicalEvidence] = Field(default_factory=list)
 
 
+class StrategyMetricLink(StrictModel):
+    """Link between one StrategyPoint and one displayed metric."""
+
+    raw_row_id: int
+    metric_name: str
+    basis: Literal["EXPLICIT", "INFERRED", "UNCERTAIN"]
+    reason: str
+    evidence: list[CanonicalEvidence] = Field(default_factory=list)
+
+
+class StrategyPoint(StrictModel):
+    """One grounded strategy point extracted from document clauses."""
+
+    point_id: str
+    title: str
+    summary: str
+    evidence: list[CanonicalEvidence] = Field(default_factory=list)
+    metric_links: list[StrategyMetricLink] = Field(default_factory=list)
+
+
+class UnlinkedMetric(StrictModel):
+    """Displayed metric with no identified strategy point association."""
+
+    raw_row_id: int
+    metric_name: str
+    reason: str
+
+
+StrategyEvidenceCategory = Literal["instruments", "benchmark", "investment_strategy"]
+
+
+class StrategyEvidenceSection(StrictModel):
+    """One coherent original-text section extracted from document clauses."""
+
+    section_id: str
+    category: StrategyEvidenceCategory
+    title: str
+    evidence: list[CanonicalEvidence] = Field(default_factory=list)
+
+
+class StrategyEvidenceResult(StrictModel):
+    """Collection of extracted strategy points, unlinked displayed metrics, and original-text sections."""
+
+    sections: list[StrategyEvidenceSection] = Field(default_factory=list)
+    points: list[StrategyPoint] = Field(default_factory=list)
+    unlinked_metrics: list[UnlinkedMetric] = Field(default_factory=list)
 class V2AnalysisResult(StrictModel):
     """Stable structured V2 output from which Markdown/UI views can be rendered."""
 
@@ -92,6 +144,8 @@ class V2AnalysisResult(StrictModel):
     definitions: list[Definition] = Field(default_factory=list)
     contextual_facts: list[ContextFact] = Field(default_factory=list)
     summary: str = ""
+    strategy_evidence: StrategyEvidenceResult | None = Field(default=None)
+    reference_portfolio_source: ReferencePortfolioSource | None = None
 
 
 def _metric_reference(metric: RawRiskMetric) -> MetricReference:
@@ -119,6 +173,9 @@ def build_v2_analysis_result(
     clauses: Sequence[DocumentClause],
     registry: RawRiskMetricRegistry,
     mapping: MappingResult,
+    strategy_evidence: StrategyEvidenceResult | None = None,
+    reference_portfolio_resolver: ReferencePortfolioResolver | None = None,
+    as_of_date: str | None = None,
 ) -> V2AnalysisResult:
     """Build one canonical business result without inventing display-time semantics."""
 
@@ -224,7 +281,7 @@ def build_v2_analysis_result(
         f"{len(non_metrics)} 个非指标要求。"
     )
 
-    return V2AnalysisResult(
+    result = V2AnalysisResult(
         document_name=ir.document_name,
         metric_catalogue_name=_catalogue_name(registry),
         metric_catalogue_sha256=registry.source_sha256 or None,
@@ -244,4 +301,7 @@ def build_v2_analysis_result(
         definitions=ir.definitions,
         contextual_facts=ir.contextual_facts,
         summary=summary,
+        strategy_evidence=strategy_evidence,
     )
+    resolver = reference_portfolio_resolver or ReferencePortfolioResolver(as_of_date=as_of_date)
+    return resolver.enrich_result(result)

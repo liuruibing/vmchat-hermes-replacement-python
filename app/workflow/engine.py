@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Callable, List, Optional, Protocol, runtime_checkable
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Protocol, runtime_checkable
 
 from app.compatibility.hermes_request import VmChatInput
 
@@ -39,6 +39,9 @@ class WorkflowContext:
     skill_md: str = ""
     # Callable 类似 TS 的 (query: string) => string；None 表示本次没有提供检索能力。
     knowledge_search: Optional[Callable[[str], str]] = None
+    knowledge_context_loader: Optional[
+        Callable[[str, List[Dict[str, str]], str], Any]
+    ] = None
     resources: Any = None
     signal: Optional[Any] = None  # 类似前端 AbortController 的取消信号，节点和 Provider 都会检查。
     message_chunk_chars: int = 256

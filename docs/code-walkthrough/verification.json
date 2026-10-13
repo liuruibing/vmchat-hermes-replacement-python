@@ -1,0 +1,30 @@
+{
+  "source_revision": "5d1e91255f6f66771a8302675ff3fbbc179411dc",
+  "snapshot_date": "2026-10-08",
+  "source_excerpts": 38,
+  "source_excerpt_verification": "exact",
+  "routes": 5,
+  "main_html": {
+    "sha256": "89394dc164cc5f8119335e4c1083253835b32d7b31b36447c9738d283c29d485",
+    "bytes": 869681
+  },
+  "diagram": {
+    "validation": "showcase 9/9; 0 errors; 0 warnings",
+    "spec_sha256": "f2e7aad5fe18689a0412c768f8e029a17546d3f17fb6d0c2c73b44c085d9b699",
+    "artifact_sha256": "80fb03ec115ea4aa6ab8589f90cf97aefbbca1f9bbaea979253589930c82ed0c",
+    "containment": "1440x900,1600x1000,1920x1080,2048x1320 passed",
+    "visual_inspection": "largest light screenshot inspected"
+  },
+  "browser_checks": {
+    "browser": "logged-in Chrome",
+    "route_switch": "passed",
+    "next_step": "passed",
+    "source_jump": "passed",
+    "source_search": "passed",
+    "annotation_toggle": "passed",
+    "dark_theme": "passed",
+    "horizontal_containment": "1440x900 and 390x844 passed after request-grid fix",
+    "console_errors": "none observed"
+  },
+  "scope": "explanatory HTML only; no business source changes; no remote model calls"
+}

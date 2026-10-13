@@ -24,6 +24,7 @@ class AgentDefinition(BaseModel):
     resourcesDir: Optional[str] = Field(default=None, alias="resources_dir")
     skillPath: Optional[str] = Field(default=None, alias="skill_path")
     knowledgePaths: List[str] = Field(default_factory=list, alias="knowledge_paths")
+    knowledgeSources: List[str] = Field(default_factory=list, alias="knowledge_sources")
     rolesDir: Optional[str] = Field(default=None, alias="roles_dir")
     defaultRole: Optional[str] = Field(default=None, alias="default_role")
     metadata: Dict[str, Any] = Field(default_factory=dict)
