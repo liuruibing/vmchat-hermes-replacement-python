@@ -8,10 +8,11 @@ from pydantic import Field
 
 from app.mandate_risk.clauses import split_document_clauses
 from app.mandate_risk.registry import RawRiskMetricRegistry
+from app.mandate_risk_v2.concept_knowledge import SOURCES, metric_concept_reference
 from app.mandate_risk_v2.extractor import canonical_evidence
 from app.mandate_risk_v2.mapping_models import MetricRowAssessment
 from app.mandate_risk_v2.models import EvidenceRef, Requirement, StrictModel
-from app.mandate_risk_v2.pipeline import RequirementExtractionPipeline
+from app.mandate_risk_v2.pipeline import RequirementExtractionPipeline, gather_model_tasks
 from app.mandate_risk_v2.result import (
     MatchedMetricResult, MetricRequirementResult, RequirementResultItem,
     V2AnalysisResult, _catalogue_name, _metric_reference,
@@ -19,13 +20,16 @@ from app.mandate_risk_v2.result import (
 from app.mandate_risk_v2.reference_portfolio import ReferencePortfolioResolver
 
 
-SCREENING_SYSTEM_PROMPT = """你是 PDF 风险指标筛选员，帮助用户从给定指标库筛出与文档相关的指标，供人工选择。
-直接阅读 PDF 原文及指标库，理解文档的资产、策略、目标、约束和风险暴露后筛选，不进行逐条要求拆解或合规审计。
-完整浏览给定库行，每行恰好返回一个结果。DIRECT 表示原文有明确对应测量概念；REVIEW 表示有合理的间接监控用途或适用条件需确认；NOT_RELEVANT 表示没有合理文档关联。
-合同未点名指标、算法缺失、口径不完全一致，不是自动排除理由；简要写在 differences 中即可。一般风险政策不能支持整个库；无相关资产暴露的专属指标不要牵强关联。
-match_score 是 0–100 的数字，表达文档相关程度，不是正确概率。90–100 明确对应且适用；75–89 关联清晰但有口径差异；50–74 间接监控或依据较弱；0–49 关联弱或存在重大不适用因素。独立评分，不固定按 DIRECT/REVIEW 给分，不凑数量。
-DIRECT/REVIEW 必须引用最能支持该指标的 1–3 个真实 clause_id，跨页定义或条件需要时可补充；reason 简要解释原文与该指标的关联。只返回 ID，原文及页码由程序读取，不改写原文，不编造阈值、指标或组合值。
-NOT_RELEVANT 简述排除原因，evidence_clause_ids 可为空。分段文档只判断本段支持的关联，不根据本段未提及推断全文不适用。
+SCREENING_SYSTEM_PROMPT = """你是 PDF 风险指标筛选员，只筛选原文有明确对应测量概念或约束的指标，供人工选择。
+直接阅读 PDF 原文及指标库，不进行逐条要求拆解或合规审计。指标入选必须有原文明确要求、使用或限制该指标/测量概念的依据；同义表述或明确等价的计算约束可以匹配，不要求名称逐字一致。仅在定义表出现而未实际要求或使用，不足以入选。
+完整浏览给定库行，每行恰好返回一个结果。DIRECT 表示符合上述明确原文依据；REVIEW 表示只有间接监控用途、推导关系或尚不能确认概念对应；NOT_RELEVANT 表示没有对应文档依据。只有 DIRECT 会入选，REVIEW 不入选。
+长期资本增长、稳定股息、主动管理、低跟踪误差、一般风险政策或资产暴露不能推导出原文未要求的其他指标。指标库 mandate、分类和算法只能用于理解指标，不能代替 PDF 原文。例如长期增长与低跟踪误差不支持下行Beta；超额收益与跟踪误差也不能自动推导信息比率。
+concept_reference 为本库算法的辅助解释，不是合同证据；不得用外部常见定义覆盖本库口径。资本增长/总回报目标可对应基金收益率，超基准目标可对应基准超额收益，不要求每项都有数值上限；但不能从这些目标补出Beta、风险调整或额外比率。证券与发行人、绝对行业敞口与相对行业偏离、股息收益率与贡献/增长/基准比值、第三方基金底层与全组合流动性必须区分。名称未出现但公式等价也可DIRECT；算法未知与概念明确不同不能混为一谈。
+不要求每个指标另有数值门槛：正文的管理调整、交易条件或例外明确以某测量概念为操作对象，属于实质使用，可以DIRECT；不能把这类操作性条款等同于仅在定义表出现。反之，公式的操作数、背景分类、基准配置不能各自升级成独立指标要求。
+原文明示主要/限定投资某资产类别或市场时，可关联同一配置对象的占比概念，不要求原文再说“计算占比”或给数值门槛；算法、分母未明可说明差异，不从库mandate补造限额。必须区分发行人所在地、上市地和币种，不能把单纯工具许可扩展成其他对象的比例指标。
+match_score 是 0–100 的数字，仅表达已判断的对应程度、用于排序，不是入选门槛或正确概率。高分不能使间接推断入选，不凑数量。
+DIRECT/REVIEW 必须引用最能支持判断的 1–3 个真实 clause_id，跨页定义或条件需要时可补充；reason 必须区分明确要求与间接用途。原文概念明确但算法缺失或计算口径差异写入 differences；若差异意味着并非同一测量概念，则不得标 DIRECT。只返回 ID，原文及页码由程序读取，不改写原文，不编造阈值、指标或组合值。
+NOT_RELEVANT 简述排除原因，evidence_clause_ids 可为空。分段文档只判断本段支持的明确对应，不根据本段未提及推断全文不适用。
 只输出一个 JSON 对象，形状为 {"rows":[{"raw_row_id":2,"level":"DIRECT","match_score":92,"reason":"关联理由","evidence_clause_ids":["c0001"],"differences":"口径差异或空字符串"}]}。"""
 
 
@@ -91,8 +95,11 @@ class ScreeningPipeline:
                      ], ensure_ascii=False, separators=(",", ":")),
                      "# Raw metric rows (JSON)", json.dumps([
                          {"raw_row_id": r.row_id, "name": r.metric_name, "algorithm": r.algorithm,
-                          "mandate": r.mandate, "strategy_type": r.strategy_type} for r in batch_rows
-                     ], ensure_ascii=False, separators=(",", ":"))]
+                          "mandate": r.mandate, "strategy_type": r.strategy_type,
+                          "concept_reference": metric_concept_reference(r)} for r in batch_rows
+                     ], ensure_ascii=False, separators=(",", ":")),
+                     "# Concept reference provenance (not PDF evidence)",
+                     json.dumps(SOURCES, ensure_ascii=False, separators=(",", ":"))]
             allowed_rows = {row.row_id for row in batch_rows}
             allowed_clauses = {clause.clause_id for clause in window}
             async with semaphore:
@@ -124,7 +131,7 @@ class ScreeningPipeline:
                         parts.extend(["# Previous output failed structural validation", feedback])
 
         # gather preserves window order, making aggregation independent of response timing.
-        batches = await asyncio.gather(*(
+        batches = await gather_model_tasks(*(
             screen(window, rows[offset:offset + self.batch_size], index)
             for index, window in enumerate(windows)
             for offset in range(0, len(rows), self.batch_size)
@@ -136,10 +143,14 @@ class ScreeningPipeline:
 
         screened, matched, candidates, requirements, assessments = [], [], [], [], []
         for metric in rows:
-            selected = [item for item in by_row[metric.row_id] if item.level != "NOT_RELEVANT"]
+            selected = [item for item in by_row[metric.row_id] if item.level == "DIRECT"]
             assessments.append(MetricRowAssessment(
                 raw_row_id=metric.row_id, outcome="LINKED" if selected else "NOT_RELEVANT",
-                reason="；".join(dict.fromkeys(item.reason for item in by_row[metric.row_id])),
+                reason="；".join(dict.fromkeys(
+                    ("未入选：仅有间接或待确认关联，不满足原文明示准入要求。" + item.reason)
+                    if item.level == "REVIEW" else item.reason
+                    for item in by_row[metric.row_id]
+                )),
             ))
             if not selected:
                 continue
@@ -164,7 +175,7 @@ class ScreeningPipeline:
             result = MatchedMetricResult(metric=_metric_reference(metric), requirements=associations,
                                          match_score=strongest.match_score, score_reason=strongest.reason)
             screened.append(result)
-            (matched if any(item.level == "DIRECT" for item in selected) else candidates).append(result)
+            matched.append(result)
         screened.sort(key=lambda item: (-item.match_score, item.metric.raw_row_id))
         analysis = V2AnalysisResult(
             document_name=document_name, analysis_mode="screening", coverage_status="not_audited",

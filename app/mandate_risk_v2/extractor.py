@@ -4,7 +4,10 @@ import re
 from typing import Dict, Iterable, List, Sequence, Tuple
 
 from app.mandate_risk.clauses import DocumentClause
-from app.mandate_risk_v2.constraint_validator import validate_requirement_constraints
+from app.mandate_risk_v2.constraint_validator import (
+    is_text_grounded_in_evidence,
+    validate_requirement_constraints,
+)
 from app.mandate_risk_v2.models import (
     CanonicalEvidence,
     ContextFact,
@@ -131,6 +134,7 @@ def validate_extraction_payload(
 
     batch = ExtractionBatch.model_validate(payload)
     known = _known_clause_ids(allowed_clauses)
+    clauses_by_id = {clause.clause_id: clause for clause in allowed_clauses}
 
     if batch.document_profile is not None:
         validate_document_profile_draft(batch.document_profile, known_clause_ids=known)
@@ -154,6 +158,11 @@ def validate_extraction_payload(
             known_clause_ids=known,
             owner=f"requirement {item.local_id}",
         )
+        heading = item.attributes.get("source_heading")
+        if heading is not None:
+            evidence_text = "\n".join(clauses_by_id[cid].text for cid in item.evidence.clause_ids)
+            if not isinstance(heading, str) or not heading.strip() or not is_text_grounded_in_evidence(heading, evidence_text):
+                raise ValueError(f"requirement {item.local_id}: source_heading is not in cited evidence")
         for relation in item.relations:
             if relation.target_local_id not in requirement_id_set:
                 raise ValueError(

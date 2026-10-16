@@ -59,9 +59,6 @@ def test_review_candidate_survives_even_if_destination_review_does_not_select_it
     assert [item.metric.raw_row_id for item in result.candidate_metrics] == [19]
     assert result.candidate_metrics[0].requirements[0].mapping_evidence[0].page == 2
     report = render_v2_report(ir=ir, clauses=clauses, registry=registry, mapping=mapping, analysis=result)
-    main = report.split("## 筛选结果", 1)[1].split("## 指标匹配依据", 1)[0]
-    assert "New liquidity monitoring measure" in main
-    assert "82/100" in main
     assert "New liquidity monitoring measure" in report
     assert "Maintain sufficient liquidity." in report
     assert "algorithm needs confirmation" in report
@@ -85,10 +82,12 @@ def test_critic_recall_accepts_only_grounded_library_candidates():
 def test_critic_can_remove_an_unrelated_review_candidate_without_removing_others():
     ir, clauses, registry = data()
     links = [MappingLink.model_validate(candidate(row_id=row_id)) for row_id in (19, 29)]
-    review = validate_critic({"verdicts": [], "rejected_candidates": [{
-        "requirement_id": "REQ-0001", "raw_row_id": 29,
-        "reason": "Issuer count is unrelated to this liquidity objective",
-        "evidence_clause_ids": ["c0001"]}]}, ir=ir,
+    review = validate_critic({"verdicts": [
+        {"target_id": "TGT-0001", "verdict": "CONFIRM", "reason": "Same liquidity measurement.",
+         "evidence_clause_ids": ["c0001"]},
+        {"target_id": "TGT-0002", "verdict": "CHALLENGE", "reason": "Issuer count is not liquidity.",
+         "evidence_clause_ids": ["c0001"]},
+    ]}, ir=ir,
         dispositions=FinalMappingReview(dispositions=[]), registry=registry, links=links)
     mapping = MappingResult(links=links, dispositions=FinalMappingReview(dispositions=[]), critic=review, usage={})
     result = build_v2_analysis_result(ir=ir, clauses=clauses, registry=registry, mapping=mapping)
@@ -170,7 +169,9 @@ def test_critic_missing_aspect_rejects_invalid_identity_or_duplicate_destination
     }]})
     missing = {"requirement_id": "REQ-0001", "aspect": "missing condition",
                "reason": "not covered", "evidence_clause_ids": ["c0001"]}
-    payload = {"verdicts": [], "missing_aspects": [missing]}
+    payload = {"verdicts": [{"target_id": "TGT-0001", "verdict": "CONFIRM",
+                            "reason": "Existing condition is still pending implementation.",
+                            "evidence_clause_ids": ["c0001"]}], "missing_aspects": [missing]}
     if invalid == "unknown_requirement":
         missing["requirement_id"] = "REQ-FAKE"
     elif invalid == "unknown_clause":

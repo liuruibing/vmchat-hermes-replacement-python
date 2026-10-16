@@ -17,7 +17,9 @@ EXTRACTION_SYSTEM_PROMPT = """你是投资委托文件（Mandate）的文档理�
 3. Requirement 必须表示文件真实表达的目标、策略、范围、量化目标/限额、禁止、许可、条件规则、外部政策要求或治理要求。
 4. requirement_type 只能是：OBJECTIVE、STRATEGY、SCOPE、QUANTITATIVE_TARGET、QUANTITATIVE_LIMIT、PROHIBITION、PERMISSION、CONDITIONAL_RULE、EXTERNAL_POLICY、GOVERNANCE、OTHER。
 5. 复杂条件必须保留所有分支、阈值、单位、时点、scope、例外。不要把多档条件压缩成一条模糊总结。
-6. evidence 只能返回输入中真实存在的 clause_id。不要返回 page，不要自行复制或改写原文作为证据。
+   按真实标题和正文逐节检查，每个实质要求均应保留，不能只提取容易匹配指标的数值项。一个标题可对应多条要求；禁止、白名单、配置、治理要求不能因非数值而省略。相同测量概念的重复表述可以合并，但不同对象、条件分支和交易禁令不能合并丢失。
+   在 requirement.attributes.source_heading 中逐字保存对应原文小标题（如存在），并在 evidence.clause_ids 中包含该标题的条款及实质正文；跨页小节需保留后续条件证据。无可靠标题时省略该属性，不发明章节。基准、基础货币等配置可保留为 contextual_facts，不能推导成额外投资禁令。
+6. evidence 只能逐字复制输入中真实存在的 clause_id，包括全部前导零；它是不可改写的身份字符串，不是章节编号或整数。不要把 c0012 缩成 c012/c12，也不要返回 page、自行复制或改写证据原文。
 7. 不得跨页拼接成输入中不存在的单条原文。需要多个条款共同支持时列出多个 clause_id。
 8. measurement / qualifiers / scope / conditions / attributes 是开放语义字段。只填写原文能够支持的信息，不要为了填满 schema 猜测。
 9. constraint 用于保存原文能够明确支持的比较关系、数值、范围、单位、公式、benchmark 与限定词。区间必须分别保存 value 与 value_to；若 value 或 value_to 非空，raw_value_text 必须逐字复制 evidence 中包含该数值的原始短语，不得改写。原文没有明确数值、单位、上下限或 benchmark 时必须留空，不得根据常识补充。
@@ -142,6 +144,8 @@ def build_extraction_prompt(
         json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
         "# Input clauses (JSON)",
         json.dumps(_clause_payload(clauses), ensure_ascii=False, separators=(",", ":")),
+        "# Allowed evidence clause_ids (exact strings, preserve leading zeros)",
+        json.dumps([clause.clause_id for clause in clauses], separators=(",", ":")),
     ]
     if review_feedback:
         parts.extend(
@@ -155,7 +159,7 @@ def build_extraction_prompt(
         parts.extend([
             "# Previous extraction failed deterministic validation",
             validation_feedback,
-            "请重新基于相同 clauses 输出完整合法的 JSON；不要让 Python 猜测或修补字段。",
+            "请重新基于相同 clauses 输出完整合法的 JSON；逐项从 Allowed evidence clause_ids 复制身份，保留前导零，不要让 Python 猜测或修补字段。",
         ])
     parts.extend(
         [

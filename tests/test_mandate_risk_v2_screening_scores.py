@@ -94,12 +94,7 @@ def test_unified_screening_result_merges_requirements_sorts_scores_and_excludes_
     assert [item.match_score for item in liquidity.requirements] == [78, 62]
     assert liquidity.score_reason == link()["score_reason"]
     report = render_v2_report(ir=ir, clauses=clauses, registry=registry, mapping=mapping, analysis=result)
-    table = report.split("## 筛选结果", 1)[1].split("## 指标匹配依据", 1)[0]
-    assert table.index("Credit indicator") < table.index("Liquidity indicator")
-    assert "94/100" in table and "78/100" in table
     assert "Unrelated indicator" not in report
-    assert "## 建议关注的候选指标" not in report
-    assert "正确概率" in report and "最高" in report
     assert "Maintain sufficient portfolio liquidity.（第 1 页）" in report
 
 
@@ -124,7 +119,9 @@ def test_critic_score_adjustment_requires_existing_link_and_canonical_evidence()
     adjustment = {"requirement_id": "REQ-0001", "raw_row_id": 2, "match_score": 74,
                   "score_reason": "Relevant monitoring, but the document scope is narrower.",
                   "evidence_clause_ids": ["c0001"]}
-    payload = {"verdicts": [], "score_adjustments": [adjustment]}
+    payload = {"verdicts": [{"target_id": "TGT-0001", "verdict": "UNRESOLVED",
+                            "reason": "Same concept, calculation basis unconfirmed.",
+                            "evidence_clause_ids": ["c0001"]}], "score_adjustments": [adjustment]}
     assert validate_critic(payload, ir=ir, dispositions=dispositions, registry=registry,
                            links=links).score_adjustments[0].match_score == 74
     adjustment["raw_row_id"] = 999
@@ -136,18 +133,19 @@ def test_critic_score_adjustment_requires_existing_link_and_canonical_evidence()
         validate_critic(payload, ir=ir, dispositions=dispositions, registry=registry, links=links)
 
 
-def test_relevant_metric_can_be_selected_even_when_calculation_needs_review():
+def test_same_concept_with_unconfirmed_calculation_remains_pending():
     ir, _, registry = fixture()
     links = [MappingLink.model_validate(link())]
     payload = {"dispositions": [{"requirement_id": requirement.requirement_id,
         "reason": "screening decision", "destinations": [{
-            "destination": "MAIN_TABLE" if index == 0 else "NON_METRIC",
+            "destination": "PENDING_REVIEW" if index == 0 else "NON_METRIC",
             "raw_row_ids": [2] if index == 0 else [],
             "evidence_clause_ids": requirement.evidence.clause_ids,
             "aspect": "risk monitoring", "reason": "Relevant monitoring indicator",
         }]} for index, requirement in enumerate(ir.requirements)]}
     result = validate_dispositions(payload, ir=ir, registry=registry, links=links)
     assert result.dispositions[0].destinations[0].raw_row_ids == [2]
+    assert result.dispositions[0].destinations[0].destination == "PENDING_REVIEW"
 
 
 @pytest.mark.anyio

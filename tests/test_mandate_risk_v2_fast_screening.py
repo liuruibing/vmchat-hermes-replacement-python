@@ -90,7 +90,7 @@ async def test_default_workflow_screens_once_preserving_catalogue_and_exact_pdf_
     assert result["analysis_mode"] == "screening"
     assert result["coverage_status"] == "not_audited"
     assert result["metric_catalogue_sha256"] == "source-sha"
-    assert [item["match_score"] for item in result["screened_metrics"]] == [92, 78]
+    assert [item["match_score"] for item in result["screened_metrics"]] == [92]
     assert result["screened_metrics"][0]["metric"]["algorithm"] == "liquid assets / NAV"
     quote = result["screened_metrics"][0]["requirements"][0]["mapping_evidence"][0]
     assert quote["page"] == 2
@@ -100,7 +100,10 @@ async def test_default_workflow_screens_once_preserving_catalogue_and_exact_pdf_
     assert terminal.usage["strategy_evidence_phase"]["total_tokens"] == 10
     assert terminal.usage["total_tokens"] == 20
     assert result["strategy_evidence"]["points"][0]["metric_links"][0]["raw_row_id"] == 2
-    assert result["strategy_evidence"]["unlinked_metrics"][0]["raw_row_id"] == 3
+    assert result["candidate_metrics"] == []
+    assert {item["raw_row_id"]: item["outcome"] for item in result["catalogue_assessments"]} == {
+        2: "LINKED", 3: "NOT_RELEVANT",
+    }
 
 
 @pytest.mark.anyio
@@ -181,3 +184,28 @@ async def test_long_document_reads_every_window_and_keeps_later_evidence():
     assert len(analysis.screened_metrics) == 1
     assert analysis.screened_metrics[0].requirements[0].mapping_evidence[0].page == 2
     assert usage["document_windows"] == 2
+
+
+@pytest.mark.anyio
+async def test_indirect_monitoring_is_excluded_even_with_a_high_score():
+    metrics = RawRiskMetricRegistry([
+        RawRiskMetric(row_id=12, source_row=12, metric_name="下行Beta",
+                      algorithm="Cov(Rp,Rb | Rb<0) / Var(Rb | Rb<0)",
+                      mandate="Long term capital growth"),
+        RawRiskMetric(row_id=14, source_row=14, metric_name="跟踪误差",
+                      algorithm="TE=σ(Rp−Rb)"),
+    ])
+    text = ("[Page 1]\nThe Sub-Portfolio aims for long term capital growth.\n\n"
+            "The Sub-Portfolio shall maintain low Tracking Error.")
+    provider = Provider([{"rows": [
+        row(12, 99, ["c0001"], "REVIEW"),
+        row(14, 70, ["c0002"], "DIRECT"),
+    ]}])
+    analysis, _ = await ScreeningPipeline().run(
+        document_name="equity.pdf", document_text=text, registry=metrics, provider=provider)
+    assert [item.metric.raw_row_id for item in analysis.screened_metrics] == [14]
+    assert [item.metric.raw_row_id for item in analysis.matched_metrics] == [14]
+    assert analysis.candidate_metrics == []
+    assert {item.raw_row_id: item.outcome for item in analysis.catalogue_assessments} == {
+        12: "NOT_RELEVANT", 14: "LINKED",
+    }

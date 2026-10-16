@@ -218,9 +218,6 @@ def test_metric_keeps_review_requirement_when_another_requirement_is_direct(dest
     report = render_v2_report(
         ir=ir, clauses=clauses, registry=registry, mapping=mapping, analysis=result,
     )
-    main_table = report.split("## 筛选结果", 1)[1].split("## 指标匹配依据", 1)[0]
-    assert clauses[0].text in main_table
-    assert clauses[1].text in main_table
     assert len(result.screened_metrics) == 1
     assert len(result.screened_metrics[0].requirements) == 2
     assert review_link.reason in report

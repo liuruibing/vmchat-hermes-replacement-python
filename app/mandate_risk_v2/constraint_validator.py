@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
@@ -17,9 +18,32 @@ _BETWEEN_OPERATORS = {"BETWEEN", "RANGE"}
 
 
 def _normalize_text(value: str) -> str:
-    text = re.sub(r"(?<=\w)-[ \t]*\r?\n[ \t]*(?=\w)", "-", str(value or ""))
-    return re.sub(r"\s+", " ", text).strip().casefold()
+    norm = unicodedata.normalize("NFKC", str(value or ""))
+    norm = re.sub(r"[\u00ad\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uff0d]", "-", norm)
+    norm = re.sub(r"(?<=\w)[ \t]*-[ \t]*\r?\n[ \t]*(?=\w)", "-", norm)
+    norm = re.sub(r"(\d+)\s+%", r"\1%", norm)
+    return re.sub(r"\s+", " ", norm).strip().casefold()
 
+
+def _relaxed_key(value: str) -> str:
+    norm = _normalize_text(value)
+    return re.sub(r"[^a-z0-9%<>=.]+", "", norm)
+
+
+def is_text_grounded_in_evidence(needle: str, haystack: str) -> bool:
+    if not needle:
+        return True
+    norm_needle = _normalize_text(needle)
+    norm_haystack = _normalize_text(haystack)
+    if not norm_needle:
+        return True
+    if norm_needle in norm_haystack:
+        return True
+    rel_needle = _relaxed_key(norm_needle)
+    rel_haystack = _relaxed_key(norm_haystack)
+    if rel_needle and rel_needle in rel_haystack:
+        return True
+    return False
 
 def _scalar_text(value: Any) -> str | None:
     if value is None or isinstance(value, bool) or isinstance(value, (dict, list, tuple, set)):
@@ -71,27 +95,24 @@ def _validate_constraint_provenance(
     evidence_text: str,
     owner: str,
 ) -> None:
-    normalized_evidence = _normalize_text(evidence_text)
-    raw_value_text = _normalize_text(constraint.raw_value_text or "")
-    if raw_value_text and raw_value_text not in normalized_evidence:
+    raw_value_text = constraint.raw_value_text or ""
+    if raw_value_text and not is_text_grounded_in_evidence(raw_value_text, evidence_text):
         raise ValueError(f"{owner} raw_value_text is not present in evidence")
     if constraint.value is None and str(constraint.operator or "").strip().upper() in _COMPARATIVE_OPERATORS:
-        benchmark = _normalize_text(constraint.benchmark or "")
-        if benchmark and benchmark not in normalized_evidence:
+        benchmark = constraint.benchmark or ""
+        if benchmark and not is_text_grounded_in_evidence(benchmark, evidence_text):
             raise ValueError(f"{owner} benchmark is not present in evidence")
 
     # Verify scalar values are grounded in the copied raw value span. This is
     # deliberately lexical only: Python does not infer financial semantics,
     # rating order, percentage validity, or unit conversions.
-    source_for_values = raw_value_text or normalized_evidence
+    source_for_values = raw_value_text or evidence_text
     for label, value in (("value", constraint.value), ("value_to", constraint.value_to)):
         token = _scalar_text(value)
         if token is None:
             continue
-        normalized_token = _normalize_text(token)
-        if normalized_token and normalized_token not in source_for_values:
+        if not is_text_grounded_in_evidence(token, source_for_values):
             raise ValueError(f"{owner} {label} is not present in raw evidence text")
-
 
 def validate_requirement_constraints(
     requirements: Iterable[RequirementDraft],

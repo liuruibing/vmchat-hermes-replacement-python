@@ -32,6 +32,18 @@ FULL_DOCUMENT_MAX_CHARS = 60_000
 MAX_REPAIR_ROUNDS = 2
 MAX_COVERAGE_VALIDATION_REPAIRS = 2
 
+async def gather_model_tasks(*coroutines):
+    """Cancel and drain siblings before propagating failure or cancellation."""
+    tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+
 
 class RequirementCoverageIncomplete(RuntimeError):
     def __init__(self, review: CoverageReview) -> None:

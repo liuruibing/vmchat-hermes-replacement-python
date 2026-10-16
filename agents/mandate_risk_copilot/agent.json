@@ -1,0 +1,13 @@
+{
+  "id": "mandate-risk-copilot",
+  "name": "Mandate Risk Copilot",
+  "version": "1.0.0",
+  "workflow": "mandate-risk-copilot",
+  "knowledge_paths": [],
+  "roles_dir": "../mandate_risk_v2_lab/roles",
+  "default_role": "requirement-analyst",
+  "metadata": {
+    "description": "并行 PDF 指标筛选、策略依据、报告追问与指标知识问答",
+    "experimental": true
+  }
+}

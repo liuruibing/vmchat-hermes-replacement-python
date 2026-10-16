@@ -8,7 +8,7 @@ from pydantic import Field
 from app.mandate_risk.clauses import DocumentClause
 from app.mandate_risk_v2.extractor import canonical_evidence
 from app.mandate_risk_v2.models import StrictModel
-from app.mandate_risk_v2.pipeline import RequirementExtractionPipeline
+from app.mandate_risk_v2.pipeline import RequirementExtractionPipeline, gather_model_tasks
 from app.mandate_risk_v2.result import (
     MatchedMetricResult,
     StrategyEvidenceCategory,
@@ -96,6 +96,17 @@ STRATEGY_EVIDENCE_SYSTEM_PROMPT = """你是投资委托策略依据与当前指�
      {"sections":[{"category":"instruments","title":"...","evidence_clause_ids":["c0001"]},{"category":"benchmark","title":"...","evidence_clause_ids":["c0002"]},{"category":"investment_strategy","title":"...","evidence_clause_ids":["c0003"]}],"points":[{"title":"...","summary":"...","evidence_clause_ids":["c0001"],"metric_links":[{"raw_row_id":2,"basis":"EXPLICIT","reason":"...","evidence_clause_ids":["c0001"]}]}],"unlinked_metrics":[{"raw_row_id":3,"reason":"..."}]}
 """
 
+CATALOGUE_STRATEGY_SYSTEM_PROMPT = """你是投资委托 PDF 原文策略分析员。独立阅读 PDF 条款和完整指标目录；本次没有前序筛选结果。
+提取真实原文的 sections：category 仅可为 instruments（允许投资的资产/工具）、benchmark（真实基准名称、比例与偏离要求）、investment_strategy（策略、风格、目标和方法）。
+每类仅保留实质性原文，title 保留原文章节名称；缺少某类就省略，禁止拿定义表、行政条款、全量限制章节充数。
+提取 points 策略要点，含非空 title、summary、evidence_clause_ids，及可选 metric_links。
+每条关联含目录中真实 raw_row_id、basis、非空 reason 和真实 evidence_clause_ids。
+basis 只能是 EXPLICIT（原文明确要求该测量概念）、INFERRED（合理间接监控用途）、UNCERTAIN（待确认）。定义某指标不等于要求该指标；一般增值目标不能强推所有指标。
+不要为覆盖指标库而凑关联；没有可靠策略关联可不输出该指标。unlinked_metrics 可记录明确无法关联的指标和非空 reason；同一指标不得同时 linked 和 unlinked，同一点内不得重复。
+所有 section、point、link 的 evidence_clause_ids 均必须非空且来自当前窗口。目录分类和算法不是 PDF 证据；不要编造原文、阈值、组合值、页码或条款 ID。
+只输出 JSON：
+{"sections":[{"category":"instruments","title":"原文章节","evidence_clause_ids":["c0001"]}],"points":[{"title":"策略要点","summary":"原文简释","evidence_clause_ids":["c0001"],"metric_links":[{"raw_row_id":2,"basis":"INFERRED","reason":"关联理由","evidence_clause_ids":["c0001"]}]}],"unlinked_metrics":[]}"""
+
 
 VALID_SECTION_CATEGORIES: tuple[StrategyEvidenceCategory, ...] = (
     "instruments",
@@ -116,20 +127,37 @@ class StrategyEvidencePipeline:
         *,
         document_name: str,
         clauses: Sequence[DocumentClause],
-        displayed_metrics: Sequence[MatchedMetricResult],
+        displayed_metrics: Sequence[MatchedMetricResult] = (),
         provider: Any,
         signal: Any = None,
+        catalogue_rows: Sequence[Any] | None = None,
     ) -> tuple[StrategyEvidenceResult, dict[str, Any]]:
         if not clauses:
             raise ValueError("DOCUMENT_HAS_NO_EXTRACTABLE_TEXT")
 
-        unique_metrics: dict[int, MatchedMetricResult] = {}
-        for item in displayed_metrics:
-            row_id = item.metric.raw_row_id
-            if row_id not in unique_metrics:
-                unique_metrics[row_id] = item
-
-        allowed_rows = set(unique_metrics.keys())
+        if catalogue_rows is not None and displayed_metrics:
+            raise ValueError("provide selected metrics or catalogue rows, not both")
+        metric_data = {}
+        if catalogue_rows is not None:
+            for row in catalogue_rows:
+                metric_data[row.row_id] = {
+                    "raw_row_id": row.row_id, "metric_name": row.metric_name,
+                    "algorithm": row.algorithm, "mandate": row.mandate,
+                    "strategy_type": row.strategy_type,
+                }
+        else:
+            for item in displayed_metrics:
+                metric = item.metric
+                metric_data[metric.raw_row_id] = {
+                    "raw_row_id": metric.raw_row_id, "metric_name": metric.metric_name,
+                    "algorithm": metric.algorithm, "mandate": metric.mandate,
+                    "strategy_type": metric.strategy_type,
+                    "risk_type_1": metric.risk_type_1, "risk_type_2": metric.risk_type_2,
+                    "score_reason": item.score_reason or "",
+                }
+        allowed_rows = set(metric_data)
+        system_prompt = (CATALOGUE_STRATEGY_SYSTEM_PROMPT if catalogue_rows is not None
+                         else STRATEGY_EVIDENCE_SYSTEM_PROMPT)
 
         windows = []
         window, size = [], 0
@@ -148,19 +176,7 @@ class StrategyEvidencePipeline:
         validation_errors = []
         call_count = 0
 
-        metrics_json = json.dumps([
-            {
-                "raw_row_id": m.metric.raw_row_id,
-                "metric_name": m.metric.metric_name,
-                "algorithm": m.metric.algorithm,
-                "mandate": m.metric.mandate,
-                "strategy_type": m.metric.strategy_type,
-                "risk_type_1": m.metric.risk_type_1,
-                "risk_type_2": m.metric.risk_type_2,
-                "score_reason": m.score_reason or "",
-            }
-            for m in unique_metrics.values()
-        ], ensure_ascii=False, separators=(",", ":"))
+        metrics_json = json.dumps(list(metric_data.values()), ensure_ascii=False, separators=(",", ":"))
 
         async def analyze_window(window_clauses: list[DocumentClause], window_index: int) -> StrategyEvidenceBatch:
             nonlocal call_count
@@ -174,7 +190,8 @@ class StrategyEvidencePipeline:
                     {"clause_id": c.clause_id, "page": c.page, "text": c.text}
                     for c in window_clauses
                 ], ensure_ascii=False, separators=(",", ":")),
-                "# Currently selected raw metric rows (JSON)",
+                ("# Raw metric rows (JSON)" if catalogue_rows is not None
+                 else "# Currently selected raw metric rows (JSON)"),
                 metrics_json,
             ]
             async with semaphore:
@@ -183,7 +200,7 @@ class StrategyEvidencePipeline:
                         call_count += 1
                         payload, usage = await self._model._call_model(
                             provider=provider,
-                            system_prompt=STRATEGY_EVIDENCE_SYSTEM_PROMPT,
+                            system_prompt=system_prompt,
                             user_prompt="\n".join(parts),
                             signal=signal,
                             stage="strategy_evidence",
@@ -249,7 +266,7 @@ class StrategyEvidencePipeline:
                             )
 
                         accounted_rows = linked_rows_in_batch | seen_unlinked
-                        if allowed_rows and accounted_rows != allowed_rows:
+                        if catalogue_rows is None and allowed_rows and accounted_rows != allowed_rows:
                             missing = allowed_rows - accounted_rows
                             raise ValueError(
                                 f"batch must explicitly account for all selected metrics, missing: {missing}"
@@ -264,7 +281,7 @@ class StrategyEvidencePipeline:
                         parts.extend(["# Previous output failed structural validation", feedback])
             raise ValueError("STRATEGY_EVIDENCE_INVALID: maximum attempts exceeded")
 
-        batches = await asyncio.gather(*(
+        batches = await gather_model_tasks(*(
             analyze_window(w, idx) for idx, w in enumerate(windows)
         ))
 
@@ -360,7 +377,7 @@ class StrategyEvidencePipeline:
             metric_links: list[StrategyMetricLink] = []
             for link_draft in point_draft.metric_links:
                 link_evidence = canonical_evidence(list(dict.fromkeys(link_draft.evidence_clause_ids)), clauses)
-                metric_name = unique_metrics[link_draft.raw_row_id].metric.metric_name
+                metric_name = metric_data[link_draft.raw_row_id]["metric_name"]
                 metric_links.append(StrategyMetricLink(
                     raw_row_id=link_draft.raw_row_id,
                     metric_name=metric_name,
@@ -382,14 +399,16 @@ class StrategyEvidencePipeline:
         }
 
         unlinked_metrics: list[UnlinkedMetric] = []
-        for row_id, metric_item in unique_metrics.items():
+        for row_id, metric_item in metric_data.items():
             if row_id in linked_row_ids:
                 continue
             reasons = unlinked_reasons_by_row[row_id]
             reason = "；".join(dict.fromkeys(r.strip() for r in reasons if r.strip()))
+            if not reason:
+                reason = "独立策略提取未建立该指标的可靠关联；不以筛选依据代替策略关联。"
             unlinked_metrics.append(UnlinkedMetric(
                 raw_row_id=row_id,
-                metric_name=metric_item.metric.metric_name,
+                metric_name=metric_item["metric_name"],
                 reason=reason,
             ))
 

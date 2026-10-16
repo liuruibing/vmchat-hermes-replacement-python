@@ -78,6 +78,7 @@ def build_default_workflow_registry(
     from app.mandate_risk.catalogue import load_prebuilt_registry
     from app.workflow.graphs.performance_report import PerformanceReportLangGraphWorkflow
     from app.workflow.graphs.simple_chat import SimpleChatLangGraphWorkflow
+    from app.workflow.graphs.unified_agent import MandateRiskCopilotWorkflow
 
     # V2 is registered under a separate workflow id only. Existing agents stay
     # on mandate-risk-analysis until the V2 accuracy gates are proven on real
@@ -91,5 +92,6 @@ def build_default_workflow_registry(
             PerformanceReportLangGraphWorkflow(),
             MandateRiskLangGraphWorkflow(metric_registry=metric_registry),
             MandateRiskV2Workflow(metric_registry=metric_registry),
+            MandateRiskCopilotWorkflow(metric_registry=metric_registry),
         ]
     )

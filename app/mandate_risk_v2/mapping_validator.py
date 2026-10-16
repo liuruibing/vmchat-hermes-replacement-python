@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk_v2.mapping_models import (
+    CONCEPT_IDENTITY_DIMENSIONS,
+    CandidateRejection,
     CriticReview,
     FinalMappingReview,
     MappingBatch,
@@ -55,6 +57,13 @@ def _validate_link_details(link: MappingLink, *, require_scores: bool) -> None:
         raise ValueError("screening link requires match_score")
     if link.match_score is not None and not (link.score_reason or "").strip():
         raise ValueError("match_score requires score_reason")
+    conflicts = [item.dimension for item in link.compatibility
+                 if item.dimension in CONCEPT_IDENTITY_DIMENSIONS and item.relation == "CONFLICT"]
+    if link.level != "REJECTED" and conflicts:
+        raise ValueError(
+            f"retained link contradicts concept identity: {conflicts}; "
+            "核对双方原文与算法，真正不同概念用REJECTED；同概念未知口径用INSUFFICIENT"
+        )
 
 
 def validate_batch(payload: dict, *, ir: RequirementIR, registry: RawRiskMetricRegistry,
@@ -106,6 +115,11 @@ def validate_dispositions(payload: dict, *, ir: RequirementIR, registry: RawRisk
                     raise ValueError("destination cannot select a REJECTED link")
             if destination.destination == "MAIN_TABLE" and not destination.raw_row_ids:
                 raise ValueError("MAIN_TABLE has no screening link")
+            if destination.destination == "MAIN_TABLE" and any(
+                link_map[(disposition.requirement_id, row_id)].level != "DIRECT"
+                for row_id in destination.raw_row_ids
+            ):
+                raise ValueError("MAIN_TABLE requires DIRECT links")
             if destination.destination in {"LIBRARY_GAP", "NON_METRIC"} and destination.raw_row_ids:
                 raise ValueError("non-metric destination cannot reference metric rows")
     return review
@@ -114,7 +128,7 @@ def validate_dispositions(payload: dict, *, ir: RequirementIR, registry: RawRisk
 def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMappingReview,
                     registry: RawRiskMetricRegistry | None = None,
                     links: list[MappingLink] | None = None, require_scores: bool = False) -> CriticReview:
-    targets = {item["target_id"]: item for item in critic_targets(dispositions)}
+    targets = {item["target_id"]: item for item in critic_targets(dispositions, links or ())}
     verdicts = []
     for verdict in payload.get("verdicts", []):
         if not isinstance(verdict, dict) or "target_id" not in verdict:
@@ -132,11 +146,8 @@ def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMapp
         normalized["verdicts"] = verdicts
     review = CriticReview.model_validate(normalized)
     expected = {
-        (item.requirement_id, dest.destination, row_id, dest.aspect)
-        for item in dispositions.dispositions
-        for dest in item.destinations
-        if dest.destination in {"MAIN_TABLE", "LIBRARY_GAP", "NON_METRIC"}
-        for row_id in (dest.raw_row_ids if dest.destination == "MAIN_TABLE" else [None])
+        (item["requirement_id"], item["destination"], item["raw_row_id"], item["aspect"])
+        for item in targets.values()
     }
     actual = [(item.requirement_id, item.destination, item.raw_row_id, item.aspect) for item in review.verdicts]
     if len(actual) != len(set(actual)) or set(actual) != expected:
@@ -162,6 +173,20 @@ def validate_critic(payload: dict, *, ir: RequirementIR, dispositions: FinalMapp
         if identity in rejected or identity not in existing or existing[identity].level == "REJECTED":
             raise ValueError("critic rejection must identify one existing screening candidate")
         _validate_evidence(ir, item.requirement_id, item.evidence_clause_ids)
+        rejected.add(identity)
+    # CHALLENGE means unsupported/different concept, not a second route into
+    # the candidate table. UNRESOLVED is reserved for the same concept with
+    # an unconfirmed implementation. The critic must cite the PDF in both cases.
+    for verdict in review.verdicts:
+        identity = (verdict.requirement_id, verdict.raw_row_id)
+        if (verdict.verdict != "CHALLENGE" or verdict.raw_row_id is None
+                or identity not in existing or identity in rejected
+                or existing[identity].level == "REJECTED"):
+            continue
+        review.rejected_candidates.append(CandidateRejection(
+            requirement_id=verdict.requirement_id, raw_row_id=verdict.raw_row_id,
+            reason=verdict.reason, evidence_clause_ids=verdict.evidence_clause_ids,
+        ))
         rejected.add(identity)
     adjusted: set[tuple[str, int]] = set()
     for item in review.score_adjustments:

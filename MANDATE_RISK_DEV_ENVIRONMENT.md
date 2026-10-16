@@ -39,16 +39,45 @@
   👉 **`https://opinion-bobby-heroes-florence.trycloudflare.com`**
 * **本地直接访问 Base URL**：
   `http://127.0.0.1:8002`
+
+### 本地 OMP 模型代理（8005）
+
+Docker 的模型请求可通过 `scripts/omp_openai_gateway.py` 转发到本机 OMP CLI：
+
+```bash
+.venv/bin/python scripts/omp_openai_gateway.py
+```
+
+默认监听 `0.0.0.0:8005`，模型为 `google-antigravity/gemini-3.8-flash`；`OMP_GATEWAY_PORT` 可用于临时验证端口。不要把该无鉴权代理暴露到不可信网络。
+
+OMP 的 `--no-tools` 仅关闭内置工具，仍可能发现全局 MCP。当前本机全局 `rea` MCP 的工具 Schema 含 Gemini 不支持的 `if/then`，会造成模型 HTTP 400，最终被代理包装为 HTTP 500。代理在每次请求的临时目录写入 `.omp/mcp.json`，仅对此次调用禁用同名 `rea` 服务；不修改用户全局配置、模型或认证。其他名称的 MCP 不在此修复范围内。
+
+OMP stdout JSON 中的 assistant `errorMessage` 优先作为失败详情；stderr 并行读取。`error`、`aborted`、`length` 结束状态不作为成功回答返回。不要以 `/health` 成功代替模型可用验证：先向 `/v1/chat/completions` 发最小请求，再通过业务 `/v1/runs/{run_id}/events` 确认完整分析到达 `run.completed`。
+
 ### 2. 后端工程信息
 * **代码仓库路径**：
   `/Volumes/onePiece/公司前端项目/AI项目/vmchat-hermes-replacement-python`
 * **当前活跃分支**：
-  `optimize/mandate-risk-generic-recall`
+  `research/mandate-risk-speed-2026-10-14`
+* **统一工作流 (Workflow ID)**：
+  * **`mandate-risk-copilot`**：基于 LangGraph 的统一多意图分析与问答工作流（默认路由）。
+  * **`mandate-risk-analysis-v2`**：原串行 V2 分析工作流（保留作为性能与精度对比基准）。
 * **运行框架与模型**：
-  * **框架**：FastAPI + LangGraph 工作流状态机
-  * **大模型**：Google 官方高并发低延迟模型 **`gemini-3.5-flash-lite`**
-  * **端点**：`https://generativelanguage.googleapis.com/v1beta/openai/`
-  * **API Key**：已在 Colab `.env` 中安全预置
+  * **框架**：FastAPI + LangGraph 工作流图（`StateGraph` 并发子图与意图路由）
+  * **大模型**：Google `google-antigravity/gemini-3.8-flash`（经本地 `scripts/omp_openai_gateway.py` 8005 代理或直连）
+
+### 3. LangGraph 并发分析与统一多意图架构说明
+
+1. **双路并发分析子图 (`ParallelMandateAnalysis`)**：
+   - **分支 A (Screening)**：阅读 PDF 条款与 34 项完整指标库，输出相关指标匹配分、依据与差异；毫秒级附加本地参考组合。
+   - **分支 B (Strategy Evidence)**：独立阅读 PDF 原文与指标目录，提取三大语义板块（Instruments / Benchmark / Investment Strategy）和策略要点，不依赖前序打分理由。
+   - **安全 Join**：以分支 A 最终入选指标为主键合并，未建立策略关联的指标明确归入 `unlinked_metrics`，严禁将筛选理由伪造为策略依据；单分支异常或取消时自动熔断取消兄弟任务。
+   - **提速实测**：端到端分析耗时由 35s+ 缩短至 ~19.26s。
+
+2. **多意图路由与会话持久化 (`MandateRiskCopilotWorkflow`)**：
+   - `operation: 'analyze'`：必须提供 PDF，触发双路并发分析；完整结构化结果通过 `MandateAnalysisStore` 存入既有 `ai-artifacts.sqlite3`，会话保存引用。
+   - `operation: 'ask'` (文档/报告追问)：读取当前会话绑定文档的前序分析结构体与相关条款切片，~3-6 秒内响应，不重新跑整篇分析。
+   - `operation: 'ask'` (纯指标知识咨询)：仅查询指标知识库，**不加载 PDF，不注入无关会话历史**，~4-5 秒内响应，不污染主界面分析报表。
 
 ### 3. 核心 API 接口定义
 
@@ -60,9 +89,8 @@
     "status": "ok",
     "documentStore": "sqlite",
     "maxDocumentBytes": 20971520,
-    "workflows": ["mandate-risk-analysis", "simple-chat", "vm-report"],
+    "workflows": ["mandate-risk-analysis", "mandate-risk-analysis-v2", "mandate-risk-copilot", "simple-chat", "vm-report"],
     "langGraphEnabled": true
-  }
   ```
 
 #### ② 上传合同 PDF 文件

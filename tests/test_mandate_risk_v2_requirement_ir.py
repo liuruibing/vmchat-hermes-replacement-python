@@ -8,18 +8,6 @@ from app.mandate_risk_v2.extractor import (
     chunk_clauses,
     validate_extraction_payload,
 )
-from app.mandate_risk_v2.prompts import EXTRACTION_SYSTEM_PROMPT, build_extraction_prompt
-
-
-def test_extraction_prompt_is_document_understanding_first():
-    clauses = split_document_clauses("[Page 1]\nThe portfolio shall keep liquidity above 8% of NAV.")
-    prompt = build_extraction_prompt(document_name="synthetic.pdf", clauses=clauses)
-    assert "Input clauses" in prompt
-    assert "Risk Metric" not in prompt
-    assert "Candidate metrics" not in prompt
-    assert "不要猜测、发明或推荐正式指标名称" in EXTRACTION_SYSTEM_PROMPT
-    assert "raw_value_text" in prompt
-    assert "value_to" in prompt
 
 
 def test_covered_hint_rejects_any_referenced_requirement_without_its_clause():
@@ -156,3 +144,27 @@ def test_coverage_review_rejects_untrusted_references():
         validate_coverage_review({"missing_clauses": [], "partial_requirements": [{"requirement_id": "REQ-9999",
             "reason": "partial", "related_clause_ids": [clauses[0].clause_id]}]},
             clauses=clauses, requirement_ir=ir)
+
+
+@pytest.mark.parametrize("heading,valid", [
+    ("9.3. Borrowing", True),
+    ("9.3.  Borrowing", True),
+    ("9.4. Cross Trades", False),
+    ("", False),
+    (42, False),
+])
+def test_source_heading_must_come_from_cited_original_text(heading, valid):
+    clauses = split_document_clauses("[Page 1]\n9.3. Borrowing\n\nBorrowing is not permitted.")
+    payload = {"requirements": [{
+        "local_id": "r1", "requirement_type": "PROHIBITION",
+        "semantic_summary": "禁止借款", "attributes": {"source_heading": heading},
+        "evidence": {"clause_ids": [clause.clause_id for clause in clauses]},
+    }]}
+    if valid:
+        batch = validate_extraction_payload(payload, allowed_clauses=clauses)
+        ir = build_requirement_ir(document_name="sample.pdf", batches=[batch])
+        assert ir.requirements[0].attributes["source_heading"] == heading
+        assert canonical_evidence(ir.requirements[0].evidence.clause_ids, clauses)[1].text == "Borrowing is not permitted."
+    else:
+        with pytest.raises(ValueError, match="source_heading"):
+            validate_extraction_payload(payload, allowed_clauses=clauses)

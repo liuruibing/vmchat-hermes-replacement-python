@@ -115,6 +115,8 @@ def _append_requirement_details(lines: list[str], requirement: Requirement) -> N
             f"- 结构化约束：`{format_requirement_constraint(requirement)}`",
         ]
     )
+    if requirement.attributes.get("source_heading"):
+        lines.append(f"- 原文章节：{requirement.attributes['source_heading']}")
     if constraint is not None and constraint.raw_value_text:
         lines.append(f"- 原始范围表达：`{constraint.raw_value_text}`")
     if requirement.measurement.concept:
@@ -195,12 +197,35 @@ def render_v2_report(
         f"- 指标库：{analysis.metric_catalogue_name}",
         f"- 指标库 SHA-256：{analysis.metric_catalogue_sha256 or '未提供'}",
         f"- 结果摘要：{analysis.summary}", "",
-        "## 筛选结果", "",
-        "相似度显示模型评估的 PDF 要求匹配分（0–100），用于筛选和排序，不是统计校准的正确概率。",
-        "同一指标关联多个要求时，表格使用最高关联分；各要求的评分与差异在详情中分别保留。高分不代表覆盖整个 PDF 的全部要求。", "",
-        "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "本报告先识别原文要求并复核覆盖，再关联指标库。交易禁令、配置和治理要求不因没有对应指标而省略；模型覆盖复核不等于已完成合规检查。", "",
+        "## 原文要求与处置", "",
     ]
+    destinations = {
+        item.requirement_id: item.destinations
+        for item in mapping.dispositions.dispositions
+    }
+    labels = {"MAIN_TABLE": "直接关联", "PENDING_REVIEW": "待确认",
+              "LIBRARY_GAP": "指标库缺口", "NON_METRIC": "规则/非指标要求"}
+    for item in analysis.requirements:
+        requirement = item.requirement
+        lines.extend([f"### {requirement.requirement_id} {requirement.attributes.get('source_heading', '')}", ""])
+        _append_requirement_details(lines, requirement)
+        for destination in destinations.get(requirement.requirement_id, []):
+            names = "、".join(registry.require(row_id).metric_name for row_id in destination.raw_row_ids)
+            lines.append(f"- {labels[destination.destination]} / {destination.aspect}"
+                         f"{' / ' + names if names else ''}：{destination.reason}")
+        lines.extend(["", "**PDF 原文**", ""])
+        _append_evidence(lines, item.evidence)
+    if analysis.contextual_facts:
+        lines.extend(["", "## 文档配置与上下文", ""])
+        for fact in analysis.contextual_facts:
+            lines.append(f"- {fact.fact_type}：{fact.semantic_summary}")
+    lines.extend([
+        "", "## 指标关联结果", "",
+        "DIRECT 为原文明示测量概念的直接关联；REVIEW 为待确认候选，不代表合同要求使用该指标。匹配分仅用于排序，不表示合规或算法等价。",
+        "", "| 分组 | 名称 | Mandate解读 | 值 | 参考组合 | 相似度 |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ])
     for selected in analysis.screened_metrics:
         quotes = "<br>".join(_cell(item.requirement.evidence[0].text)
                               for item in selected.requirements if item.requirement.evidence)
@@ -233,6 +258,7 @@ def render_v2_report(
             _append_requirement_details(lines, requirement)
             lines.extend([
                 f"- 该要求匹配分：{score}",
+                f"- 关联性质：{link.mapping_level}",
                 f"- 评分理由：{link.score_reason or '历史结果未评分'}",
                 f"- 关联理由：{link.mapping_reason}",
             ])

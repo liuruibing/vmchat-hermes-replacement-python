@@ -50,6 +50,8 @@ class WorkflowContext:
     # 每次创建 context 都生成自己的空列表，避免不同任务共享同一个可变列表。
     document_ids: List[str] = field(default_factory=list)
     document_loader: Optional[Callable[[str], Any]] = None  # 按 id 读取已解析的 PDF，按需加载。
+    request_context: Dict[str, Any] = field(default_factory=dict)
+    analysis_result_loader: Optional[Callable[[str], Any]] = None
 
 
 # Protocol 类似 TS interface：约定对象有 id 和 stream()，不同类可以实现同一约定。

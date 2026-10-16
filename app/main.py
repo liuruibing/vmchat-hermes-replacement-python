@@ -53,6 +53,7 @@ from app.session.store import SqliteSessionStore
 from app.session.manager import SessionManager
 from app.context.manager import ContextManager
 from app.artifacts.store import SqliteArtifactStore
+from app.mandate_risk_v2.session_results import MandateAnalysisStore
 from app.knowledge.store import DuckDbKnowledgeStore, SqliteKnowledgeStore
 from app.knowledge.service import KnowledgeService
 from app.knowledge.embeddings import OpenAICompatibleEmbeddingProvider
@@ -230,6 +231,7 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
         or deps_override.get("artifactStore")
         or SqliteArtifactStore(default_artifact_path)
     )
+    mandate_analysis_store = MandateAnalysisStore(artifact_store, session_manager)
 
     document_service = deps_override.get("document_service") or deps_override.get("documentService")
     document_store = None
@@ -376,6 +378,14 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
 
     app = FastAPI(lifespan=lifespan)
 
+    @app.middleware("http")
+    async def strip_ai_api_prefix(request: Request, call_next):
+        path = request.scope.get("path", "")
+        if path.startswith("/ai-api/"):
+            request.scope["path"] = path[7:]
+        elif path == "/ai-api":
+            request.scope["path"] = "/"
+        return await call_next(request)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=config.cors_origins,
@@ -891,6 +901,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     else None
                 )
                 document_ids = list(getattr(vm_input, "documentIds", []) or [])
+                request_obj = getattr(record, "request", None)
+                session_id_for_turn = getattr(request_obj, "session_id", None) or runId
                 # 一次性装入工作流依赖，类似给组件传 props + 回调；不是把整套服务藏进图 state。
                 workflow_context = WorkflowContext(
                     input_val=vm_input,
@@ -905,10 +917,13 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     signal=controller,
                     message_chunk_chars=config.sse_chunk_chars,
                     run_id=runId,
-                    session_id=getattr(getattr(record, "request", None), "session_id", None),
+                    session_id=session_id_for_turn,
                     document_ids=document_ids,
                     # 传入的是方法本身，工作流稍后按 id 调用；PDF 正文不在这里重复读取。
                     document_loader=document_service.load_parsed if document_ids else None,
+                    request_context=dict(getattr(request_obj, "context", {}) or {}),
+                    analysis_result_loader=lambda document_id: mandate_analysis_store.load(
+                        session_id_for_turn, document_id),
                 )
                 try:
                     # stream() 返回异步事件生成器；__aiter__() 取得它的异步迭代入口。
@@ -998,19 +1013,20 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     frame = write_sse_frame(serialize_sse_event({"event": "reasoning.done"}))
                     yield frame
 
-                completion_event = {
-                    "event": "run.completed",
-                    "output": full_output,
-                    "usage": last_usage,
-                }
-                if completion_metadata is not None:
-                    completion_event["metadata"] = completion_metadata
-                frame = write_sse_frame(serialize_sse_event(completion_event))
-                yield frame
 
                 artifact_id = None
+                analysis_result = (completion_metadata or {}).get("mandate_risk_v2", {}).get("result")
+                if workflow == "mandate-risk-copilot" and analysis_result is not None:
+                    if len(document_ids) != 1:
+                        raise ValueError("MANDATE_RESULT_REQUIRES_ONE_DOCUMENT")
+                    # Persist before announcing completion: an immediate follow-up
+                    # must see this report, including after a service restart.
+                    artifact_id = mandate_analysis_store.save(
+                        session_id=session_id_for_turn, document_id=document_ids[0],
+                        run_id=runId, result=analysis_result, agent_id=agent_id, role_id=role_id,
+                    )
                 try:
-                    parsed_output = json.loads(full_output)
+                    parsed_output = json.loads(full_output) if artifact_id is None else None
                     is_dsl_artifact = isinstance(parsed_output, list) or (
                         isinstance(parsed_output, dict)
                         and any(key in parsed_output for key in ("action", "requests", "view", "views"))
@@ -1024,14 +1040,8 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                         )
                         artifact_id = artifact.id
                 except Exception:
-                    artifact_id = None
+                    pass
 
-                request_obj = getattr(record, "request", None)
-                session_id_for_turn = (
-                    getattr(request_obj, "session_id", None)
-                    if request_obj is not None
-                    else None
-                ) or runId
                 session_state = session_manager.get_or_create(
                     session_id_for_turn,
                     agent_id=getattr(vm_input, "agentId", default_agent_id),
@@ -1044,6 +1054,15 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
                     run_id=runId,
                     artifact_id=artifact_id,
                 )
+                completion_event = {
+                    "event": "run.completed",
+                    "output": full_output,
+                    "usage": last_usage,
+                }
+                if completion_metadata is not None:
+                    completion_event["metadata"] = completion_metadata
+                frame = write_sse_frame(serialize_sse_event(completion_event))
+                yield frame
 
                 is_normal_ended = True
                 run_store.complete(runId, full_output)
@@ -1151,6 +1170,55 @@ def create_app(deps_override: Optional[Dict[str, Any]] = None) -> FastAPI:
             "run_id": runId, "status": record.status,
             "cursor": after + len(batch), "frames": batch,
         }, headers={"Cache-Control": "no-store"})
+
+    # =========================================================================
+    # 闲鱼客服专属 LangGraph 编排端点（AI 统一底座）
+    # =========================================================================
+    @app.post("/api/xianyu/chat")
+    async def xianyu_chat(request: Request):
+        body = await request.json()
+        buyer_id = str(body.get("buyer_id") or "guest_buyer").strip()
+        product_id = str(body.get("product_id") or "general_product").strip()
+        query = str(body.get("query") or body.get("message") or "").strip()
+        session_id = str(body.get("session_id") or f"xy_{buyer_id}_{product_id}").strip()
+        product_info = body.get("product_info") or {}
+
+        if not query:
+            return JSONResponse(status_code=400, content={"error": "query is required"})
+
+        from app.workflow.graphs.xianyu_cs_graph import compiled_xianyu_graph
+
+        # LangGraph 会话线程配置，支持基于 buyer_id 隔离的多轮记忆
+        thread_config = {"configurable": {"thread_id": session_id}}
+
+        # 获取历史状态或初始化
+        current_state = await compiled_xianyu_graph.aget_state(thread_config)
+        history = []
+        if current_state and current_state.values:
+            history = current_state.values.get("history") or []
+
+        state_input = {
+            "session_id": session_id,
+            "buyer_id": buyer_id,
+            "product_id": product_id,
+            "query": query,
+            "history": history,
+            "product_title": str(product_info.get("title") or "技术源码与资料包"),
+            "product_price": float(product_info.get("price") or 9.9),
+            "product_readme": str(product_info.get("readme") or product_info.get("description") or ""),
+            "delivery_info": str(product_info.get("delivery_info") or "拍下后系统自动发货"),
+        }
+
+        result = await compiled_xianyu_graph.ainvoke(state_input, config=thread_config)
+
+        return JSONResponse(content={
+            "success": True,
+            "session_id": session_id,
+            "buyer_id": buyer_id,
+            "intent": result.get("intent", "tech_faq"),
+            "reply": result.get("reply", ""),
+            "history_length": len(result.get("history") or []),
+        })
 
     return app
 

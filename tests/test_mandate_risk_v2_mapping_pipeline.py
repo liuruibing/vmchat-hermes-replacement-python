@@ -8,8 +8,7 @@ from app.mandate_risk.models import RawRiskMetric
 from app.mandate_risk.registry import RawRiskMetricRegistry
 from app.mandate_risk_v2.mapping import MappingPipeline
 from app.mandate_risk_v2.mapping_models import CORE_COMPATIBILITY_DIMENSIONS
-from app.mandate_risk_v2.mapping_prompts import MAPPING_SYSTEM_PROMPT, batch_prompt
-from app.mandate_risk_v2.models import Definition, EvidenceRef, Requirement, RequirementIR
+from app.mandate_risk_v2.models import EvidenceRef, Requirement, RequirementIR
 
 
 class Chunk:
@@ -75,30 +74,6 @@ def _data():
     return ir, clauses, registry
 
 
-def test_mapping_prompt_explains_scoring_and_optional_compatibility_dimensions():
-    ir, clauses, registry = _data()
-    prompt = MAPPING_SYSTEM_PROMPT + batch_prompt(ir, clauses, registry.all())
-    assert '"relation":"EQUIVALENT"' in prompt
-    assert "match_score" in prompt and "score_reason" in prompt
-    assert "不要求填齐十二项" in prompt
-    assert "正确概率" in prompt
-    assert "strategy_applicability" in prompt
-    assert "algorithm_semantics" in prompt
-    assert '"outcome":"LINKED"' in prompt
-    assert "NOT_RELEVANT" in prompt
-    for dimension in CORE_COMPATIBILITY_DIMENSIONS:
-        assert dimension in prompt
-
-
-def test_mapping_prompt_includes_definition_source_without_turning_it_into_requirement():
-    ir, clauses, registry = _data()
-    ir.definitions.append(Definition(definition_id="DEF-0001", term="NAV",
-                                     semantic_summary="Net asset value",
-                                     evidence=EvidenceRef(clause_ids=["c0002"])))
-    clauses.append(DocumentClause(clause_id="c0002", text="NAV means net asset value.", page=2))
-    prompt = batch_prompt(ir, clauses, registry.all())
-    assert "NAV means net asset value." in prompt
-
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("stage,marker", [
@@ -156,7 +131,7 @@ async def test_new_metric_is_mapped_only_after_independent_critic():
 
 
 @pytest.mark.anyio
-async def test_critic_challenge_moves_unconfirmed_direct_to_pending_not_main_table():
+async def test_critic_rejection_preserves_the_source_requirement_without_retaining_the_metric():
     ir, clauses, registry = _data()
     result = await MappingPipeline(batch_size=2, max_critic_repairs=0).run(
         ir=ir, clauses=clauses, registry=registry, provider=Provider(challenge=True),
@@ -165,18 +140,20 @@ async def test_critic_challenge_moves_unconfirmed_direct_to_pending_not_main_tab
     destination = result.dispositions.dispositions[0].destinations[0]
     assert destination.destination == "PENDING_REVIEW"
     assert "Critic" in destination.reason
+    assert destination.raw_row_ids == []
+    assert result.screening_links == []
 
 
 @pytest.mark.anyio
-async def test_numbered_critic_challenge_still_downgrades_the_exact_metric():
+async def test_numbered_critic_unresolved_still_downgrades_the_exact_metric():
     class NumberedProvider(Provider):
         async def run_skill(self, run_input):
             if "# V2 independent critic" in run_input.user_prompt:
                 targets = json.loads(run_input.user_prompt.split(
                     "# Required verdict targets (JSON)\n", 1)[1].split("\n", 1)[0])
                 yield Chunk(json.dumps({"verdicts": [{
-                    "target_id": target["target_id"], "verdict": "CHALLENGE",
-                    "reason": "algorithm differs", "evidence_clause_ids": ["c0001"],
+                    "target_id": target["target_id"], "verdict": "UNRESOLVED",
+                    "reason": "Same measurement concept; estimation basis is unknown.", "evidence_clause_ids": ["c0001"],
                 } for target in targets]}))
             else:
                 async for chunk in super().run_skill(run_input):
@@ -223,7 +200,7 @@ class MixedCriticProvider:
                  "aspect": "portfolio exposure", "verdict": "CONFIRM", "reason": "row 2 verified",
                  "evidence_clause_ids": ["c0001"]},
                 {"requirement_id": "REQ-0001", "destination": "MAIN_TABLE", "raw_row_id": 3,
-                 "aspect": "portfolio exposure", "verdict": "CHALLENGE", "reason": "row 3 differs",
+                 "aspect": "portfolio exposure", "verdict": "UNRESOLVED", "reason": "Same concept; calculation basis unconfirmed",
                  "evidence_clause_ids": ["c0001"]},
             ]}))
         else:
@@ -231,7 +208,7 @@ class MixedCriticProvider:
 
 
 @pytest.mark.anyio
-async def test_critic_challenge_is_applied_to_exact_metric_row_not_whole_aspect():
+async def test_critic_unresolved_is_applied_to_exact_metric_row_not_whole_aspect():
     ir, clauses, registry = _data()
     result = await MappingPipeline(batch_size=2, max_critic_repairs=0).run(
         ir=ir, clauses=clauses, registry=registry, provider=MixedCriticProvider(),

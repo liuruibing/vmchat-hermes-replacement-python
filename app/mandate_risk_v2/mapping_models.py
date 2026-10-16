@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from typing import Any, Literal
 
 from pydantic import Field
@@ -22,6 +24,13 @@ CORE_COMPATIBILITY_DIMENSIONS = (
     "strategy_applicability",
     "algorithm_semantics",
 )
+
+# A known contradiction is not the same as an unknown implementation parameter.
+# This is an output-consistency guard, not a Python substitute for source review.
+CONCEPT_IDENTITY_DIMENSIONS = frozenset({
+    "measurement_object", "aggregation_level", "scope", "denominator",
+    "unit_semantics", "algorithm_semantics",
+})
 
 
 class CompatibilityDimension(StrictModel):
@@ -72,14 +81,17 @@ class FinalMappingReview(StrictModel):
     dispositions: list[RequirementDisposition]
 
 
-def critic_targets(dispositions: FinalMappingReview) -> list[dict[str, Any]]:
+def critic_targets(dispositions: FinalMappingReview,
+                   links: Sequence[MappingLink] = ()) -> list[dict[str, Any]]:
     targets = []
+    covered = set()
     for item in dispositions.dispositions:
         for destination in item.destinations:
-            if destination.destination not in {"MAIN_TABLE", "LIBRARY_GAP", "NON_METRIC"}:
-                continue
-            row_ids = destination.raw_row_ids if destination.destination == "MAIN_TABLE" else [None]
+            metric_destination = destination.destination in {"MAIN_TABLE", "PENDING_REVIEW"}
+            row_ids = destination.raw_row_ids if metric_destination and destination.raw_row_ids else [None]
             for row_id in row_ids:
+                if row_id is not None:
+                    covered.add((item.requirement_id, row_id))
                 targets.append({
                     "target_id": f"TGT-{len(targets) + 1:04d}",
                     "requirement_id": item.requirement_id,
@@ -87,12 +99,25 @@ def critic_targets(dispositions: FinalMappingReview) -> list[dict[str, Any]]:
                     "raw_row_id": row_id,
                     "aspect": destination.aspect,
                 })
+    # A mapper link may survive without being selected by the destination pass.
+    # It must still receive an explicit independent admission decision.
+    for link in links:
+        if link.level == "REJECTED" or (link.requirement_id, link.raw_row_id) in covered:
+            continue
+        targets.append({
+            "target_id": f"TGT-{len(targets) + 1:04d}",
+            "requirement_id": link.requirement_id,
+            "destination": "PENDING_REVIEW",
+            "raw_row_id": link.raw_row_id,
+            "aspect": "关联准入",
+        })
+        covered.add((link.requirement_id, link.raw_row_id))
     return targets
 
 
 class CriticVerdict(StrictModel):
     requirement_id: str
-    destination: Literal["MAIN_TABLE", "LIBRARY_GAP", "NON_METRIC"]
+    destination: Literal["MAIN_TABLE", "PENDING_REVIEW", "LIBRARY_GAP", "NON_METRIC"]
     raw_row_id: int | None
     aspect: str
     verdict: Literal["CONFIRM", "CHALLENGE", "UNRESOLVED"]

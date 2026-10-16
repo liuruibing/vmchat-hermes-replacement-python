@@ -67,6 +67,12 @@ class OmpTestProvider:
             workdir = Path(directory)
             (workdir / "system.txt").write_text(request.system_prompt, encoding="utf-8")
             (workdir / "request.txt").write_text(request.user_prompt, encoding="utf-8")
+            omp_dir = workdir / ".omp"
+            omp_dir.mkdir(parents=True, exist_ok=True)
+            (omp_dir / "mcp.json").write_text(
+                json.dumps({"mcpServers": {"rea": {"disabled": True}}}),
+                encoding="utf-8",
+            )
             command = [executable, "-p", "--no-session", "--no-tools", "--no-extensions",
                        "--no-skills", "--no-rules", "--no-lsp", "--no-pty", "--no-title",
                        "--thinking", os.getenv("OMP_TEST_THINKING", "low"), "--mode", "json", "--system-prompt",

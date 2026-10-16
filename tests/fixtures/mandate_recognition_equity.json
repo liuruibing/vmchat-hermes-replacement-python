@@ -1,0 +1,441 @@
+{
+  "version": 1,
+  "annotation_status": "assistant_annotated_provisional_not_business_approved",
+  "scope": "single_document_development_baseline_not_holdout",
+  "document": {
+    "name": "权益sample.pdf",
+    "sha256": "3aaf3f50e4015129d6d388425fe6b6503eed5e7391b0ef6d20950afd30c117d6"
+  },
+  "catalogue_sha256": "4163180c3f3cc921e23fe7d553ccf7975ca6231430a86cefcf7ef2180481a261",
+  "annotation_policy": "MATCH代表同一测量概念可关联，不确认算法等价或合规；DIRECT和REVIEW合并计分，歧义项单列。NO_MATCH是本全文无充分要求，不是仅凭所引示例句的缺词判断。",
+  "evidence_sources": {
+    "objective": {
+      "page": 4,
+      "section": "4. Investment Objective(s)",
+      "quote": "generate total return in excess of the Sub-Portfolio Benchmark Index by 0.5% p.a."
+    },
+    "growth": {
+      "page": 4,
+      "section": "4. Investment Objective(s)",
+      "quote": "gain stable dividend yield and achieve long term capital growth"
+    },
+    "china": {
+      "page": 5,
+      "section": "4. Investment Objective(s)",
+      "quote": "Common Shares issued by Chinese Issuers"
+    },
+    "strategy": {
+      "page": 5,
+      "section": "5. Investment Strategy",
+      "quote": "executing geographic, Industry/Sector and trading strategies"
+    },
+    "tracking": {
+      "page": 6,
+      "section": "9.9. Tracking Error",
+      "quote": "The annualised ex-ante Tracking Error shall not exceed 100%"
+    },
+    "security": {
+      "page": 6,
+      "section": "9.7. Single-Name Concentration Limits",
+      "quote": "The exposure to any single security shall not exceed 100% of the market value of the Sub-Portfolio"
+    },
+    "sector": {
+      "page": 6,
+      "section": "9.8. Sector Concentration Limits",
+      "quote": "The aggregate exposure to an individual Sector"
+    },
+    "instruments": {
+      "page": 5,
+      "section": "8. Permitted Asset Classes and Investment Instruments",
+      "quote": "Cash and Cash Equivalents"
+    },
+    "fund": {
+      "page": 6,
+      "section": "9.10. Third-Party Managed Fund Limits",
+      "quote": "Investment in any single Third-Party Managed Fund"
+    },
+    "fund_liquidity": {
+      "page": 7,
+      "section": "9.10. Third-Party Managed Fund Limits",
+      "quote": "Liquidity of the underlying assets of the concerned TPMF"
+    },
+    "repo": {
+      "page": 7,
+      "section": "9.11. Repurchase Agreements (Repo) and Reverse Repurchase Agreements (Reverse Repo)",
+      "quote": "Repo and Reverse Repo are not permitted"
+    },
+    "policy": {
+      "page": 7,
+      "section": "10. Application of AI Risk Policies and Relevant Risk Tolerances",
+      "quote": "Investment Management Risk Standard"
+    }
+  },
+  "annotations": [
+    {
+      "raw_row_id": 2,
+      "metric_name": "基金收益率",
+      "algorithm": "Ri=(r1+1)*(r2+1)……(rn+1)-1",
+      "expected": "MATCH",
+      "evidence_ids": [
+        "growth",
+        "objective"
+      ],
+      "reason": "总回报和资本增长目标对应组合收益概念，不要求另设数值上限。"
+    },
+    {
+      "raw_row_id": 3,
+      "metric_name": "超额收益率（基准超额）",
+      "algorithm": "Ri- Bi",
+      "expected": "MATCH",
+      "evidence_ids": [
+        "objective",
+        "strategy"
+      ],
+      "reason": "有明确每年跑赢指定基准0.5%的收益差目标。"
+    },
+    {
+      "raw_row_id": 4,
+      "metric_name": "Alpha",
+      "algorithm": "α = Ri - (Rf + beta * (Rm - Rf))",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "objective"
+      ],
+      "reason": "跑赢基准没有要求Rf、Beta或CAPM风险调整，不能用Alpha替代。"
+    },
+    {
+      "raw_row_id": 5,
+      "metric_name": "股息贡献率",
+      "algorithm": "股息收益占整体收益比重",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "growth"
+      ],
+      "reason": "稳定股息收益不是股息占整体收益比重。"
+    },
+    {
+      "raw_row_id": 6,
+      "metric_name": "Sortino索提诺",
+      "algorithm": "Sortino Ratio = (Rp-Rf)/Downside Volatility",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "growth",
+        "strategy"
+      ],
+      "reason": "没有按下行波动率调整收益的要求。"
+    },
+    {
+      "raw_row_id": 7,
+      "metric_name": "信息比率",
+      "algorithm": "（基金收益率-基准收益率）/(跟踪误差*sqrt(实际天数) )",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "objective",
+        "tracking"
+      ],
+      "reason": "分别要求超额收益和跟踪误差不等于要求信息比率。"
+    },
+    {
+      "raw_row_id": 8,
+      "metric_name": "VaR",
+      "algorithm": "历史模拟法Var = PERCENTILE(对数日收益率,1-B)\n正态分布法VAR = 波动率 * Zα * sqrt(预测天数)\nVAR金额=ABS(Var*期末市值)\nB=置信度 99% 95% 90%\nZα=标准正态分布下置信度α对应的分位数 NORMINV(1-B,0,1)\n对数日收益率= ln(今日收盘价/昨日收盘价)\n历史法日收益率= (当天-预测天数)到当天 EXP(sum(对数日收益率))-1\n波动率=STDEV(正态分布法日收益率)\n区间日期=(结束日期-样本天数)到结束日期区间的交易日",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "policy"
+      ],
+      "reason": "一般风险政策没有VaR损失分位数、持有期或置信度要求。"
+    },
+    {
+      "raw_row_id": 9,
+      "metric_name": "最大回撤",
+      "algorithm": "MDD = Max[(Peak-Value)/Peak]",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "growth"
+      ],
+      "reason": "长期增长并非峰谷回撤限制。"
+    },
+    {
+      "raw_row_id": 10,
+      "metric_name": "波动率",
+      "algorithm": "σp = STDEV(ri)",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "tracking"
+      ],
+      "reason": "跟踪误差是主动收益波动，不是组合收益波动率。"
+    },
+    {
+      "raw_row_id": 11,
+      "metric_name": "组合Beta贝塔",
+      "algorithm": "beta=基金收益率基准收益率协方差/基准的方差",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "objective",
+        "strategy"
+      ],
+      "reason": "指定基准和增强指数策略没有要求基准敏感度Beta。"
+    },
+    {
+      "raw_row_id": 12,
+      "metric_name": "下行Beta",
+      "algorithm": "基金收益率与基准收益率的协方差 ( 基准日收益率 < 0 ) / 基准的方差( 基准日收益率 < 0 )",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "growth",
+        "tracking"
+      ],
+      "reason": "没有基准负收益样本下条件协方差/方差敏感度要求。"
+    },
+    {
+      "raw_row_id": 13,
+      "metric_name": "行业偏离度",
+      "algorithm": "组合行业占比-基准行业占比",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "sector",
+        "strategy"
+      ],
+      "reason": "绝对行业敞口上限不等于减基准行业权重。"
+    },
+    {
+      "raw_row_id": 14,
+      "metric_name": "跟踪误差",
+      "algorithm": "TE=σ(Rp−Rb)",
+      "expected": "MATCH",
+      "evidence_ids": [
+        "tracking"
+      ],
+      "reason": "明确年化事前跟踪误差；算法实现、年化及风险预测方法仍需核实。"
+    },
+    {
+      "raw_row_id": 15,
+      "metric_name": "久期",
+      "algorithm": "sum(债券全价市值*久期/债券全价市值合计）",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "instruments"
+      ],
+      "reason": "现金等价物许可不是按市值加权的久期要求。"
+    },
+    {
+      "raw_row_id": 16,
+      "metric_name": "DV01",
+      "algorithm": "DV01 = 修正久期 × 市值 × 0.0001",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "instruments"
+      ],
+      "reason": "没有1bp利率变动的金额敏感度要求。"
+    },
+    {
+      "raw_row_id": 17,
+      "metric_name": "股息支付率NII",
+      "algorithm": " NII/账面余额净值",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "growth"
+      ],
+      "reason": "本库NII/账面余额净值不同于原文稳定股息收益。"
+    },
+    {
+      "raw_row_id": 18,
+      "metric_name": "股息增长率",
+      "algorithm": "股息增长率=(本期每股股息－上期每股股息)÷上期每股股息×100%",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "growth"
+      ],
+      "reason": "稳定股息收益不等于每股股息逐期增长率。"
+    },
+    {
+      "raw_row_id": 19,
+      "metric_name": "股息覆盖率",
+      "algorithm": "组合股息率/基准股息率",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "growth"
+      ],
+      "reason": "没有组合与基准股息率比值要求，基准名称也不是该比值要求。"
+    },
+    {
+      "raw_row_id": 20,
+      "metric_name": "境内资产占比",
+      "algorithm": "",
+      "expected": "MATCH",
+      "evidence_ids": [
+        "china"
+      ],
+      "reason": "境内发行人及A股配置有具体依据；目录算法为空，不确认境内认定、分母或70%门槛。"
+    },
+    {
+      "raw_row_id": 21,
+      "metric_name": "单一证券占比",
+      "algorithm": "单一证券/组合资产总值",
+      "expected": "MATCH",
+      "evidence_ids": [
+        "security"
+      ],
+      "reason": "明确单一证券比例；组合资产总值与原文市值的口径差异须保留。"
+    },
+    {
+      "raw_row_id": 22,
+      "metric_name": "可用融资余额",
+      "algorithm": "受托组合规模*20%-已用正回购额度",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "repo"
+      ],
+      "reason": "回购禁令不是组合规模20%扣减已用融资的额度要求。"
+    },
+    {
+      "raw_row_id": 23,
+      "metric_name": "换手率(%)",
+      "algorithm": "(期间买入金额+期间卖出金额)/平均持仓市值",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "strategy"
+      ],
+      "reason": "交易策略/主动管理没有要求买卖金额相对平均持仓的比率。"
+    },
+    {
+      "raw_row_id": 24,
+      "metric_name": "剩余期限",
+      "algorithm": "sum(债券全价市值*剩余期限/债券全价市值合计）",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "instruments"
+      ],
+      "reason": "现金等价物准入年限不是组合加权平均剩余期限。"
+    },
+    {
+      "raw_row_id": 25,
+      "metric_name": "非标剩余期限",
+      "algorithm": "非标剩余期限=Σ（资产余额 × 剩余期限）÷Σ资产余额",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "instruments"
+      ],
+      "reason": "没有非标资产加权剩余期限要求。"
+    },
+    {
+      "raw_row_id": 26,
+      "metric_name": "债券资产变现天数",
+      "algorithm": "债券持仓量/ 3个月的平均日交易量并假设30%参与率",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "fund_liquidity"
+      ],
+      "reason": "基金底层流动性条件不是债券持仓按30%参与率的变现天数。"
+    },
+    {
+      "raw_row_id": 27,
+      "metric_name": "流通受限资产占比",
+      "algorithm": "新股、封闭式基金等具有锁定期的资产",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "instruments"
+      ],
+      "reason": "许可IPO等工具不等于受限资产占比要求。"
+    },
+    {
+      "raw_row_id": 28,
+      "metric_name": "优质动性资产占比",
+      "algorithm": "优质流动性资产/账户规模",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "fund_liquidity"
+      ],
+      "reason": "未要求优质流动性资产/账户规模；基金底层条件不能替换。"
+    },
+    {
+      "raw_row_id": 29,
+      "metric_name": "流动性上市权益资产占比",
+      "algorithm": "可在7个交易日内完成清算的上市股权类证券的市场价值（计算依据为：该证券发行人在其主要上市地证券交易所过去3个月的平均日交易量，并假设10%参与率），占基金全部上市股权类投资组合市场价值之比例",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "fund_liquidity",
+        "fund"
+      ],
+      "reason": "第三方基金底层1天/7天条件不同于全组合上市权益按10%参与率的7交易日清算占比。"
+    },
+    {
+      "raw_row_id": 30,
+      "metric_name": "信用利差（债券）",
+      "algorithm": "信用债到期收益率 - 同期限国债收益率，对每只信用债，选取同评级、同期限的国债收益率；",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "policy"
+      ],
+      "reason": "没有信用债与国债收益率利差要求。"
+    },
+    {
+      "raw_row_id": 31,
+      "metric_name": "信用利差（非标）",
+      "algorithm": "非标到期收益率 - 同期限国债收益率；非标到期收益率 - 30年国债收益率",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "policy"
+      ],
+      "reason": "没有非标与国债收益率利差要求。"
+    },
+    {
+      "raw_row_id": 32,
+      "metric_name": "加权平均信用评级",
+      "algorithm": "WARF = Σ(评级因子 × 权重",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "china"
+      ],
+      "reason": "高质量股票基本面不是信用评级因子的加权平均要求。"
+    },
+    {
+      "raw_row_id": 33,
+      "metric_name": "债券AA+及以下评级占比(%)",
+      "algorithm": "AA+及以下评级债券合计比(%)",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "china"
+      ],
+      "reason": "未要求AA+及以下债券评级占比。"
+    },
+    {
+      "raw_row_id": 34,
+      "metric_name": "单一发行人集中度",
+      "algorithm": "单一发行人敞口÷总资产",
+      "expected": "NO_MATCH",
+      "evidence_ids": [
+        "security"
+      ],
+      "reason": "正文明确single security，不是issuer聚合，且原文分母为组合市值。"
+    },
+    {
+      "raw_row_id": 35,
+      "metric_name": "区域分布",
+      "algorithm": "",
+      "expected": "NEEDS_ADJUDICATION",
+      "evidence_ids": [
+        "strategy",
+        "china"
+      ],
+      "reason": "地理策略和境内配置是否承接本库未定义的区域分布需要业务确认，不能预先算正确或错误。"
+    }
+  ],
+  "library_gaps": [
+    {
+      "section": "4",
+      "concept": "稳定股息收益率",
+      "reason": "现库各股息指标分别为贡献、NII账面比、增长、与基准比值，不能直接替代原文股息收益率。"
+    },
+    {
+      "section": "9.8",
+      "concept": "单行业绝对集中度",
+      "reason": "现库行业偏离度含减基准操作。"
+    },
+    {
+      "section": "9.10",
+      "concept": "第三方基金投资比例和底层准入条件",
+      "reason": "须保留建仓期、两档规模、lower of、分散度及1天/7天条件，不映射成组合通用指标。"
+    }
+  ]
+}
